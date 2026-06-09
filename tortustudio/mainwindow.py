@@ -99,15 +99,6 @@ class MainWindow(QMainWindow):
         sprite_tab_action.triggered.connect(self._activate_sprite_editor_tab)
         tabs_menu.addAction(sprite_tab_action)
 
-        tabs_menu.addSeparator()
-        new_sprite_action = QAction("&New Sprite…", self)
-        new_sprite_action.triggered.connect(self._action_new_sprite)
-        tabs_menu.addAction(new_sprite_action)
-
-        open_sprite_action = QAction("&Open Sprite…", self)
-        open_sprite_action.triggered.connect(self._action_open_sprite)
-        tabs_menu.addAction(open_sprite_action)
-
         build_menu = menu.addMenu("&Build")
         export_action = QAction("Export .tortucart…", self)
         export_action.triggered.connect(self._action_export_cart)
@@ -156,6 +147,8 @@ class MainWindow(QMainWindow):
         self.viewport = ViewportWidget()
         self.sprite_editor = SpriteEditorWidget(Path("."))
         self.sprite_editor.saved.connect(self._on_sprite_saved)
+        self.sprite_editor.new_sprite_requested.connect(self._action_new_sprite)
+        self.sprite_editor.open_sprite_requested.connect(self._action_open_sprite)
         self.center_stack.addWidget(self.viewport)
         self.center_stack.addWidget(self.sprite_editor)
         splitter.addWidget(self.center_stack)
@@ -220,7 +213,9 @@ class MainWindow(QMainWindow):
 
         for label, path in (
             ("Palettes", self.project.palettes_dir()),
+            ("Tiles", self.project.tiles_dir()),
             ("Scenes", self.project.scenes_dir()),
+            ("Objects", self.project.objects_dir()),
             ("Sprites", self.project.sprites_dir()),
             ("Assets", self.project.assets_dir()),
             ("Scripts", self.project.scripts_dir()),
@@ -344,7 +339,7 @@ class MainWindow(QMainWindow):
         if self._active_sprite_path:
             self.field_name.setText(self._active_sprite_path.name)
         else:
-            self.field_name.setPlaceholderText("No sprite open — use Tabs → New/Open Sprite")
+            self.field_name.setPlaceholderText("No sprite open — use New / Open Sprite above")
 
     def _show_sprite(self, path: Path) -> None:
         self.sprite_editor.open_sprite(path)

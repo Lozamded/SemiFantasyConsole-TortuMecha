@@ -10,6 +10,7 @@ from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QImage, QMouseEvent, QPainter, QWheelEvent
 from PyQt6.QtWidgets import (
     QComboBox,
+    QDoubleSpinBox,
     QFormLayout,
     QGridLayout,
     QGroupBox,
@@ -24,6 +25,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from tortuengine.image import load_image
 from tortuengine.constants import SPRITE_BLOCK
 from tortuengine.palette import (
     PAINTABLE_INDICES,
@@ -32,7 +34,7 @@ from tortuengine.palette import (
     load_palette,
     palette_path,
 )
-from tortuengine.sprite import Sprite, load_sprite, save_sprite
+from tortuengine.sprite import Sprite, load_sprite, reference_sidecar_path, save_sprite
 
 
 class Tool(str, Enum):
@@ -58,6 +60,7 @@ class SpriteCanvas(QWidget):
         self.zoom = 16
         self.reference: pygame.Surface | None = None
         self.reference_opacity = 128
+        self.show_grid = True
         self._drawing = False
         self._frame: QImage | None = None
 
@@ -77,6 +80,10 @@ class SpriteCanvas(QWidget):
 
     def set_reference_opacity(self, value: int) -> None:
         self.reference_opacity = max(0, min(255, value))
+        self._refresh()
+
+    def set_show_grid(self, visible: bool) -> None:
+        self.show_grid = visible
         self._refresh()
 
     def set_tool(self, tool: Tool) -> None:
@@ -118,10 +125,11 @@ class SpriteCanvas(QWidget):
                 rgb = self.palette[index]
                 composite.set_at((x, y), (*rgb, 255))
 
-        for x in range(0, w + 1, SPRITE_BLOCK):
-            pygame.draw.line(composite, (60, 60, 80, 180), (x, 0), (x, h))
-        for y in range(0, h + 1, SPRITE_BLOCK):
-            pygame.draw.line(composite, (60, 60, 80, 180), (0, y), (w, y))
+        if self.show_grid:
+            for x in range(0, w + 1, SPRITE_BLOCK):
+                pygame.draw.line(composite, (60, 60, 80, 180), (x, 0), (x, h))
+            for y in range(0, h + 1, SPRITE_BLOCK):
+                pygame.draw.line(composite, (60, 60, 80, 180), (0, y), (w, y))
 
         data = pygame.image.tobytes(composite, "RGBA")
         self._frame = QImage(data, w, h, w * 4, QImage.Format.Format_RGBA8888)
@@ -204,7 +212,8 @@ class SpriteEditorWidget(QWidget):
     """Sprite editor panel: canvas, tools, palette swatches, reference import."""
 
     saved = pyqtSignal(Path)
-    closed = pyqtSignal()
+    new_sprite_requested = pyqtSignal()
+    open_sprite_requested = pyqtSignal()
 
     def __init__(self, project_root: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -213,6 +222,10 @@ class SpriteEditorWidget(QWidget):
         self.sprite: Sprite | None = None
         self._palette_colors: list[tuple[int, int, int]] = []
         self._dirty = False
+        self._playing = False
+
+        self._playback_timer = QTimer(self)
+        self._playback_timer.timeout.connect(self._on_playback_tick)
 
         self.canvas = SpriteCanvas()
         self.canvas.changed.connect(self._mark_dirty)
@@ -236,13 +249,57 @@ class SpriteEditorWidget(QWidget):
         self.btn_eraser.clicked.connect(lambda: self._set_tool(Tool.ERASER))
         self.btn_dropper.clicked.connect(lambda: self._set_tool(Tool.EYEDROPPER))
 
+        self.btn_grid = QPushButton("Grid")
+        self.btn_grid.setCheckable(True)
+        self.btn_grid.setChecked(True)
+        self.btn_grid.setToolTip("Show 4×4 block grid")
+        self.btn_grid.toggled.connect(self.canvas.set_show_grid)
+
         self.btn_save = QPushButton("Save")
         self.btn_save.clicked.connect(self.save)
+        self.btn_new = QPushButton("New Sprite…")
+        self.btn_new.clicked.connect(self.new_sprite_requested.emit)
+        self.btn_open = QPushButton("Open Sprite…")
+        self.btn_open.clicked.connect(self.open_sprite_requested.emit)
         self.btn_load_ref = QPushButton("Load Reference…")
         self.btn_load_ref.clicked.connect(self._load_reference)
         self.btn_convert = QPushButton("Convert to Current Palette")
         self.btn_convert.clicked.connect(self._convert_reference)
         self.btn_convert.setEnabled(False)
+
+        self.frame_spin = QSpinBox()
+        self.frame_spin.setMinimum(1)
+        self.frame_spin.valueChanged.connect(self._on_frame_spin_changed)
+        self.frame_label = QLabel("1 / 1")
+        self.btn_frame_prev = QPushButton("◀")
+        self.btn_frame_prev.setFixedWidth(32)
+        self.btn_frame_prev.clicked.connect(self._prev_frame)
+        self.btn_frame_next = QPushButton("▶")
+        self.btn_frame_next.setFixedWidth(32)
+        self.btn_frame_next.clicked.connect(self._next_frame)
+        self.btn_frame_add = QPushButton("+ Frame")
+        self.btn_frame_add.clicked.connect(self._add_frame)
+        self.btn_frame_dup = QPushButton("Duplicate")
+        self.btn_frame_dup.clicked.connect(self._duplicate_frame)
+        self.btn_frame_del = QPushButton("Delete")
+        self.btn_frame_del.clicked.connect(self._delete_frame)
+
+        self.fps_spin = QSpinBox()
+        self.fps_spin.setRange(1, 60)
+        self.fps_spin.setValue(8)
+        self.fps_spin.valueChanged.connect(self._on_fps_changed)
+
+        self.btn_playback = QPushButton("Play")
+        self.btn_playback.setCheckable(True)
+        self.btn_playback.clicked.connect(self._toggle_playback)
+
+        self.speed_spin = QDoubleSpinBox()
+        self.speed_spin.setRange(0.25, 4.0)
+        self.speed_spin.setSingleStep(0.25)
+        self.speed_spin.setValue(1.0)
+        self.speed_spin.setSuffix("×")
+        self.speed_spin.setToolTip("Playback speed multiplier")
+        self.speed_spin.valueChanged.connect(self._update_playback_interval)
 
         self.ref_opacity = QSlider(Qt.Orientation.Horizontal)
         self.ref_opacity.setRange(0, 255)
@@ -260,8 +317,36 @@ class SpriteEditorWidget(QWidget):
         self._reload_palette_names()
 
     def _build_layout(self) -> None:
-        root = QHBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        file_row = QHBoxLayout()
+        file_row.addWidget(self.btn_new)
+        file_row.addWidget(self.btn_open)
+        file_row.addWidget(self.btn_save)
+        file_row.addStretch()
+        outer.addLayout(file_row)
+
+        frame_row = QHBoxLayout()
+        frame_row.addWidget(QLabel("Frame:"))
+        frame_row.addWidget(self.btn_frame_prev)
+        frame_row.addWidget(self.frame_spin)
+        frame_row.addWidget(self.frame_label)
+        frame_row.addWidget(self.btn_frame_next)
+        frame_row.addWidget(self.btn_frame_add)
+        frame_row.addWidget(self.btn_frame_dup)
+        frame_row.addWidget(self.btn_frame_del)
+        frame_row.addWidget(QLabel("  "))
+        frame_row.addWidget(self.btn_playback)
+        frame_row.addWidget(QLabel("Speed:"))
+        frame_row.addWidget(self.speed_spin)
+        frame_row.addStretch()
+        frame_row.addWidget(QLabel("FPS:"))
+        frame_row.addWidget(self.fps_spin)
+        outer.addLayout(frame_row)
+
+        root = QHBoxLayout()
+        outer.addLayout(root, stretch=1)
 
         root.addWidget(self.canvas, stretch=1)
 
@@ -283,9 +368,9 @@ class SpriteEditorWidget(QWidget):
         tools.addWidget(self.btn_pencil)
         tools.addWidget(self.btn_eraser)
         tools.addWidget(self.btn_dropper)
+        tools.addWidget(self.btn_grid)
         side.addLayout(tools)
 
-        side.addWidget(self.btn_save)
         side.addWidget(self.btn_load_ref)
         side.addWidget(self.btn_convert)
         side.addWidget(QLabel("Reference opacity:"))
@@ -330,11 +415,11 @@ class SpriteEditorWidget(QWidget):
         new_w, new_h = self.blocks_w.value(), self.blocks_h.value()
         if new_w == self.sprite.blocks_w and new_h == self.sprite.blocks_h:
             return
-        if any(i != TRANSPARENT_INDEX for i in self.sprite.pixels):
+        if any(self.sprite.frame_has_pixels(i) for i in range(self.sprite.frame_count)):
             reply = QMessageBox.question(
                 self,
                 "Resize Sprite",
-                "Resize canvas? Pixels outside the new area will be cropped.",
+                "Resize canvas? Pixels outside the new area will be cropped on all frames.",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply != QMessageBox.StandardButton.Yes:
@@ -352,7 +437,7 @@ class SpriteEditorWidget(QWidget):
     def _on_palette_changed(self, name: str) -> None:
         if not self.sprite or not name:
             return
-        if self.sprite.palette != name and any(i != TRANSPARENT_INDEX for i in self.sprite.pixels):
+        if self.sprite.palette != name and self.sprite.any_frame_has_pixels():
             reply = QMessageBox.question(
                 self,
                 "Change Palette",
@@ -398,12 +483,151 @@ class SpriteEditorWidget(QWidget):
         self.canvas.set_color_index(index)
         self._set_tool(Tool.PENCIL)
 
+    def _sync_frame_controls(self) -> None:
+        if not self.sprite:
+            self.frame_spin.setMaximum(1)
+            self.frame_spin.setValue(1)
+            self.frame_label.setText("1 / 1")
+            self.btn_playback.setEnabled(False)
+            return
+
+        count = self.sprite.frame_count
+        current = self.sprite.current_frame + 1
+        self.frame_spin.blockSignals(True)
+        self.frame_spin.setMaximum(count)
+        self.frame_spin.setValue(current)
+        self.frame_spin.blockSignals(False)
+        self.frame_label.setText(f"{current} / {count}")
+        self.btn_frame_del.setEnabled(count > 1)
+        self.btn_playback.setEnabled(count > 1)
+
+    def _playback_interval_ms(self) -> int:
+        fps = self.fps_spin.value() if self.sprite else 8
+        speed = self.speed_spin.value()
+        interval = int(1000 / max(fps * speed, 1))
+        return max(interval, 16)
+
+    def _update_playback_interval(self) -> None:
+        if self._playing:
+            self._playback_timer.setInterval(self._playback_interval_ms())
+
+    def _toggle_playback(self) -> None:
+        if self.btn_playback.isChecked():
+            self._start_playback()
+        else:
+            self._stop_playback()
+
+    def _start_playback(self) -> None:
+        if not self.sprite or self.sprite.frame_count <= 1:
+            self.btn_playback.setChecked(False)
+            return
+        self._save_reference_sidecar()
+        self.canvas.set_reference(None)
+        self._playing = True
+        self.btn_playback.setText("Stop")
+        self._playback_timer.start(self._playback_interval_ms())
+
+    def _stop_playback(self) -> None:
+        if not self._playing and not self.btn_playback.isChecked():
+            return
+        self._playing = False
+        self._playback_timer.stop()
+        self.btn_playback.blockSignals(True)
+        self.btn_playback.setChecked(False)
+        self.btn_playback.setText("Play")
+        self.btn_playback.blockSignals(False)
+        self._try_load_reference_sidecar()
+
+    def _on_playback_tick(self) -> None:
+        if not self.sprite or self.sprite.frame_count <= 1:
+            self._stop_playback()
+            return
+        next_idx = (self.sprite.current_frame + 1) % self.sprite.frame_count
+        self.sprite.select_frame(next_idx)
+        self._sync_frame_controls()
+        self._refresh_canvas()
+
+    def _select_frame(self, index: int) -> None:
+        if not self.sprite:
+            return
+        self._stop_playback()
+        self._save_reference_sidecar()
+        self.sprite.select_frame(index)
+        self._sync_frame_controls()
+        self._try_load_reference_sidecar()
+        self._refresh_canvas()
+
+    def _on_frame_spin_changed(self, value: int) -> None:
+        if not self.sprite:
+            return
+        index = value - 1
+        if index != self.sprite.current_frame:
+            self._select_frame(index)
+
+    def _prev_frame(self) -> None:
+        if not self.sprite or self.sprite.current_frame <= 0:
+            return
+        self._select_frame(self.sprite.current_frame - 1)
+
+    def _next_frame(self) -> None:
+        if not self.sprite or self.sprite.current_frame >= self.sprite.frame_count - 1:
+            return
+        self._select_frame(self.sprite.current_frame + 1)
+
+    def _add_frame(self) -> None:
+        if not self.sprite:
+            return
+        self._save_reference_sidecar()
+        self.sprite.add_frame(copy_current=False)
+        self.canvas.set_reference(None)
+        self.btn_convert.setEnabled(False)
+        self._dirty = True
+        self._sync_frame_controls()
+        self._refresh_canvas()
+
+    def _duplicate_frame(self) -> None:
+        if not self.sprite:
+            return
+        self._save_reference_sidecar()
+        self.sprite.duplicate_frame()
+        self.canvas.set_reference(None)
+        self.btn_convert.setEnabled(False)
+        self._dirty = True
+        self._sync_frame_controls()
+        self._refresh_canvas()
+
+    def _delete_frame(self) -> None:
+        if not self.sprite or self.sprite.frame_count <= 1:
+            return
+        if self.sprite.frame_has_pixels():
+            reply = QMessageBox.question(
+                self,
+                "Delete Frame",
+                f"Delete frame {self.sprite.current_frame + 1}?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+        self._save_reference_sidecar()
+        self.sprite.delete_frame()
+        self._dirty = True
+        self._sync_frame_controls()
+        self._try_load_reference_sidecar()
+        self._refresh_canvas()
+
+    def _on_fps_changed(self, value: int) -> None:
+        if self.sprite:
+            self.sprite.fps = value
+            self._dirty = True
+        self._update_playback_interval()
+
     def _refresh_canvas(self) -> None:
         if self.sprite:
             self.canvas.set_sprite(self.sprite, self._palette_colors)
             self._update_size_label()
 
     def open_sprite(self, path: Path) -> None:
+        self._stop_playback()
         self.file_path = path.resolve()
         self.sprite = load_sprite(self.file_path)
         self._dirty = False
@@ -417,11 +641,16 @@ class SpriteEditorWidget(QWidget):
 
         self._reload_palette_names()
         self.palette_combo.setCurrentText(self.sprite.palette)
+        self.fps_spin.blockSignals(True)
+        self.fps_spin.setValue(self.sprite.fps)
+        self.fps_spin.blockSignals(False)
         self._load_palette_colors()
+        self._sync_frame_controls()
         self._try_load_reference_sidecar()
         self._refresh_canvas()
 
     def new_sprite(self, path: Path, blocks_w: int, blocks_h: int, palette: str) -> None:
+        self._stop_playback()
         self.file_path = path.resolve()
         self.sprite = Sprite.create(blocks_w, blocks_h, palette)
         self._dirty = True
@@ -437,7 +666,11 @@ class SpriteEditorWidget(QWidget):
 
         self._reload_palette_names()
         self.palette_combo.setCurrentText(palette)
+        self.fps_spin.blockSignals(True)
+        self.fps_spin.setValue(8)
+        self.fps_spin.blockSignals(False)
         self._load_palette_colors()
+        self._sync_frame_controls()
         self._refresh_canvas()
 
     def save(self) -> None:
@@ -447,15 +680,26 @@ class SpriteEditorWidget(QWidget):
         self._dirty = False
         self.saved.emit(self.file_path)
 
-    def _reference_sidecar(self) -> Path | None:
+    def _reference_sidecar(self, frame_index: int | None = None) -> Path | None:
         if not self.file_path:
             return None
-        return self.file_path.with_suffix(".ref.png")
+        idx = frame_index if frame_index is not None else (self.sprite.current_frame if self.sprite else 0)
+        return reference_sidecar_path(self.file_path, idx)
+
+    def _save_reference_sidecar(self) -> None:
+        if not self.file_path or self.canvas.reference is None or not self.sprite:
+            return
+        sidecar = self.file_path.with_name(
+            f"{self.file_path.stem}.ref{self.sprite.current_frame}.png"
+        )
+        pygame.image.save(self.canvas.reference, str(sidecar))
 
     def _try_load_reference_sidecar(self) -> None:
-        sidecar = self._reference_sidecar()
-        if sidecar and sidecar.is_file():
-            surface = pygame.image.load(str(sidecar)).convert_alpha()
+        if not self.file_path or not self.sprite:
+            return
+        sidecar_path = reference_sidecar_path(self.file_path, self.sprite.current_frame)
+        if sidecar_path.is_file():
+            surface = load_image(sidecar_path)
             self.canvas.set_reference(surface)
             self.btn_convert.setEnabled(True)
         else:
@@ -473,18 +717,22 @@ class SpriteEditorWidget(QWidget):
         )
         if not path:
             return
-        surface = pygame.image.load(path).convert_alpha()
+        surface = load_image(path)
         self.canvas.set_reference(surface)
         self.btn_convert.setEnabled(True)
 
-        if self.file_path:
-            sidecar = self._reference_sidecar()
+        if self.file_path and self.sprite:
+            sidecar = self.file_path.with_name(
+                f"{self.file_path.stem}.ref{self.sprite.current_frame}.png"
+            )
             pygame.image.save(surface, str(sidecar))
+            if self.sprite.current_frame == 0:
+                pygame.image.save(surface, str(self.file_path.with_suffix(".ref.png")))
 
     def _convert_reference(self) -> None:
         if not self.sprite or self.canvas.reference is None:
             return
-        if any(i != TRANSPARENT_INDEX for i in self.sprite.pixels):
+        if self.sprite.frame_has_pixels():
             reply = QMessageBox.question(
                 self,
                 "Convert to Palette",

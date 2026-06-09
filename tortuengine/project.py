@@ -33,6 +33,12 @@ class Project:
     def sprites_dir(self) -> Path:
         return self.root / "assets" / "sprites"
 
+    def tiles_dir(self) -> Path:
+        return self.root / "assets" / "tiles"
+
+    def objects_dir(self) -> Path:
+        return self.root / "assets" / "objects"
+
 
 def load_project(path: Path) -> Project:
     if path.is_file() and path.name == "tortu.project":
@@ -68,7 +74,15 @@ from tortuengine.palette import default_palette_colors, save_palette
 
 def create_project(root: Path, name: str = "Untitled") -> Project:
     root.mkdir(parents=True, exist_ok=True)
-    for sub in ("palettes", "scenes", "assets/sprites", "assets/tiles", "assets/audio", "scripts"):
+    for sub in (
+        "palettes",
+        "scenes",
+        "assets/sprites",
+        "assets/tiles",
+        "assets/objects",
+        "assets/audio",
+        "scripts",
+    ):
         (root / sub).mkdir(parents=True, exist_ok=True)
 
     default_pal = root / "palettes" / "default.pal"
