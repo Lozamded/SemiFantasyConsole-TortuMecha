@@ -1,0 +1,8 @@
+# TortuPlayer / tortuengine — rendering, input, audio
+pygame>=2.6.0
+
+# TortuStudio — editor chrome (viewport stays Pygame)
+PyQt6>=6.6.0
+
+# Reload scripts when edited in Cursor / VSCode / etc.
+watchdog>=4.0.0

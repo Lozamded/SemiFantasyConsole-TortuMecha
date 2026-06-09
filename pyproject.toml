@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "semi-fantasy-console"
+version = "0.1.0"
+description = "Semi-Fantasy Console — TortuEngine, TortuPlayer, TortuStudio"
+readme = "readme.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pygame>=2.6.0",
+    "PyQt6>=6.6.0",
+    "watchdog>=4.0.0",
+]
+
+[project.scripts]
+tortuplayer = "tortuplayer.__main__:main"
+tortustudio = "tortustudio.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tortuengine*", "tortuplayer*", "tortustudio*"]
