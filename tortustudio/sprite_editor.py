@@ -10,6 +10,7 @@ from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QImage, QMouseEvent, QPainter, QWheelEvent
 from PyQt6.QtWidgets import (
     QComboBox,
+    QCheckBox,
     QDoubleSpinBox,
     QFormLayout,
     QGridLayout,
@@ -235,6 +236,13 @@ class SpriteEditorWidget(QWidget):
         self.blocks_h = QSpinBox()
         self.blocks_h.setRange(1, 32)
         self.pixel_size_label = QLabel()
+
+        self.show_4x4_grid = QCheckBox("Show 4×4 Grid")
+        self.show_4x4_grid.setChecked(True)
+        self.show_4x4_grid.setToolTip("Show 4×4 block grid")
+        self.show_4x4_grid.toggled.connect(self.canvas.set_show_grid)
+
+
         self.palette_combo = QComboBox()
         self.palette_combo.currentTextChanged.connect(self._on_palette_changed)
 
@@ -248,12 +256,6 @@ class SpriteEditorWidget(QWidget):
         self.btn_pencil.clicked.connect(lambda: self._set_tool(Tool.PENCIL))
         self.btn_eraser.clicked.connect(lambda: self._set_tool(Tool.ERASER))
         self.btn_dropper.clicked.connect(lambda: self._set_tool(Tool.EYEDROPPER))
-
-        self.btn_grid = QPushButton("Grid")
-        self.btn_grid.setCheckable(True)
-        self.btn_grid.setChecked(True)
-        self.btn_grid.setToolTip("Show 4×4 block grid")
-        self.btn_grid.toggled.connect(self.canvas.set_show_grid)
 
         self.btn_save = QPushButton("Save")
         self.btn_save.clicked.connect(self.save)
@@ -359,6 +361,7 @@ class SpriteEditorWidget(QWidget):
         form.addRow("Blocks tall:", self.blocks_h)
         form.addRow("Pixel size:", self.pixel_size_label)
         form.addRow("Palette:", self.palette_combo)
+        form.addRow("Show 4×4 Grid:", self.show_4x4_grid)
         side.addLayout(form)
 
         self.blocks_w.valueChanged.connect(self._apply_resize)
@@ -368,7 +371,6 @@ class SpriteEditorWidget(QWidget):
         tools.addWidget(self.btn_pencil)
         tools.addWidget(self.btn_eraser)
         tools.addWidget(self.btn_dropper)
-        tools.addWidget(self.btn_grid)
         side.addLayout(tools)
 
         side.addWidget(self.btn_load_ref)
