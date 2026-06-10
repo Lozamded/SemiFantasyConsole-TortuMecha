@@ -31,8 +31,11 @@ from watchdog.observers import Observer
 from tortuengine.cart import load_game_module, reload_game_module
 from tortuengine.project import Project, create_project, load_project
 from tortuengine.sprite import save_sprite
+from tortuengine.tileset import save_tileset
 from tortustudio.new_sprite_dialog import NewSpriteDialog
+from tortustudio.new_tileset_dialog import NewTilesetDialog
 from tortustudio.sprite_editor import SpriteEditorWidget
+from tortustudio.tileset_editor import TilesetEditorWidget
 from tortustudio.viewport import ViewportWidget
 from tortustudio.workspace_tabs import TabKind, TabRef, WorkspaceTabs
 
@@ -52,6 +55,7 @@ class _ScriptReloadHandler(FileSystemEventHandler):
 class MainWindow(QMainWindow):
     VIEWPORT = 0
     SPRITE_EDITOR = 1
+    TILESET_EDITOR = 2
 
     def __init__(self, project: Project | None = None) -> None:
         super().__init__()
@@ -61,6 +65,7 @@ class MainWindow(QMainWindow):
         self._pending_reload = False
         self._switching_tabs = False
         self._active_sprite_path: Path | None = None
+        self._active_tileset_path: Path | None = None
 
         self.setWindowTitle("TortuStudio")
         self.resize(1280, 720)
@@ -98,6 +103,26 @@ class MainWindow(QMainWindow):
         sprite_tab_action.setShortcut("Ctrl+2")
         sprite_tab_action.triggered.connect(self._activate_sprite_editor_tab)
         tabs_menu.addAction(sprite_tab_action)
+
+        tileset_tab_action = QAction("&Tileset Editor", self)
+        tileset_tab_action.setShortcut("Ctrl+3")
+        tileset_tab_action.triggered.connect(self._activate_tileset_editor_tab)
+        tabs_menu.addAction(tileset_tab_action)
+
+        background_tab_action = QAction("&background Editor", self)
+        background_tab_action.setShortcut("Ctrl+3")
+        background_tab_action.triggered.connect(self._activate_background_editor_tab)
+        tabs_menu.addAction(background_tab_action)
+
+        font_tab_action = QAction("&Font Editor", self)
+        font_tab_action.setShortcut("Ctrl+4")
+        font_tab_action.triggered.connect(self._activate_font_editor_tab)
+        tabs_menu.addAction(font_tab_action)
+
+        object_tab_action = QAction("&Object Editor", self)
+        object_tab_action.setShortcut("Ctrl+5")
+        object_tab_action.triggered.connect(self._activate_object_editor_tab)
+        tabs_menu.addAction(object_tab_action)
 
         build_menu = menu.addMenu("&Build")
         export_action = QAction("Export .tortucart…", self)
@@ -149,8 +174,13 @@ class MainWindow(QMainWindow):
         self.sprite_editor.saved.connect(self._on_sprite_saved)
         self.sprite_editor.new_sprite_requested.connect(self._action_new_sprite)
         self.sprite_editor.open_sprite_requested.connect(self._action_open_sprite)
+        self.tileset_editor = TilesetEditorWidget(Path("."))
+        self.tileset_editor.saved.connect(self._on_tileset_saved)
+        self.tileset_editor.new_tileset_requested.connect(self._action_new_tileset)
+        self.tileset_editor.open_tileset_requested.connect(self._action_open_tileset)
         self.center_stack.addWidget(self.viewport)
         self.center_stack.addWidget(self.sprite_editor)
+        self.center_stack.addWidget(self.tileset_editor)
         splitter.addWidget(self.center_stack)
 
         inspector = QWidget()
@@ -192,7 +222,9 @@ class MainWindow(QMainWindow):
     def open_project(self, project: Project) -> None:
         self.project = project
         self.sprite_editor.project_root = project.root
+        self.tileset_editor.project_root = project.root
         self._active_sprite_path = None
+        self._active_tileset_path = None
         self.workspace_tabs.reset()
         self.setWindowTitle(f"TortuStudio — {project.name}")
         self._populate_tree()
@@ -306,7 +338,7 @@ class MainWindow(QMainWindow):
             self.log("Validate: project structure looks OK.")
 
     def _activate_preview_tab(self) -> None:
-        if not self._confirm_discard_sprite_changes():
+        if not self._confirm_discard_editor_changes():
             return
         self._switching_tabs = True
         self.workspace_tabs.select_preview()
@@ -314,20 +346,63 @@ class MainWindow(QMainWindow):
         self._show_preview()
 
     def _activate_sprite_editor_tab(self) -> None:
-        if not self._confirm_discard_sprite_changes():
+        if not self._confirm_discard_editor_changes():
             return
         self._switching_tabs = True
         self.workspace_tabs.select_sprite_editor()
         self._switching_tabs = False
         self._show_sprite_editor()
 
+    def _activate_tileset_editor_tab(self) -> None:
+        if not self._confirm_discard_editor_changes():
+            return
+        self._switching_tabs = True
+        self.workspace_tabs.select_tileset_editor()
+        self._switching_tabs = False
+        self._show_tileset_editor()
+
+    def _activate_background_editor_tab(self) -> None:
+        return
+        if not self._confirm_discard_editor_changes():
+            return
+        self._switching_tabs = True
+        self.workspace_tabs.select_background_editor()
+        self._switching_tabs = False
+        self._show_background_editor()
+    
+    def _activate_object_editor_tab(self) -> None:
+        return
+        if not self._confirm_discard_editor_changes():
+            return
+        self._switching_tabs = True
+        self.workspace_tabs.select_object_editor()
+        self._switching_tabs = False
+        self._show_object_editor()
+
+    def _activate_font_editor_tab(self) -> None:
+        return
+        if not self._confirm_discard_editor_changes():
+            return
+        self._switching_tabs = True
+        self.workspace_tabs.select_font_editor()
+        self._switching_tabs = False
+        self._show_font_editor()
+
     def _open_sprite(self, path: Path) -> None:
-        if not self._confirm_discard_sprite_changes():
+        if not self._confirm_discard_editor_changes():
             return
         self._switching_tabs = True
         self.workspace_tabs.select_sprite_editor()
         self._switching_tabs = False
         self._show_sprite(path)
+
+    def _open_tileset(self, path: Path) -> None:
+        if not self._confirm_discard_editor_changes():
+            return
+        self._switching_tabs = True
+        self.workspace_tabs.select_tileset_editor()
+        self._switching_tabs = False
+        self._show_tileset(path)
 
     def _show_preview(self) -> None:
         self.viewport.stop_playback()
@@ -347,20 +422,33 @@ class MainWindow(QMainWindow):
         self.center_stack.setCurrentIndex(self.SPRITE_EDITOR)
         self.field_name.setText(path.name)
 
+    def _show_tileset_editor(self) -> None:
+        self.center_stack.setCurrentIndex(self.TILESET_EDITOR)
+        if self._active_tileset_path:
+            self.field_name.setText(self._active_tileset_path.name)
+        else:
+            self.field_name.setPlaceholderText("No tileset open — use New / Open Tileset above")
+
+    def _show_tileset(self, path: Path) -> None:
+        self.tileset_editor.open_tileset(path)
+        self._active_tileset_path = path.resolve()
+        self.center_stack.setCurrentIndex(self.TILESET_EDITOR)
+        self.field_name.setText(path.name)
+
     def _on_workspace_tab_selected(self, ref: TabRef) -> None:
         if self._switching_tabs:
             return
         if ref.kind == TabKind.PREVIEW:
-            if not self._confirm_discard_sprite_changes():
+            if not self._confirm_discard_editor_changes():
                 self._switching_tabs = True
-                self.workspace_tabs.select_sprite_editor()
+                self._restore_editor_tab()
                 self._switching_tabs = False
                 return
             self._show_preview()
             return
 
         if ref.kind == TabKind.SPRITE_EDITOR:
-            if not self._confirm_discard_sprite_changes():
+            if not self._confirm_discard_editor_changes():
                 self._switching_tabs = True
                 self.workspace_tabs.select_preview()
                 self._switching_tabs = False
@@ -369,25 +457,53 @@ class MainWindow(QMainWindow):
                 self._show_sprite(self._active_sprite_path)
             else:
                 self._show_sprite_editor()
+            return
+
+        if ref.kind == TabKind.TILESET_EDITOR:
+            if not self._confirm_discard_editor_changes():
+                self._switching_tabs = True
+                self._restore_editor_tab()
+                self._switching_tabs = False
+                return
+            if self._active_tileset_path and self._active_tileset_path.is_file():
+                self._show_tileset(self._active_tileset_path)
+            else:
+                self._show_tileset_editor()
+
+    def _restore_editor_tab(self) -> None:
+        index = self.center_stack.currentIndex()
+        if index == self.SPRITE_EDITOR:
+            self.workspace_tabs.select_sprite_editor()
+        elif index == self.TILESET_EDITOR:
+            self.workspace_tabs.select_tileset_editor()
+        else:
+            self.workspace_tabs.select_preview()
+
+    def _confirm_discard_editor_changes(self) -> bool:
+        index = self.center_stack.currentIndex()
+        if index == self.SPRITE_EDITOR and self.sprite_editor.has_unsaved_changes():
+            return self._confirm_discard_unsaved("sprite", self.sprite_editor.save)
+        if index == self.TILESET_EDITOR and self.tileset_editor.has_unsaved_changes():
+            return self._confirm_discard_unsaved("tileset", self.tileset_editor.save)
+        return True
+
+    def _confirm_discard_unsaved(self, label: str, save_fn) -> bool:
+        reply = QMessageBox.question(
+            self,
+            f"Unsaved {label.title()}",
+            f"Save changes to the {label} before leaving?",
+            QMessageBox.StandardButton.Save
+            | QMessageBox.StandardButton.Discard
+            | QMessageBox.StandardButton.Cancel,
+        )
+        if reply == QMessageBox.StandardButton.Save:
+            save_fn()
+        elif reply == QMessageBox.StandardButton.Cancel:
+            return False
+        return True
 
     def _confirm_discard_sprite_changes(self) -> bool:
-        if (
-            self.center_stack.currentIndex() == self.SPRITE_EDITOR
-            and self.sprite_editor.has_unsaved_changes()
-        ):
-            reply = QMessageBox.question(
-                self,
-                "Unsaved Sprite",
-                "Save changes to the sprite before leaving?",
-                QMessageBox.StandardButton.Save
-                | QMessageBox.StandardButton.Discard
-                | QMessageBox.StandardButton.Cancel,
-            )
-            if reply == QMessageBox.StandardButton.Save:
-                self.sprite_editor.save()
-            elif reply == QMessageBox.StandardButton.Cancel:
-                return False
-        return True
+        return self._confirm_discard_editor_changes()
 
     def _on_tree_double_click(self, item: QTreeWidgetItem, _column: int) -> None:
         if not self.project:
@@ -396,6 +512,8 @@ class MainWindow(QMainWindow):
         path = self.project.root / rel
         if path.suffix == ".tortusprite":
             self._open_sprite(path)
+        elif path.suffix == ".tortutileset":
+            self._open_tileset(path)
         elif path.suffix == ".pal":
             self.log(f"Edit palette in external editor: {path}")
             cmd = self.project.editor_command.format(file=path, line=1)
@@ -405,8 +523,12 @@ class MainWindow(QMainWindow):
         self.log(f"Saved {path.relative_to(self.project.root)}")
         self._populate_tree()
 
+    def _on_tileset_saved(self, path: Path) -> None:
+        self.log(f"Saved {path.relative_to(self.project.root)}")
+        self._populate_tree()
+
     def _action_open_project(self) -> None:
-        if not self._confirm_discard_sprite_changes():
+        if not self._confirm_discard_editor_changes():
             return
         path = QFileDialog.getExistingDirectory(self, "Open Project Folder")
         if not path:
@@ -419,7 +541,7 @@ class MainWindow(QMainWindow):
         self.open_project(project)
 
     def _action_new_project(self) -> None:
-        if not self._confirm_discard_sprite_changes():
+        if not self._confirm_discard_editor_changes():
             return
         path = QFileDialog.getExistingDirectory(self, "Create Project In…")
         if not path:
@@ -446,7 +568,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "New Sprite", f"{sprite_path.name} already exists.")
             return
 
-        if not self._confirm_discard_sprite_changes():
+        if not self._confirm_discard_editor_changes():
             return
 
         self.sprite_editor.new_sprite(
@@ -474,6 +596,48 @@ class MainWindow(QMainWindow):
         if path:
             self._open_sprite(Path(path))
 
+    def _action_new_tileset(self) -> None:
+        if not self.project:
+            QMessageBox.information(self, "New Tileset", "Open a project first.")
+            return
+
+        dialog = NewTilesetDialog(self.project.root, self)
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+
+        name = dialog.tileset_name or "tileset"
+        tileset_path = self.project.tiles_dir() / f"{name}.tortutileset"
+        if tileset_path.exists():
+            QMessageBox.warning(self, "New Tileset", f"{tileset_path.name} already exists.")
+            return
+
+        if not self._confirm_discard_editor_changes():
+            return
+
+        self.tileset_editor.new_tileset(
+            tileset_path,
+            dialog.palette_name,
+            tile_size=dialog.tile_size.value(),
+        )
+        save_tileset(self.tileset_editor.tileset, tileset_path)  # type: ignore[arg-type]
+        self.tileset_editor._dirty = False
+        self._populate_tree()
+        self._open_tileset(tileset_path)
+        self.log(f"Created {tileset_path.relative_to(self.project.root)}")
+
+    def _action_open_tileset(self) -> None:
+        if not self.project:
+            QMessageBox.information(self, "Open Tileset", "Open a project first.")
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Tileset",
+            str(self.project.tiles_dir()),
+            "Tortu Tilesets (*.tortutileset)",
+        )
+        if path:
+            self._open_tileset(Path(path))
+
     def _open_entry_in_editor(self) -> None:
         if not self.project:
             return
@@ -489,7 +653,7 @@ class MainWindow(QMainWindow):
             self.log(f"Editor launch failed: {exc}")
 
     def closeEvent(self, event) -> None:  # noqa: N802
-        if not self._confirm_discard_sprite_changes():
+        if not self._confirm_discard_editor_changes():
             event.ignore()
             return
         self._stop_watcher()

@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import QHBoxLayout, QTabBar, QWidget
 class TabKind(str, Enum):
     PREVIEW = "preview"
     SPRITE_EDITOR = "sprite_editor"
+    TILESET_EDITOR = "tileset_editor"
 
 
 @dataclass
@@ -26,6 +27,7 @@ class WorkspaceTabs(QWidget):
 
     PREVIEW_LABEL = "Game Preview"
     SPRITE_EDITOR_LABEL = "Sprite Editor"
+    TILESET_EDITOR_LABEL = "Tileset Editor"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -43,6 +45,7 @@ class WorkspaceTabs(QWidget):
 
         self._add_preview_tab()
         self._add_sprite_editor_tab()
+        self._add_tileset_editor_tab()
 
     @property
     def preview_index(self) -> int:
@@ -51,6 +54,10 @@ class WorkspaceTabs(QWidget):
     @property
     def sprite_editor_index(self) -> int:
         return 1
+
+    @property
+    def tileset_editor_index(self) -> int:
+        return 2
 
     @property
     def current_ref(self) -> TabRef | None:
@@ -67,18 +74,26 @@ class WorkspaceTabs(QWidget):
         self.tab_bar.addTab(self.SPRITE_EDITOR_LABEL)
         self._refs.append(TabRef(kind=TabKind.SPRITE_EDITOR))
 
+    def _add_tileset_editor_tab(self) -> None:
+        self.tab_bar.addTab(self.TILESET_EDITOR_LABEL)
+        self._refs.append(TabRef(kind=TabKind.TILESET_EDITOR))
+
     def reset(self) -> None:
         while self.tab_bar.count() > 0:
             self.tab_bar.removeTab(0)
         self._refs.clear()
         self._add_preview_tab()
         self._add_sprite_editor_tab()
+        self._add_tileset_editor_tab()
 
     def select_preview(self) -> None:
         self.tab_bar.setCurrentIndex(self.preview_index)
 
     def select_sprite_editor(self) -> None:
         self.tab_bar.setCurrentIndex(self.sprite_editor_index)
+
+    def select_tileset_editor(self) -> None:
+        self.tab_bar.setCurrentIndex(self.tileset_editor_index)
 
     def _on_current_changed(self, index: int) -> None:
         if index < 0 or index >= len(self._refs):
