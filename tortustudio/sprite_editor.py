@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pygame
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QImage, QMouseEvent, QPainter, QWheelEvent
+from PyQt6.QtGui import QColor, QImage, QMouseEvent, QPainter, QPen, QWheelEvent
 from PyQt6.QtWidgets import (
     QComboBox,
     QCheckBox,
@@ -47,6 +47,10 @@ class Tool(str, Enum):
 class SpriteCanvas(QWidget):
     """Zoomed sprite canvas with grid, reference overlay, and painting."""
 
+    PIXEL_GRID_COLOR = (72, 72, 92)
+    BLOCK_GRID_COLOR = (36, 36, 50)
+    BLOCK_GRID_WIDTH = 2
+
     changed = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -61,7 +65,8 @@ class SpriteCanvas(QWidget):
         self.zoom = 16
         self.reference: pygame.Surface | None = None
         self.reference_opacity = 128
-        self.show_grid = True
+        self.show_pixel_grid = False
+        self.show_block_grid = True
         self._drawing = False
         self._frame: QImage | None = None
 
@@ -83,9 +88,13 @@ class SpriteCanvas(QWidget):
         self.reference_opacity = max(0, min(255, value))
         self._refresh()
 
-    def set_show_grid(self, visible: bool) -> None:
-        self.show_grid = visible
-        self._refresh()
+    def set_show_pixel_grid(self, visible: bool) -> None:
+        self.show_pixel_grid = visible
+        self.update()
+
+    def set_show_block_grid(self, visible: bool) -> None:
+        self.show_block_grid = visible
+        self.update()
 
     def set_tool(self, tool: Tool) -> None:
         self.tool = tool
@@ -102,7 +111,8 @@ class SpriteCanvas(QWidget):
     def _update_minimum_size(self) -> None:
         if not self.sprite:
             return
-        self.setMinimumSize(self.sprite.pixel_width * self.zoom, self.sprite.pixel_height * self.zoom)
+        w, h = self.sprite.pixel_width, self.sprite.pixel_height
+        self.setMinimumSize(w * self.zoom, h * self.zoom)
 
     def _refresh(self) -> None:
         if not self.sprite:
@@ -113,24 +123,20 @@ class SpriteCanvas(QWidget):
         w, h = self.sprite.pixel_width, self.sprite.pixel_height
         composite = pygame.Surface((w, h), pygame.SRCALPHA)
 
+        ref_surface: pygame.Surface | None = None
         if self.reference is not None:
-            ref = pygame.transform.scale(self.reference, (w, h))
-            ref.set_alpha(self.reference_opacity)
-            composite.blit(ref, (0, 0))
+            ref_surface = pygame.transform.scale(self.reference, (w, h))
+            ref_surface.set_alpha(self.reference_opacity)
 
         for y in range(h):
             for x in range(w):
+                if ref_surface is not None:
+                    composite.set_at((x, y), ref_surface.get_at((x, y)))
                 index = self.sprite.get_pixel(x, y)
                 if index == TRANSPARENT_INDEX:
                     continue
                 rgb = self.palette[index]
                 composite.set_at((x, y), (*rgb, 255))
-
-        if self.show_grid:
-            for x in range(0, w + 1, SPRITE_BLOCK):
-                pygame.draw.line(composite, (60, 60, 80, 180), (x, 0), (x, h))
-            for y in range(0, h + 1, SPRITE_BLOCK):
-                pygame.draw.line(composite, (60, 60, 80, 180), (0, y), (w, y))
 
         data = pygame.image.tobytes(composite, "RGBA")
         self._frame = QImage(data, w, h, w * 4, QImage.Format.Format_RGBA8888)
@@ -152,7 +158,42 @@ class SpriteCanvas(QWidget):
         x = (self.width() - scaled.width()) // 2
         y = (self.height() - scaled.height()) // 2
         painter.drawImage(x, y, scaled)
+        if self.sprite and (self.show_pixel_grid or self.show_block_grid):
+            self._draw_grid_overlay(painter, x, y)
         painter.end()
+
+    def _draw_grid_overlay(self, painter: QPainter, ox: int, oy: int) -> None:
+        if not self.sprite:
+            return
+
+        pw = self.sprite.pixel_width
+        ph = self.sprite.pixel_height
+        sw = pw * self.zoom
+        sh = ph * self.zoom
+
+        if self.show_pixel_grid:
+            pen = QPen(QColor(*self.PIXEL_GRID_COLOR))
+            pen.setWidth(1)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            for px in range(1, pw):
+                lx = ox + px * self.zoom
+                painter.drawLine(lx, oy, lx, oy + sh)
+            for py in range(1, ph):
+                ly = oy + py * self.zoom
+                painter.drawLine(ox, ly, ox + sw, ly)
+
+        if self.show_block_grid:
+            pen = QPen(QColor(*self.BLOCK_GRID_COLOR))
+            pen.setWidth(self.BLOCK_GRID_WIDTH)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            for px in range(SPRITE_BLOCK, pw, SPRITE_BLOCK):
+                lx = ox + px * self.zoom
+                painter.drawLine(lx, oy, lx, oy + sh)
+            for py in range(SPRITE_BLOCK, ph, SPRITE_BLOCK):
+                ly = oy + py * self.zoom
+                painter.drawLine(ox, ly, ox + sw, ly)
 
     def _event_to_pixel(self, event: QMouseEvent) -> tuple[int, int] | None:
         if not self.sprite or self._frame is None:
@@ -162,10 +203,10 @@ class SpriteCanvas(QWidget):
         sh = self._frame.height() * self.zoom
         ox = (self.width() - sw) // 2
         oy = (self.height() - sh) // 2
-        px = (event.position().x() - ox) // self.zoom
-        py = (event.position().y() - oy) // self.zoom
+        px = int((event.position().x() - ox) // self.zoom)
+        py = int((event.position().y() - oy) // self.zoom)
         if 0 <= px < self.sprite.pixel_width and 0 <= py < self.sprite.pixel_height:
-            return int(px), int(py)
+            return px, py
         return None
 
     def _apply_tool(self, x: int, y: int) -> None:
@@ -237,12 +278,15 @@ class SpriteEditorWidget(QWidget):
         self.blocks_h.setRange(1, 32)
         self.pixel_size_label = QLabel()
 
+        self.show_1x1_grid = QCheckBox("Show 1×1 Grid")
+        self.show_1x1_grid.setChecked(False)
+        self.show_1x1_grid.setToolTip("Light gaps between every pixel")
+        self.show_1x1_grid.toggled.connect(self.canvas.set_show_pixel_grid)
+
         self.show_4x4_grid = QCheckBox("Show 4×4 Grid")
         self.show_4x4_grid.setChecked(True)
-        self.show_4x4_grid.setToolTip("Show 4×4 block grid")
-        self.show_4x4_grid.toggled.connect(self.canvas.set_show_grid)
-
-
+        self.show_4x4_grid.setToolTip("Dark gaps between 4×4 blocks")
+        self.show_4x4_grid.toggled.connect(self.canvas.set_show_block_grid)
         self.palette_combo = QComboBox()
         self.palette_combo.currentTextChanged.connect(self._on_palette_changed)
 
@@ -361,7 +405,8 @@ class SpriteEditorWidget(QWidget):
         form.addRow("Blocks tall:", self.blocks_h)
         form.addRow("Pixel size:", self.pixel_size_label)
         form.addRow("Palette:", self.palette_combo)
-        form.addRow("Show 4×4 Grid:", self.show_4x4_grid)
+        form.addRow("Show pixel Grid:", self.show_1x1_grid)
+        form.addRow("Show block Grid:", self.show_4x4_grid)
         side.addLayout(form)
 
         self.blocks_w.valueChanged.connect(self._apply_resize)
