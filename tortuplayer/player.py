@@ -9,13 +9,15 @@ from tortuengine.engine import TortuEngine
 
 
 class WindowPlayer:
-    def __init__(self, scale: int = 3, title: str = "TortuPlayer") -> None:
+    def __init__(self, scale: int = 3, title: str = "TortuPlayer", fps: int = DEFAULT_FPS) -> None:
         if not pygame.get_init():
             pygame.init()
 
         self.engine = TortuEngine()
+        self.engine.set_fps(fps)
         self.scale = scale
         self.title = title
+        self.fps = fps
         self.window: pygame.Surface | None = None
 
     def _ensure_window(self) -> pygame.Surface:
@@ -31,7 +33,7 @@ class WindowPlayer:
         self.engine.running = True
 
         while self.engine.running:
-            dt = clock.tick(DEFAULT_FPS) / 1000.0
+            dt = clock.tick(self.fps) / 1000.0
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:

@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QSpinBox,
     QSplitter,
     QStackedWidget,
     QTreeWidget,
@@ -29,11 +30,15 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from tortuengine.cart import load_game_module, reload_game_module
-from tortuengine.project import Project, create_project, load_project
+from tortuengine.game_settings import MAX_GAME_FPS, MIN_GAME_FPS, slugify_cart_name
+from tortuengine.project import Project, create_project, load_project, save_project
+from tortuengine.scene import save_scene
 from tortuengine.sprite import save_sprite
 from tortuengine.tileset import save_tileset
+from tortustudio.new_scene_dialog import NewSceneDialog
 from tortustudio.new_sprite_dialog import NewSpriteDialog
 from tortustudio.new_tileset_dialog import NewTilesetDialog
+from tortustudio.scene_editor import SceneEditorWidget
 from tortustudio.sprite_editor import SpriteEditorWidget
 from tortustudio.tileset_editor import TilesetEditorWidget
 from tortustudio.viewport import ViewportWidget
@@ -54,8 +59,9 @@ class _ScriptReloadHandler(FileSystemEventHandler):
 
 class MainWindow(QMainWindow):
     VIEWPORT = 0
-    SPRITE_EDITOR = 1
-    TILESET_EDITOR = 2
+    SCENE_EDITOR = 1
+    SPRITE_EDITOR = 2
+    TILESET_EDITOR = 3
 
     def __init__(self, project: Project | None = None) -> None:
         super().__init__()
@@ -66,6 +72,7 @@ class MainWindow(QMainWindow):
         self._switching_tabs = False
         self._active_sprite_path: Path | None = None
         self._active_tileset_path: Path | None = None
+        self._active_scene_path: Path | None = None
 
         self.setWindowTitle("TortuStudio")
         self.resize(1280, 720)
@@ -99,28 +106,33 @@ class MainWindow(QMainWindow):
         preview_tab_action.triggered.connect(self._activate_preview_tab)
         tabs_menu.addAction(preview_tab_action)
 
+        scene_tab_action = QAction("&Scene Editor", self)
+        scene_tab_action.setShortcut("Ctrl+2")
+        scene_tab_action.triggered.connect(self._activate_scene_editor_tab)
+        tabs_menu.addAction(scene_tab_action)
+
         sprite_tab_action = QAction("&Sprite Editor", self)
-        sprite_tab_action.setShortcut("Ctrl+2")
+        sprite_tab_action.setShortcut("Ctrl+3")
         sprite_tab_action.triggered.connect(self._activate_sprite_editor_tab)
         tabs_menu.addAction(sprite_tab_action)
 
         tileset_tab_action = QAction("&Tileset Editor", self)
-        tileset_tab_action.setShortcut("Ctrl+3")
+        tileset_tab_action.setShortcut("Ctrl+4")
         tileset_tab_action.triggered.connect(self._activate_tileset_editor_tab)
         tabs_menu.addAction(tileset_tab_action)
 
         background_tab_action = QAction("&background Editor", self)
-        background_tab_action.setShortcut("Ctrl+3")
+        background_tab_action.setShortcut("Ctrl+5")
         background_tab_action.triggered.connect(self._activate_background_editor_tab)
         tabs_menu.addAction(background_tab_action)
 
         font_tab_action = QAction("&Font Editor", self)
-        font_tab_action.setShortcut("Ctrl+4")
+        font_tab_action.setShortcut("Ctrl+6")
         font_tab_action.triggered.connect(self._activate_font_editor_tab)
         tabs_menu.addAction(font_tab_action)
 
         object_tab_action = QAction("&Object Editor", self)
-        object_tab_action.setShortcut("Ctrl+5")
+        object_tab_action.setShortcut("Ctrl+7")
         object_tab_action.triggered.connect(self._activate_object_editor_tab)
         tabs_menu.addAction(object_tab_action)
 
@@ -178,23 +190,56 @@ class MainWindow(QMainWindow):
         self.tileset_editor.saved.connect(self._on_tileset_saved)
         self.tileset_editor.new_tileset_requested.connect(self._action_new_tileset)
         self.tileset_editor.open_tileset_requested.connect(self._action_open_tileset)
+        self.scene_editor = SceneEditorWidget(Path("."))
+        self.scene_editor.saved.connect(self._on_scene_saved)
+        self.scene_editor.new_scene_requested.connect(self._action_new_scene)
+        self.scene_editor.open_scene_requested.connect(self._action_open_scene)
+
         self.center_stack.addWidget(self.viewport)
+        self.center_stack.addWidget(self.scene_editor)
         self.center_stack.addWidget(self.sprite_editor)
         self.center_stack.addWidget(self.tileset_editor)
         splitter.addWidget(self.center_stack)
 
         inspector = QWidget()
         inspector_layout = QFormLayout(inspector)
-        inspector_layout.addRow(QLabel("<b>Inspector</b>"))
+        inspector_layout.addRow(QLabel("<b>Game Settings</b>"))
+
+        self.field_game_name = QLineEdit()
+        self.field_game_name.setPlaceholderText("My Game")
+        inspector_layout.addRow("Game name:", self.field_game_name)
+
+        self.field_cart_name = QLineEdit()
+        self.field_cart_name.setPlaceholderText("my_game")
+        inspector_layout.addRow("Cart name:", self.field_cart_name)
+
+        self.field_game_fps = QSpinBox()
+        self.field_game_fps.setRange(MIN_GAME_FPS, MAX_GAME_FPS)
+        self.field_game_fps.setValue(60)
+        inspector_layout.addRow("Game FPS:", self.field_game_fps)
+
+        self.field_start_scene = QLineEdit()
+        self.field_start_scene.setPlaceholderText("scenes/level_01.tortuscene")
+        self.field_start_scene.setToolTip(
+            "First scene loaded at boot and in Game Preview (path relative to project root)"
+        )
+        inspector_layout.addRow("Start scene:", self.field_start_scene)
+
+        self.field_author = QLineEdit()
+        inspector_layout.addRow("Author:", self.field_author)
+
+        self.field_description = QLineEdit()
+        inspector_layout.addRow("Description:", self.field_description)
+
+        self.btn_save_game_settings = QPushButton("Save game settings")
+        self.btn_save_game_settings.clicked.connect(self._save_game_settings)
+        inspector_layout.addRow(self.btn_save_game_settings)
+
+        inspector_layout.addRow(QLabel("<b>Open Asset</b>"))
         self.field_name = QLineEdit()
         self.field_name.setReadOnly(True)
-        self.field_name.setPlaceholderText("Select a sprite or actor")
-        inspector_layout.addRow("Name:", self.field_name)
-
-        self.field_script = QLineEdit()
-        self.field_script.setReadOnly(True)
-        self.field_script.setPlaceholderText("scripts/example.py")
-        inspector_layout.addRow("Script:", self.field_script)
+        self.field_name.setPlaceholderText("No asset open")
+        inspector_layout.addRow("File:", self.field_name)
 
         self.btn_open_editor = QPushButton("Open main.py in Editor")
         self.btn_open_editor.clicked.connect(self._open_entry_in_editor)
@@ -223,10 +268,13 @@ class MainWindow(QMainWindow):
         self.project = project
         self.sprite_editor.project_root = project.root
         self.tileset_editor.project_root = project.root
+        self.scene_editor.project_root = project.root
         self._active_sprite_path = None
         self._active_tileset_path = None
+        self._active_scene_path = None
         self.workspace_tabs.reset()
         self.setWindowTitle(f"TortuStudio — {project.name}")
+        self._load_game_settings_form()
         self._populate_tree()
         self._start_watcher()
         self._load_cart(silent=False)
@@ -322,6 +370,40 @@ class MainWindow(QMainWindow):
     def _action_export_cart(self) -> None:
         self.log("Export .tortucart — coming soon.")
 
+    def _load_game_settings_form(self) -> None:
+        if not self.project:
+            return
+        game = self.project.game
+        self.field_game_name.setText(game.game_name)
+        self.field_cart_name.setText(game.cart_name)
+        self.field_game_fps.setValue(game.fps)
+        self.field_start_scene.setText(game.start_scene)
+        self.field_author.setText(game.author)
+        self.field_description.setText(game.description)
+        self.viewport.set_fps(game.fps)
+
+    def _save_game_settings(self) -> None:
+        if not self.project:
+            QMessageBox.information(self, "Game Settings", "Open a project first.")
+            return
+        cart_name = self.field_cart_name.text().strip() or slugify_cart_name(
+            self.field_game_name.text()
+        )
+        self.project.game.game_name = self.field_game_name.text().strip() or "Untitled Game"
+        self.project.game.cart_name = cart_name
+        self.project.game.fps = self.field_game_fps.value()
+        self.project.game.start_scene = self.field_start_scene.text().strip().replace("\\", "/")
+        self.project.game.author = self.field_author.text().strip()
+        self.project.game.description = self.field_description.text().strip()
+        try:
+            self.project.game.validate()
+        except ValueError as exc:
+            QMessageBox.warning(self, "Game Settings", str(exc))
+            return
+        save_project(self.project)
+        self.viewport.set_fps(self.project.game.fps)
+        self.log("Saved game settings.")
+
     def _action_validate_project(self) -> None:
         if not self.project:
             self.log("Validate: no project open.")
@@ -331,6 +413,9 @@ class MainWindow(QMainWindow):
             issues.append(f"Missing entry script: {self.project.entry}")
         if not self.project.palettes_dir().is_dir():
             issues.append("Missing palettes/ folder")
+        start_scene = self.project.start_scene_path()
+        if start_scene is not None and not start_scene.is_file():
+            issues.append(f"Missing start scene: {self.project.game.start_scene}")
         if issues:
             for issue in issues:
                 self.log(f"Validate: {issue}")
@@ -344,6 +429,14 @@ class MainWindow(QMainWindow):
         self.workspace_tabs.select_preview()
         self._switching_tabs = False
         self._show_preview()
+
+    def _activate_scene_editor_tab(self) -> None:
+        if not self._confirm_discard_editor_changes():
+            return
+        self._switching_tabs = True
+        self.workspace_tabs.select_scene_editor()
+        self._switching_tabs = False
+        self._show_scene_editor()
 
     def _activate_sprite_editor_tab(self) -> None:
         if not self._confirm_discard_editor_changes():
@@ -404,10 +497,31 @@ class MainWindow(QMainWindow):
         self._switching_tabs = False
         self._show_tileset(path)
 
+    def _open_scene(self, path: Path) -> None:
+        if not self._confirm_discard_editor_changes():
+            return
+        self._switching_tabs = True
+        self.workspace_tabs.select_scene_editor()
+        self._switching_tabs = False
+        self._show_scene(path)
+
     def _show_preview(self) -> None:
         self.viewport.stop_playback()
         self.center_stack.setCurrentIndex(self.VIEWPORT)
         self.field_name.clear()
+
+    def _show_scene_editor(self) -> None:
+        self.center_stack.setCurrentIndex(self.SCENE_EDITOR)
+        if self._active_scene_path:
+            self.field_name.setText(self._active_scene_path.name)
+        else:
+            self.field_name.setPlaceholderText("No scene open — use New / Open Scene above")
+
+    def _show_scene(self, path: Path) -> None:
+        self.scene_editor.open_scene(path)
+        self._active_scene_path = path.resolve()
+        self.center_stack.setCurrentIndex(self.SCENE_EDITOR)
+        self.field_name.setText(path.name)
 
     def _show_sprite_editor(self) -> None:
         self.center_stack.setCurrentIndex(self.SPRITE_EDITOR)
@@ -447,6 +561,18 @@ class MainWindow(QMainWindow):
             self._show_preview()
             return
 
+        if ref.kind == TabKind.SCENE_EDITOR:
+            if not self._confirm_discard_editor_changes():
+                self._switching_tabs = True
+                self._restore_editor_tab()
+                self._switching_tabs = False
+                return
+            if self._active_scene_path and self._active_scene_path.is_file():
+                self._show_scene(self._active_scene_path)
+            else:
+                self._show_scene_editor()
+            return
+
         if ref.kind == TabKind.SPRITE_EDITOR:
             if not self._confirm_discard_editor_changes():
                 self._switching_tabs = True
@@ -472,7 +598,9 @@ class MainWindow(QMainWindow):
 
     def _restore_editor_tab(self) -> None:
         index = self.center_stack.currentIndex()
-        if index == self.SPRITE_EDITOR:
+        if index == self.SCENE_EDITOR:
+            self.workspace_tabs.select_scene_editor()
+        elif index == self.SPRITE_EDITOR:
             self.workspace_tabs.select_sprite_editor()
         elif index == self.TILESET_EDITOR:
             self.workspace_tabs.select_tileset_editor()
@@ -481,6 +609,8 @@ class MainWindow(QMainWindow):
 
     def _confirm_discard_editor_changes(self) -> bool:
         index = self.center_stack.currentIndex()
+        if index == self.SCENE_EDITOR and self.scene_editor.has_unsaved_changes():
+            return self._confirm_discard_unsaved("scene", self.scene_editor.save)
         if index == self.SPRITE_EDITOR and self.sprite_editor.has_unsaved_changes():
             return self._confirm_discard_unsaved("sprite", self.sprite_editor.save)
         if index == self.TILESET_EDITOR and self.tileset_editor.has_unsaved_changes():
@@ -510,7 +640,9 @@ class MainWindow(QMainWindow):
             return
         rel = item.text(0)
         path = self.project.root / rel
-        if path.suffix == ".tortusprite":
+        if path.suffix == ".tortuscene":
+            self._open_scene(path)
+        elif path.suffix == ".tortusprite":
             self._open_sprite(path)
         elif path.suffix == ".tortutileset":
             self._open_tileset(path)
@@ -524,6 +656,10 @@ class MainWindow(QMainWindow):
         self._populate_tree()
 
     def _on_tileset_saved(self, path: Path) -> None:
+        self.log(f"Saved {path.relative_to(self.project.root)}")
+        self._populate_tree()
+
+    def _on_scene_saved(self, path: Path) -> None:
         self.log(f"Saved {path.relative_to(self.project.root)}")
         self._populate_tree()
 
@@ -637,6 +773,52 @@ class MainWindow(QMainWindow):
         )
         if path:
             self._open_tileset(Path(path))
+
+    def _action_new_scene(self) -> None:
+        if not self.project:
+            QMessageBox.information(self, "New Scene", "Open a project first.")
+            return
+
+        dialog = NewSceneDialog(self.project.root, self)
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+
+        name = dialog.scene_name or "scene"
+        scene_path = self.project.scenes_dir() / f"{name}.tortuscene"
+        if scene_path.exists():
+            QMessageBox.warning(self, "New Scene", f"{scene_path.name} already exists.")
+            return
+
+        if not self._confirm_discard_editor_changes():
+            return
+
+        self.scene_editor.new_scene(
+            scene_path,
+            dialog.palette_name,
+            dialog.tileset_path,
+            dialog.width_tiles.value(),
+            dialog.height_tiles.value(),
+            layer_count=dialog.layer_count.value(),
+            collision_layer=dialog.collision_layer.value(),
+        )
+        save_scene(self.scene_editor.scene, scene_path)  # type: ignore[arg-type]
+        self.scene_editor._dirty = False
+        self._populate_tree()
+        self._open_scene(scene_path)
+        self.log(f"Created {scene_path.relative_to(self.project.root)}")
+
+    def _action_open_scene(self) -> None:
+        if not self.project:
+            QMessageBox.information(self, "Open Scene", "Open a project first.")
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Scene",
+            str(self.project.scenes_dir()),
+            "Tortu Scenes (*.tortuscene)",
+        )
+        if path:
+            self._open_scene(Path(path))
 
     def _open_entry_in_editor(self) -> None:
         if not self.project:

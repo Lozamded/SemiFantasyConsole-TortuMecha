@@ -16,8 +16,12 @@ class TortuEngine:
 
         self.framebuffer = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
         self.clock = pygame.time.Clock()
+        self.fps = DEFAULT_FPS
         self._game_module = None
         self.running = False
+
+    def set_fps(self, fps: int) -> None:
+        self.fps = max(1, fps)
 
     @property
     def game(self):
@@ -63,7 +67,7 @@ class TortuEngine:
 
     def tick(self, dt: float | None = None) -> float:
         if dt is None:
-            dt = self.clock.tick(DEFAULT_FPS) / 1000.0
+            dt = self.clock.tick(self.fps) / 1000.0
 
         game = self._game_module
         if game and hasattr(game, "update"):

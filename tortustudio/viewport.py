@@ -23,10 +23,16 @@ class ViewportWidget(QWidget):
         self.engine = TortuEngine()
         self._frame: QImage | None = None
         self._playing = False
+        self._fps = 60
 
         self._timer = QTimer(self)
-        self._timer.setInterval(1000 // 60)
+        self._timer.setInterval(1000 // self._fps)
         self._timer.timeout.connect(self._on_tick)
+
+    def set_fps(self, fps: int) -> None:
+        self._fps = max(1, fps)
+        self.engine.set_fps(self._fps)
+        self._timer.setInterval(max(1, 1000 // self._fps))
 
     @property
     def playing(self) -> bool:
@@ -49,7 +55,7 @@ class ViewportWidget(QWidget):
 
     def _on_tick(self) -> None:
         if self._playing:
-            self.engine.tick()
+            self.engine.tick(1.0 / self._fps)
             self._refresh_frame()
 
     def _refresh_frame(self) -> None:

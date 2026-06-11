@@ -2,5 +2,10 @@
   "name": "Hello Tortu",
   "version": "0.1.0",
   "entry": "main.py",
-  "editor_command": "xdg-open {file}"
+  "editor_command": "xdg-open {file}",
+  "game": {
+    "game_name": "Hello Tortu",
+    "cart_name": "hello_tortu",
+    "fps": 60
+  }
 }

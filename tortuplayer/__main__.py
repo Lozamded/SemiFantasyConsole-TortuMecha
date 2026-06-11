@@ -27,13 +27,19 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     path = args.path.resolve()
+    project = None
     if path.is_file() and path.name == "tortu.project":
         project_root = path.parent
-        entry = load_project(path).entry
+        project = load_project(path)
+        entry = project.entry
     elif path.is_dir():
         project_root = path
         project_file = path / "tortu.project"
-        entry = load_project(project_file).entry if project_file.is_file() else "main.py"
+        if project_file.is_file():
+            project = load_project(project_file)
+            entry = project.entry
+        else:
+            entry = "main.py"
     else:
         print(f"error: not a project folder: {path}", file=sys.stderr)
         return 1
@@ -44,7 +50,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    player = WindowPlayer(scale=args.scale, title=project_root.name)
+    title = project.game.game_name if project else project_root.name
+    fps = project.game.fps if project else 60
+    player = WindowPlayer(scale=args.scale, title=title, fps=fps)
     player.engine.load_game(game)
 
     try:

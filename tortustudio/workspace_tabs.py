@@ -1,4 +1,4 @@
-"""Tab bar under the menu — fixed workspace tabs (Preview, Sprite Editor)."""
+"""Tab bar under the menu — fixed workspace tabs."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import QHBoxLayout, QTabBar, QWidget
 
 class TabKind(str, Enum):
     PREVIEW = "preview"
+    SCENE_EDITOR = "scene_editor"
     SPRITE_EDITOR = "sprite_editor"
     TILESET_EDITOR = "tileset_editor"
 
@@ -26,6 +27,7 @@ class WorkspaceTabs(QWidget):
     tab_selected = pyqtSignal(TabRef)
 
     PREVIEW_LABEL = "Game Preview"
+    SCENE_EDITOR_LABEL = "Scene Editor"
     SPRITE_EDITOR_LABEL = "Sprite Editor"
     TILESET_EDITOR_LABEL = "Tileset Editor"
 
@@ -44,6 +46,7 @@ class WorkspaceTabs(QWidget):
         layout.addWidget(self.tab_bar)
 
         self._add_preview_tab()
+        self._add_scene_editor_tab()
         self._add_sprite_editor_tab()
         self._add_tileset_editor_tab()
 
@@ -52,12 +55,16 @@ class WorkspaceTabs(QWidget):
         return 0
 
     @property
-    def sprite_editor_index(self) -> int:
+    def scene_editor_index(self) -> int:
         return 1
 
     @property
-    def tileset_editor_index(self) -> int:
+    def sprite_editor_index(self) -> int:
         return 2
+
+    @property
+    def tileset_editor_index(self) -> int:
+        return 3
 
     @property
     def current_ref(self) -> TabRef | None:
@@ -69,6 +76,10 @@ class WorkspaceTabs(QWidget):
     def _add_preview_tab(self) -> None:
         self.tab_bar.addTab(self.PREVIEW_LABEL)
         self._refs.append(TabRef(kind=TabKind.PREVIEW))
+
+    def _add_scene_editor_tab(self) -> None:
+        self.tab_bar.addTab(self.SCENE_EDITOR_LABEL)
+        self._refs.append(TabRef(kind=TabKind.SCENE_EDITOR))
 
     def _add_sprite_editor_tab(self) -> None:
         self.tab_bar.addTab(self.SPRITE_EDITOR_LABEL)
@@ -83,11 +94,15 @@ class WorkspaceTabs(QWidget):
             self.tab_bar.removeTab(0)
         self._refs.clear()
         self._add_preview_tab()
+        self._add_scene_editor_tab()
         self._add_sprite_editor_tab()
         self._add_tileset_editor_tab()
 
     def select_preview(self) -> None:
         self.tab_bar.setCurrentIndex(self.preview_index)
+
+    def select_scene_editor(self) -> None:
+        self.tab_bar.setCurrentIndex(self.scene_editor_index)
 
     def select_sprite_editor(self) -> None:
         self.tab_bar.setCurrentIndex(self.sprite_editor_index)
