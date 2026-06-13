@@ -32,10 +32,13 @@ from tortuengine.scene import (
     DEFAULT_SCENE_HEIGHT,
     DEFAULT_SCENE_WIDTH,
     EMPTY_TILE,
+    MAX_PARALLAX_BANDS,
     MAX_SCENE_BG_LAYERS,
     MAX_SCENE_TILE_LAYERS,
     MIN_SCENE_TILE_LAYERS,
     Scene,
+    SceneBgParallaxBand,
+    default_parallax_band,
     load_scene,
     save_scene,
     tile_size_for_tile_layer,
@@ -197,16 +200,26 @@ class SceneMapCanvas(QWidget):
                 bg_palette = self._background_palette(bg)
                 if bg_palette is None:
                     continue
-                bg.draw_parallax(
-                    composite,
-                    bg_palette,
-                    parallax_x=scene_bg.parallax_x,
-                    parallax_y=scene_bg.parallax_y,
-                    camera_x=float(self.camera_x),
-                    fixed=scene_bg.fixed,
-                    repeat_x=scene_bg.repeat_x,
-                    repeat_y=scene_bg.repeat_y,
-                )
+                if scene_bg.band_parallax and scene_bg.parallax_bands:
+                    bg.draw_parallax_bands(
+                        composite,
+                        bg_palette,
+                        scene_bg.parallax_bands,
+                        parallax_y=scene_bg.parallax_y,
+                        camera_x=float(self.camera_x),
+                        camera_y=0.0,
+                    )
+                else:
+                    bg.draw_parallax(
+                        composite,
+                        bg_palette,
+                        parallax_x=scene_bg.parallax_x,
+                        parallax_y=scene_bg.parallax_y,
+                        camera_x=float(self.camera_x),
+                        fixed=scene_bg.fixed,
+                        repeat_x=scene_bg.repeat_x,
+                        repeat_y=scene_bg.repeat_y,
+                    )
 
         for tile_layer in self.scene.tile_layers:
             if not tile_layer.visible or not tile_layer.tileset:
@@ -438,6 +451,42 @@ class SceneEditorWidget(QWidget):
         self.scene_bg_repeat_y.setToolTip("Tile the background vertically")
         self.scene_bg_repeat_y.toggled.connect(self._on_scene_bg_repeat_y_toggled)
 
+        self.scene_bg_band_parallax = QCheckBox("Band parallax (Y strips)")
+        self.scene_bg_band_parallax.setToolTip(
+            "Split the background into horizontal Y bands, each with its own parallax X / fixed / repeat"
+        )
+        self.scene_bg_band_parallax.toggled.connect(self._on_scene_bg_band_parallax_toggled)
+
+        self.band_combo = QComboBox()
+        self.band_combo.currentIndexChanged.connect(self._on_band_changed)
+
+        self.band_y0 = QSpinBox()
+        self.band_y0.setRange(0, 2048)
+        self.band_y0.valueChanged.connect(self._on_band_fields_changed)
+
+        self.band_y1 = QSpinBox()
+        self.band_y1.setRange(0, 2048)
+        self.band_y1.valueChanged.connect(self._on_band_fields_changed)
+
+        self.band_parallax_x = QDoubleSpinBox()
+        self.band_parallax_x.setRange(0.0, 1.0)
+        self.band_parallax_x.setSingleStep(0.05)
+        self.band_parallax_x.valueChanged.connect(self._on_band_fields_changed)
+
+        self.band_fixed = QCheckBox("Band fixed")
+        self.band_fixed.toggled.connect(self._on_band_fields_changed)
+
+        self.band_repeat_x = QCheckBox("Band repeat X")
+        self.band_repeat_x.toggled.connect(self._on_band_fields_changed)
+
+        self.band_repeat_y = QCheckBox("Band repeat Y")
+        self.band_repeat_y.toggled.connect(self._on_band_fields_changed)
+
+        self.btn_add_band = QPushButton("Add band")
+        self.btn_add_band.clicked.connect(self._add_parallax_band)
+        self.btn_remove_band = QPushButton("Remove band")
+        self.btn_remove_band.clicked.connect(self._remove_parallax_band)
+
         self.btn_add_scene_bg_layer = QPushButton("Add bg layer")
         self.btn_add_scene_bg_layer.clicked.connect(self._add_scene_bg_layer)
         self.btn_remove_scene_bg_layer = QPushButton("Remove bg layer")
@@ -533,6 +582,18 @@ class SceneEditorWidget(QWidget):
         form.addRow("", self.scene_bg_fixed)
         form.addRow("", self.scene_bg_repeat_x)
         form.addRow("", self.scene_bg_repeat_y)
+        form.addRow("", self.scene_bg_band_parallax)
+        form.addRow("Parallax band:", self.band_combo)
+        form.addRow("Band Y from:", self.band_y0)
+        form.addRow("Band Y to:", self.band_y1)
+        form.addRow("Band parallax X:", self.band_parallax_x)
+        form.addRow("", self.band_fixed)
+        form.addRow("", self.band_repeat_x)
+        form.addRow("", self.band_repeat_y)
+        band_btns = QHBoxLayout()
+        band_btns.addWidget(self.btn_add_band)
+        band_btns.addWidget(self.btn_remove_band)
+        form.addRow(band_btns)
         scene_bg_btns = QHBoxLayout()
         scene_bg_btns.addWidget(self.btn_add_scene_bg_layer)
         scene_bg_btns.addWidget(self.btn_remove_scene_bg_layer)
@@ -669,10 +730,101 @@ class SceneEditorWidget(QWidget):
         self.tile_layer_tileset_combo.setCurrentIndex(index if index >= 0 else 0)
         self.tile_layer_tileset_combo.blockSignals(False)
 
+    def _background_height_for_scene_bg(self, scene_bg) -> int:
+        if not scene_bg.background:
+            return SCREEN_HEIGHT
+        bg = self._get_background(scene_bg.background)
+        return bg.height if bg else SCREEN_HEIGHT
+
     def _update_scene_bg_parallax_enabled(self, scene_bg) -> None:
-        enabled = not scene_bg.fixed
-        self.scene_bg_parallax_x.setEnabled(enabled)
-        self.scene_bg_parallax_y.setEnabled(enabled)
+        layer_mode = not scene_bg.band_parallax
+        layer_x_enabled = layer_mode and not scene_bg.fixed
+        self.scene_bg_parallax_x.setEnabled(layer_x_enabled)
+        self.scene_bg_parallax_y.setEnabled(True)
+        self.scene_bg_fixed.setEnabled(layer_mode)
+        self.scene_bg_repeat_x.setEnabled(layer_mode)
+        self.scene_bg_repeat_y.setEnabled(layer_mode)
+        band_on = scene_bg.band_parallax and bool(scene_bg.background)
+        self._set_band_controls_enabled(band_on)
+
+    def _set_band_controls_enabled(self, enabled: bool) -> None:
+        for widget in (
+            self.band_combo,
+            self.band_y0,
+            self.band_y1,
+            self.band_parallax_x,
+            self.band_fixed,
+            self.band_repeat_x,
+            self.band_repeat_y,
+            self.btn_add_band,
+            self.btn_remove_band,
+        ):
+            widget.setEnabled(enabled)
+
+    def _active_band_index(self) -> int:
+        if self.band_combo.count() == 0:
+            return -1
+        return self.band_combo.currentIndex()
+
+    def _sync_band_controls(self) -> None:
+        index = self._active_scene_bg_layer_index()
+        self.scene_bg_band_parallax.blockSignals(True)
+        self.band_combo.blockSignals(True)
+        self.band_combo.clear()
+        if not self.scene or index < 0:
+            self.scene_bg_band_parallax.setChecked(False)
+            self.scene_bg_band_parallax.blockSignals(False)
+            self.band_combo.blockSignals(False)
+            self._set_band_controls_enabled(False)
+            return
+        scene_bg = self.scene.scene_bg_layers[index]
+        self.scene_bg_band_parallax.setChecked(scene_bg.band_parallax)
+        self.scene_bg_band_parallax.blockSignals(False)
+        bg_height = self._background_height_for_scene_bg(scene_bg)
+        self.band_y0.setMaximum(max(0, bg_height - 1))
+        self.band_y1.setMaximum(max(0, bg_height - 1))
+        for i, band in enumerate(scene_bg.parallax_bands):
+            self.band_combo.addItem(f"{i}: Y {band.y0}–{band.y1}", i)
+        if scene_bg.parallax_bands:
+            active = min(self._active_band_index(), len(scene_bg.parallax_bands) - 1)
+            if active < 0:
+                active = 0
+            self.band_combo.setCurrentIndex(active)
+            self._load_band_fields(scene_bg.parallax_bands[active])
+        self.band_combo.blockSignals(False)
+        self.btn_remove_band.setEnabled(len(scene_bg.parallax_bands) > 1)
+        self.btn_add_band.setEnabled(len(scene_bg.parallax_bands) < MAX_PARALLAX_BANDS)
+        self._update_scene_bg_parallax_enabled(scene_bg)
+
+    def _load_band_fields(self, band: SceneBgParallaxBand) -> None:
+        self.band_y0.blockSignals(True)
+        self.band_y1.blockSignals(True)
+        self.band_parallax_x.blockSignals(True)
+        self.band_fixed.blockSignals(True)
+        self.band_repeat_x.blockSignals(True)
+        self.band_repeat_y.blockSignals(True)
+        self.band_y0.setValue(band.y0)
+        self.band_y1.setValue(band.y1)
+        self.band_parallax_x.setValue(band.parallax_x)
+        self.band_fixed.setChecked(band.fixed)
+        self.band_repeat_x.setChecked(band.repeat_x)
+        self.band_repeat_y.setChecked(band.repeat_y)
+        self.band_y0.blockSignals(False)
+        self.band_y1.blockSignals(False)
+        self.band_parallax_x.blockSignals(False)
+        self.band_fixed.blockSignals(False)
+        self.band_repeat_x.blockSignals(False)
+        self.band_repeat_y.blockSignals(False)
+
+    def _save_band_fields(self, band: SceneBgParallaxBand) -> None:
+        y0 = self.band_y0.value()
+        y1 = self.band_y1.value()
+        band.y0 = min(y0, y1)
+        band.y1 = max(y0, y1)
+        band.parallax_x = self.band_parallax_x.value()
+        band.fixed = self.band_fixed.isChecked()
+        band.repeat_x = self.band_repeat_x.isChecked()
+        band.repeat_y = self.band_repeat_y.isChecked()
 
     def _sync_scene_bg_background_combo(self) -> None:
         self.scene_bg_background_combo.blockSignals(True)
@@ -704,6 +856,8 @@ class SceneEditorWidget(QWidget):
             self.scene_bg_fixed.setEnabled(False)
             self.scene_bg_repeat_x.setEnabled(False)
             self.scene_bg_repeat_y.setEnabled(False)
+            self.scene_bg_band_parallax.setEnabled(False)
+            self._set_band_controls_enabled(False)
             self.scene_bg_layer_combo.blockSignals(False)
             self.btn_add_scene_bg_layer.setEnabled(True)
             self.btn_remove_scene_bg_layer.setEnabled(False)
@@ -715,6 +869,7 @@ class SceneEditorWidget(QWidget):
         self.scene_bg_fixed.setEnabled(True)
         self.scene_bg_repeat_x.setEnabled(True)
         self.scene_bg_repeat_y.setEnabled(True)
+        self.scene_bg_band_parallax.setEnabled(True)
         active = self.scene_bg_layer_combo.currentIndex()
         if active < 0:
             active = 0
@@ -741,7 +896,11 @@ class SceneEditorWidget(QWidget):
             self.scene_bg_fixed.blockSignals(False)
             self.scene_bg_repeat_x.blockSignals(False)
             self.scene_bg_repeat_y.blockSignals(False)
+            self.scene_bg_band_parallax.blockSignals(True)
+            self.scene_bg_band_parallax.setChecked(scene_bg.band_parallax)
+            self.scene_bg_band_parallax.blockSignals(False)
             self._update_scene_bg_parallax_enabled(scene_bg)
+            self._sync_band_controls()
         self.scene_bg_layer_combo.blockSignals(False)
         self.btn_add_scene_bg_layer.setEnabled(
             self.scene.scene_bg_layer_count < MAX_SCENE_BG_LAYERS
@@ -834,6 +993,7 @@ class SceneEditorWidget(QWidget):
         self._sync_tile_layer_tileset_combo()
         self._sync_scene_bg_layer_controls()
         self._sync_scene_bg_background_combo()
+        self._sync_band_controls()
         self._update_camera_slider()
         self._load_active_tile_layer_tileset()
         self._refresh_map()
@@ -861,8 +1021,12 @@ class SceneEditorWidget(QWidget):
         self.scene_bg_fixed.blockSignals(False)
         self.scene_bg_repeat_x.blockSignals(False)
         self.scene_bg_repeat_y.blockSignals(False)
+        self.scene_bg_band_parallax.blockSignals(True)
+        self.scene_bg_band_parallax.setChecked(scene_bg.band_parallax)
+        self.scene_bg_band_parallax.blockSignals(False)
         self._update_scene_bg_parallax_enabled(scene_bg)
         self._sync_scene_bg_background_combo()
+        self._sync_band_controls()
         self._refresh_map()
 
     def _on_scene_bg_background_changed(self, index: int) -> None:
@@ -879,7 +1043,105 @@ class SceneEditorWidget(QWidget):
         scene_bg.background = rel_path
         if rel_path:
             self._get_background(rel_path)
+            scene_bg.ensure_parallax_bands(self._background_height_for_scene_bg(scene_bg))
         self._mark_dirty()
+        self._sync_band_controls()
+        self._refresh_map()
+
+    def _on_scene_bg_band_parallax_toggled(self, enabled: bool) -> None:
+        if not self.scene:
+            return
+        index = self._active_scene_bg_layer_index()
+        if index < 0:
+            return
+        scene_bg = self.scene.scene_bg_layers[index]
+        scene_bg.band_parallax = enabled
+        if enabled:
+            if not scene_bg.background:
+                QMessageBox.information(
+                    self,
+                    "Band Parallax",
+                    "Assign a background asset before enabling band parallax.",
+                )
+                self.scene_bg_band_parallax.blockSignals(True)
+                self.scene_bg_band_parallax.setChecked(False)
+                self.scene_bg_band_parallax.blockSignals(False)
+                scene_bg.band_parallax = False
+                return
+            scene_bg.ensure_parallax_bands(self._background_height_for_scene_bg(scene_bg))
+        self._mark_dirty()
+        self._update_scene_bg_parallax_enabled(scene_bg)
+        self._sync_band_controls()
+        self._refresh_map()
+
+    def _on_band_changed(self, index: int) -> None:
+        if not self.scene or index < 0:
+            return
+        scene_bg_index = self._active_scene_bg_layer_index()
+        if scene_bg_index < 0:
+            return
+        scene_bg = self.scene.scene_bg_layers[scene_bg_index]
+        if index >= len(scene_bg.parallax_bands):
+            return
+        self._load_band_fields(scene_bg.parallax_bands[index])
+
+    def _on_band_fields_changed(self) -> None:
+        if not self.scene:
+            return
+        scene_bg_index = self._active_scene_bg_layer_index()
+        band_index = self._active_band_index()
+        if scene_bg_index < 0 or band_index < 0:
+            return
+        scene_bg = self.scene.scene_bg_layers[scene_bg_index]
+        if band_index >= len(scene_bg.parallax_bands):
+            return
+        self._save_band_fields(scene_bg.parallax_bands[band_index])
+        label = f"{band_index}: Y {scene_bg.parallax_bands[band_index].y0}–{scene_bg.parallax_bands[band_index].y1}"
+        self.band_combo.blockSignals(True)
+        self.band_combo.setItemText(band_index, label)
+        self.band_combo.blockSignals(False)
+        self._mark_dirty()
+        self._refresh_map()
+
+    def _add_parallax_band(self) -> None:
+        if not self.scene:
+            return
+        scene_bg_index = self._active_scene_bg_layer_index()
+        if scene_bg_index < 0:
+            return
+        scene_bg = self.scene.scene_bg_layers[scene_bg_index]
+        if len(scene_bg.parallax_bands) >= MAX_PARALLAX_BANDS:
+            QMessageBox.warning(self, "Add Band", f"Maximum {MAX_PARALLAX_BANDS} parallax bands.")
+            return
+        bg_height = self._background_height_for_scene_bg(scene_bg)
+        y1 = max(0, bg_height - 1)
+        if scene_bg.parallax_bands:
+            last = scene_bg.parallax_bands[-1]
+            y0 = min(y1, last.y1 + 1)
+        else:
+            y0 = 0
+        if y0 > y1:
+            y0 = y1
+        scene_bg.parallax_bands.append(SceneBgParallaxBand(y0, y1, parallax_x=scene_bg.parallax_x))
+        self._mark_dirty()
+        self._sync_band_controls()
+        self.band_combo.setCurrentIndex(len(scene_bg.parallax_bands) - 1)
+        self._refresh_map()
+
+    def _remove_parallax_band(self) -> None:
+        if not self.scene:
+            return
+        scene_bg_index = self._active_scene_bg_layer_index()
+        band_index = self._active_band_index()
+        if scene_bg_index < 0 or band_index < 0:
+            return
+        scene_bg = self.scene.scene_bg_layers[scene_bg_index]
+        if len(scene_bg.parallax_bands) <= 1:
+            QMessageBox.warning(self, "Remove Band", "Keep at least one parallax band.")
+            return
+        scene_bg.parallax_bands.pop(band_index)
+        self._mark_dirty()
+        self._sync_band_controls()
         self._refresh_map()
 
     def _on_scene_bg_visible_toggled(self, visible: bool) -> None:

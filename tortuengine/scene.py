@@ -30,6 +30,42 @@ MAX_SCENE_BG_LAYERS = BACKGROUND_LAYERS
 
 DEFAULT_SCENE_BG_LAYER_NAMES = tuple(f"scene_bg_{i}" for i in range(MAX_SCENE_BG_LAYERS))
 
+MAX_PARALLAX_BANDS = 8
+
+
+@dataclass
+class SceneBgParallaxBand:
+    """Horizontal Y strip on a background with its own X-scroll settings."""
+
+    y0: int
+    y1: int
+    parallax_x: float = 0.5
+    fixed: bool = False
+    repeat_x: bool = False
+    repeat_y: bool = False
+
+    def copy(self) -> SceneBgParallaxBand:
+        return SceneBgParallaxBand(
+            self.y0,
+            self.y1,
+            self.parallax_x,
+            self.fixed,
+            self.repeat_x,
+            self.repeat_y,
+        )
+
+
+def find_parallax_band(y: int, bands: list[SceneBgParallaxBand]) -> SceneBgParallaxBand | None:
+    for band in bands:
+        if band.y0 <= y <= band.y1:
+            return band
+    return None
+
+
+def default_parallax_band(height: int, *, parallax_x: float = 0.5) -> SceneBgParallaxBand:
+    y1 = max(0, height - 1)
+    return SceneBgParallaxBand(0, y1, parallax_x=parallax_x)
+
 
 def grid_columns(width_px: int, tile_size: int) -> int:
     if tile_size < 1:
@@ -82,6 +118,8 @@ class SceneBgLayer:
     fixed: bool = False
     repeat_x: bool = False
     repeat_y: bool = False
+    band_parallax: bool = False
+    parallax_bands: list[SceneBgParallaxBand] = field(default_factory=list)
 
     def copy(self) -> SceneBgLayer:
         return SceneBgLayer(
@@ -93,7 +131,18 @@ class SceneBgLayer:
             self.fixed,
             self.repeat_x,
             self.repeat_y,
+            self.band_parallax,
+            [band.copy() for band in self.parallax_bands],
         )
+
+    def ensure_parallax_bands(self, bg_height: int) -> None:
+        if not self.parallax_bands:
+            self.parallax_bands = [default_parallax_band(bg_height, parallax_x=self.parallax_x)]
+            return
+        y1 = max(0, bg_height - 1)
+        for band in self.parallax_bands:
+            band.y0 = max(0, min(band.y0, y1))
+            band.y1 = max(band.y0, min(band.y1, y1))
 
 
 @dataclass
@@ -401,6 +450,27 @@ def _normalize_collision_tile_layer(
     return collision_tile_layer
 
 
+def _normalize_parallax_band(raw: dict) -> SceneBgParallaxBand:
+    y0 = int(raw.get("y0", raw.get("y_start", 0)))
+    y1 = int(raw.get("y1", raw.get("y_end", y0)))
+    if y1 < y0:
+        y0, y1 = y1, y0
+    return SceneBgParallaxBand(
+        y0,
+        y1,
+        float(raw.get("parallax_x", 0.5)),
+        bool(raw.get("fixed", False)),
+        bool(raw.get("repeat_x", False)),
+        bool(raw.get("repeat_y", False)),
+    )
+
+
+def _normalize_parallax_bands(raw_bands: list[dict]) -> list[SceneBgParallaxBand]:
+    if len(raw_bands) > MAX_PARALLAX_BANDS:
+        raise ValueError(f"Scene bg layer has {len(raw_bands)} parallax bands; maximum is {MAX_PARALLAX_BANDS}")
+    return [_normalize_parallax_band(raw) for raw in raw_bands]
+
+
 def _normalize_scene_bg_layer(raw: dict, scene_bg_layer_index: int) -> SceneBgLayer:
     name = str(raw.get("name", DEFAULT_SCENE_BG_LAYER_NAMES[scene_bg_layer_index]))
     background = _normalize_asset_path(str(raw.get("background", "")))
@@ -411,8 +481,19 @@ def _normalize_scene_bg_layer(raw: dict, scene_bg_layer_index: int) -> SceneBgLa
     legacy_repeat = bool(raw.get("repeat", False))
     repeat_x = bool(raw.get("repeat_x", legacy_repeat))
     repeat_y = bool(raw.get("repeat_y", legacy_repeat))
+    band_parallax = bool(raw.get("band_parallax", False))
+    parallax_bands = _normalize_parallax_bands(raw.get("parallax_bands", []))
     return SceneBgLayer(
-        name, background, visible, parallax_x, parallax_y, fixed, repeat_x, repeat_y
+        name,
+        background,
+        visible,
+        parallax_x,
+        parallax_y,
+        fixed,
+        repeat_x,
+        repeat_y,
+        band_parallax,
+        parallax_bands,
     )
 
 
@@ -491,6 +572,24 @@ def save_scene(scene: Scene, path: Path, *, project_root: Path | None = None) ->
                 **({"fixed": True} if scene_bg_layer.fixed else {}),
                 **({"repeat_x": True} if scene_bg_layer.repeat_x else {}),
                 **({"repeat_y": True} if scene_bg_layer.repeat_y else {}),
+                **({"band_parallax": True} if scene_bg_layer.band_parallax else {}),
+                **(
+                    {
+                        "parallax_bands": [
+                            {
+                                "y0": band.y0,
+                                "y1": band.y1,
+                                "parallax_x": band.parallax_x,
+                                **({"fixed": True} if band.fixed else {}),
+                                **({"repeat_x": True} if band.repeat_x else {}),
+                                **({"repeat_y": True} if band.repeat_y else {}),
+                            }
+                            for band in scene_bg_layer.parallax_bands
+                        ]
+                    }
+                    if scene_bg_layer.band_parallax and scene_bg_layer.parallax_bands
+                    else {}
+                ),
                 **(
                     {"background": _normalize_asset_path(scene_bg_layer.background)}
                     if scene_bg_layer.background

@@ -276,6 +276,51 @@ class Background:
                 if color is not None:
                     target.set_at((vx, vy), color)
 
+    def draw_parallax_bands(
+        self,
+        target: pygame.Surface,
+        palette: list[tuple[int, int, int]],
+        bands: list,
+        *,
+        parallax_y: float = 0.0,
+        camera_x: float = 0.0,
+        camera_y: float = 0.0,
+    ) -> None:
+        """Draw using per-Y-band parallax (layer *parallax_y* still applies globally)."""
+        from tortuengine.scene import find_parallax_band
+
+        if not bands:
+            return
+        offset_y = int(camera_y * parallax_y)
+        tw, th = target.get_width(), target.get_height()
+        for vy in range(th):
+            sy = vy + offset_y
+            lookup_y = sy
+            if self.height > 0:
+                if lookup_y < 0 or lookup_y >= self.height:
+                    lookup_y = max(0, min(self.height - 1, lookup_y))
+            band = find_parallax_band(lookup_y, bands)
+            if band is None:
+                continue
+            if band.repeat_y:
+                if self.height < 1:
+                    continue
+                sy %= self.height
+            elif not (0 <= sy < self.height):
+                continue
+            offset_x = 0 if band.fixed else int(camera_x * band.parallax_x)
+            for vx in range(tw):
+                sx = vx + offset_x
+                if band.repeat_x:
+                    if self.width < 1:
+                        continue
+                    sx %= self.width
+                elif not (0 <= sx < self.width):
+                    continue
+                color = self.sample_pixel(sx, sy, palette)
+                if color is not None:
+                    target.set_at((vx, vy), color)
+
     def composite_surface(
         self,
         palette: list[tuple[int, int, int]],
