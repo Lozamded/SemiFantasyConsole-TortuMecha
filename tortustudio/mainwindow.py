@@ -31,10 +31,13 @@ from watchdog.observers import Observer
 
 from tortuengine.cart import load_game_module, reload_game_module
 from tortuengine.game_settings import MAX_GAME_FPS, MIN_GAME_FPS, slugify_cart_name
+from tortuengine.background import save_background
 from tortuengine.project import Project, create_project, load_project, save_project
 from tortuengine.scene import save_scene
 from tortuengine.sprite import save_sprite
 from tortuengine.tileset import save_tileset
+from tortustudio.background_editor import BackgroundEditorWidget
+from tortustudio.new_background_dialog import NewBackgroundDialog
 from tortustudio.new_scene_dialog import NewSceneDialog
 from tortustudio.new_sprite_dialog import NewSpriteDialog
 from tortustudio.new_tileset_dialog import NewTilesetDialog
@@ -62,6 +65,7 @@ class MainWindow(QMainWindow):
     SCENE_EDITOR = 1
     SPRITE_EDITOR = 2
     TILESET_EDITOR = 3
+    BACKGROUND_EDITOR = 4
 
     def __init__(self, project: Project | None = None) -> None:
         super().__init__()
@@ -73,6 +77,7 @@ class MainWindow(QMainWindow):
         self._active_sprite_path: Path | None = None
         self._active_tileset_path: Path | None = None
         self._active_scene_path: Path | None = None
+        self._active_background_path: Path | None = None
 
         self.setWindowTitle("TortuStudio")
         self.resize(1280, 720)
@@ -121,7 +126,7 @@ class MainWindow(QMainWindow):
         tileset_tab_action.triggered.connect(self._activate_tileset_editor_tab)
         tabs_menu.addAction(tileset_tab_action)
 
-        background_tab_action = QAction("&background Editor", self)
+        background_tab_action = QAction("&Background Editor", self)
         background_tab_action.setShortcut("Ctrl+5")
         background_tab_action.triggered.connect(self._activate_background_editor_tab)
         tabs_menu.addAction(background_tab_action)
@@ -194,11 +199,16 @@ class MainWindow(QMainWindow):
         self.scene_editor.saved.connect(self._on_scene_saved)
         self.scene_editor.new_scene_requested.connect(self._action_new_scene)
         self.scene_editor.open_scene_requested.connect(self._action_open_scene)
+        self.background_editor = BackgroundEditorWidget(Path("."))
+        self.background_editor.saved.connect(self._on_background_saved)
+        self.background_editor.new_background_requested.connect(self._action_new_background)
+        self.background_editor.open_background_requested.connect(self._action_open_background)
 
         self.center_stack.addWidget(self.viewport)
         self.center_stack.addWidget(self.scene_editor)
         self.center_stack.addWidget(self.sprite_editor)
         self.center_stack.addWidget(self.tileset_editor)
+        self.center_stack.addWidget(self.background_editor)
         splitter.addWidget(self.center_stack)
 
         inspector = QWidget()
@@ -269,9 +279,11 @@ class MainWindow(QMainWindow):
         self.sprite_editor.project_root = project.root
         self.tileset_editor.project_root = project.root
         self.scene_editor.project_root = project.root
+        self.background_editor.project_root = project.root
         self._active_sprite_path = None
         self._active_tileset_path = None
         self._active_scene_path = None
+        self._active_background_path = None
         self.workspace_tabs.reset()
         self.setWindowTitle(f"TortuStudio — {project.name}")
         self._load_game_settings_form()
@@ -294,6 +306,7 @@ class MainWindow(QMainWindow):
         for label, path in (
             ("Palettes", self.project.palettes_dir()),
             ("Tiles", self.project.tiles_dir()),
+            ("Backgrounds", self.project.backgrounds_dir()),
             ("Scenes", self.project.scenes_dir()),
             ("Objects", self.project.objects_dir()),
             ("Sprites", self.project.sprites_dir()),
@@ -455,7 +468,6 @@ class MainWindow(QMainWindow):
         self._show_tileset_editor()
 
     def _activate_background_editor_tab(self) -> None:
-        return
         if not self._confirm_discard_editor_changes():
             return
         self._switching_tabs = True
@@ -505,6 +517,14 @@ class MainWindow(QMainWindow):
         self._switching_tabs = False
         self._show_scene(path)
 
+    def _open_background(self, path: Path) -> None:
+        if not self._confirm_discard_editor_changes():
+            return
+        self._switching_tabs = True
+        self.workspace_tabs.select_background_editor()
+        self._switching_tabs = False
+        self._show_background(path)
+
     def _show_preview(self) -> None:
         self.viewport.stop_playback()
         self.center_stack.setCurrentIndex(self.VIEWPORT)
@@ -547,6 +567,21 @@ class MainWindow(QMainWindow):
         self.tileset_editor.open_tileset(path)
         self._active_tileset_path = path.resolve()
         self.center_stack.setCurrentIndex(self.TILESET_EDITOR)
+        self.field_name.setText(path.name)
+
+    def _show_background_editor(self) -> None:
+        self.center_stack.setCurrentIndex(self.BACKGROUND_EDITOR)
+        if self._active_background_path:
+            self.field_name.setText(self._active_background_path.name)
+        else:
+            self.field_name.setPlaceholderText(
+                "No background open — use New / Open Background above"
+            )
+
+    def _show_background(self, path: Path) -> None:
+        self.background_editor.open_background(path)
+        self._active_background_path = path.resolve()
+        self.center_stack.setCurrentIndex(self.BACKGROUND_EDITOR)
         self.field_name.setText(path.name)
 
     def _on_workspace_tab_selected(self, ref: TabRef) -> None:
@@ -595,6 +630,18 @@ class MainWindow(QMainWindow):
                 self._show_tileset(self._active_tileset_path)
             else:
                 self._show_tileset_editor()
+            return
+
+        if ref.kind == TabKind.BACKGROUND_EDITOR:
+            if not self._confirm_discard_editor_changes():
+                self._switching_tabs = True
+                self._restore_editor_tab()
+                self._switching_tabs = False
+                return
+            if self._active_background_path and self._active_background_path.is_file():
+                self._show_background(self._active_background_path)
+            else:
+                self._show_background_editor()
 
     def _restore_editor_tab(self) -> None:
         index = self.center_stack.currentIndex()
@@ -604,6 +651,8 @@ class MainWindow(QMainWindow):
             self.workspace_tabs.select_sprite_editor()
         elif index == self.TILESET_EDITOR:
             self.workspace_tabs.select_tileset_editor()
+        elif index == self.BACKGROUND_EDITOR:
+            self.workspace_tabs.select_background_editor()
         else:
             self.workspace_tabs.select_preview()
 
@@ -615,6 +664,8 @@ class MainWindow(QMainWindow):
             return self._confirm_discard_unsaved("sprite", self.sprite_editor.save)
         if index == self.TILESET_EDITOR and self.tileset_editor.has_unsaved_changes():
             return self._confirm_discard_unsaved("tileset", self.tileset_editor.save)
+        if index == self.BACKGROUND_EDITOR and self.background_editor.has_unsaved_changes():
+            return self._confirm_discard_unsaved("background", self.background_editor.save)
         return True
 
     def _confirm_discard_unsaved(self, label: str, save_fn) -> bool:
@@ -646,6 +697,8 @@ class MainWindow(QMainWindow):
             self._open_sprite(path)
         elif path.suffix == ".tortutileset":
             self._open_tileset(path)
+        elif path.suffix == ".tortubackground":
+            self._open_background(path)
         elif path.suffix == ".pal":
             self.log(f"Edit palette in external editor: {path}")
             cmd = self.project.editor_command.format(file=path, line=1)
@@ -660,6 +713,10 @@ class MainWindow(QMainWindow):
         self._populate_tree()
 
     def _on_scene_saved(self, path: Path) -> None:
+        self.log(f"Saved {path.relative_to(self.project.root)}")
+        self._populate_tree()
+
+    def _on_background_saved(self, path: Path) -> None:
         self.log(f"Saved {path.relative_to(self.project.root)}")
         self._populate_tree()
 
@@ -792,16 +849,14 @@ class MainWindow(QMainWindow):
         if not self._confirm_discard_editor_changes():
             return
 
-        self.scene_editor.new_scene(
+        self.scene_editor.new_scene(scene_path, dialog.palette_name)
+        if not self.scene_editor.scene:
+            return
+        save_scene(
+            self.scene_editor.scene,
             scene_path,
-            dialog.palette_name,
-            dialog.tileset_path,
-            dialog.width_tiles.value(),
-            dialog.height_tiles.value(),
-            layer_count=dialog.layer_count.value(),
-            collision_layer=dialog.collision_layer.value(),
+            project_root=self.project.root,
         )
-        save_scene(self.scene_editor.scene, scene_path)  # type: ignore[arg-type]
         self.scene_editor._dirty = False
         self._populate_tree()
         self._open_scene(scene_path)
@@ -819,6 +874,52 @@ class MainWindow(QMainWindow):
         )
         if path:
             self._open_scene(Path(path))
+
+    def _action_new_background(self) -> None:
+        if not self.project:
+            QMessageBox.information(self, "New Background", "Open a project first.")
+            return
+
+        dialog = NewBackgroundDialog(self.project.root, self)
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+
+        name = dialog.background_name or "background"
+        background_path = self.project.backgrounds_dir() / f"{name}.tortubackground"
+        if background_path.exists():
+            QMessageBox.warning(
+                self, "New Background", f"{background_path.name} already exists."
+            )
+            return
+
+        if not self._confirm_discard_editor_changes():
+            return
+
+        self.background_editor.new_background(
+            background_path,
+            dialog.palette_name,
+            dialog.image_path,
+        )
+        if not self.background_editor.background:
+            return
+        save_background(self.background_editor.background, background_path)
+        self.background_editor._dirty = False
+        self._populate_tree()
+        self._open_background(background_path)
+        self.log(f"Created {background_path.relative_to(self.project.root)}")
+
+    def _action_open_background(self) -> None:
+        if not self.project:
+            QMessageBox.information(self, "Open Background", "Open a project first.")
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Background",
+            str(self.project.backgrounds_dir()),
+            "Tortu Backgrounds (*.tortubackground)",
+        )
+        if path:
+            self._open_background(Path(path))
 
     def _open_entry_in_editor(self) -> None:
         if not self.project:

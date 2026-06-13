@@ -5,11 +5,20 @@ from tortuengine.engine import TortuEngine
 from tortuengine.game_settings import GameSettings, MAX_GAME_FPS, MIN_GAME_FPS
 from tortuengine.project import Project, load_project, save_project
 from tortuengine.palette import TRANSPARENT_INDEX, load_palette, closest_index
+from tortuengine.background import (
+    Background,
+    BackgroundLayer,
+    load_background,
+    save_background,
+)
 from tortuengine.scene import (
     EMPTY_TILE,
-    MAX_SCENE_LAYERS,
-    MIN_SCENE_LAYERS,
+    MAX_SCENE_TILE_LAYERS,
+    MAX_SCENE_BG_LAYERS,
+    MIN_SCENE_TILE_LAYERS,
     Scene,
+    SceneBgLayer,
+    SceneTileLayer,
     load_scene,
     save_scene,
 )
@@ -21,8 +30,11 @@ __all__ = [
     "MAX_COLORS",
     "TRANSPARENT_INDEX",
     "EMPTY_TILE",
-    "MIN_SCENE_LAYERS",
-    "MAX_SCENE_LAYERS",
+    "MIN_SCENE_TILE_LAYERS",
+    "MAX_SCENE_TILE_LAYERS",
+    "MAX_SCENE_BG_LAYERS",
+    "SceneTileLayer",
+    "SceneBgLayer",
     "TortuEngine",
     "Project",
     "load_project",
@@ -35,6 +47,10 @@ __all__ = [
     "Sprite",
     "load_sprite",
     "save_sprite",
+    "Background",
+    "BackgroundLayer",
+    "load_background",
+    "save_background",
     "Scene",
     "load_scene",
     "save_scene",

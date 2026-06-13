@@ -14,6 +14,7 @@ class TabKind(str, Enum):
     SCENE_EDITOR = "scene_editor"
     SPRITE_EDITOR = "sprite_editor"
     TILESET_EDITOR = "tileset_editor"
+    BACKGROUND_EDITOR = "background_editor"
 
 
 @dataclass
@@ -30,6 +31,7 @@ class WorkspaceTabs(QWidget):
     SCENE_EDITOR_LABEL = "Scene Editor"
     SPRITE_EDITOR_LABEL = "Sprite Editor"
     TILESET_EDITOR_LABEL = "Tileset Editor"
+    BACKGROUND_EDITOR_LABEL = "Background Editor"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -49,6 +51,7 @@ class WorkspaceTabs(QWidget):
         self._add_scene_editor_tab()
         self._add_sprite_editor_tab()
         self._add_tileset_editor_tab()
+        self._add_background_editor_tab()
 
     @property
     def preview_index(self) -> int:
@@ -65,6 +68,10 @@ class WorkspaceTabs(QWidget):
     @property
     def tileset_editor_index(self) -> int:
         return 3
+
+    @property
+    def background_editor_index(self) -> int:
+        return 4
 
     @property
     def current_ref(self) -> TabRef | None:
@@ -89,6 +96,10 @@ class WorkspaceTabs(QWidget):
         self.tab_bar.addTab(self.TILESET_EDITOR_LABEL)
         self._refs.append(TabRef(kind=TabKind.TILESET_EDITOR))
 
+    def _add_background_editor_tab(self) -> None:
+        self.tab_bar.addTab(self.BACKGROUND_EDITOR_LABEL)
+        self._refs.append(TabRef(kind=TabKind.BACKGROUND_EDITOR))
+
     def reset(self) -> None:
         while self.tab_bar.count() > 0:
             self.tab_bar.removeTab(0)
@@ -97,6 +108,7 @@ class WorkspaceTabs(QWidget):
         self._add_scene_editor_tab()
         self._add_sprite_editor_tab()
         self._add_tileset_editor_tab()
+        self._add_background_editor_tab()
 
     def select_preview(self) -> None:
         self.tab_bar.setCurrentIndex(self.preview_index)
@@ -109,6 +121,9 @@ class WorkspaceTabs(QWidget):
 
     def select_tileset_editor(self) -> None:
         self.tab_bar.setCurrentIndex(self.tileset_editor_index)
+
+    def select_background_editor(self) -> None:
+        self.tab_bar.setCurrentIndex(self.background_editor_index)
 
     def _on_current_changed(self, index: int) -> None:
         if index < 0 or index >= len(self._refs):

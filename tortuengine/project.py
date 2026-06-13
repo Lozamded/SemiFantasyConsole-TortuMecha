@@ -42,6 +42,9 @@ class Project:
     def objects_dir(self) -> Path:
         return self.root / "assets" / "objects"
 
+    def backgrounds_dir(self) -> Path:
+        return self.root / "assets" / "backgrounds"
+
     def start_scene_path(self) -> Path | None:
         """Resolved path to the configured start scene, if any."""
         rel = self.game.start_scene.strip()
@@ -93,6 +96,7 @@ def create_project(root: Path, name: str = "Untitled") -> Project:
         "scenes",
         "assets/sprites",
         "assets/tiles",
+        "assets/backgrounds",
         "assets/objects",
         "assets/audio",
         "scripts",

@@ -11,6 +11,7 @@ from PyQt6.QtGui import QColor, QImage, QMouseEvent, QPainter, QPen, QWheelEvent
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -18,21 +19,29 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSlider,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
+from tortuengine.background import Background, load_background
+from tortuengine.constants import SCREEN_HEIGHT, SCREEN_WIDTH, TILE_BLOCK
 from tortuengine.palette import TRANSPARENT_INDEX, load_palette, palette_path
 from tortuengine.scene import (
+    DEFAULT_SCENE_HEIGHT,
+    DEFAULT_SCENE_WIDTH,
     EMPTY_TILE,
-    MAX_SCENE_LAYERS,
-    MIN_SCENE_LAYERS,
+    MAX_SCENE_BG_LAYERS,
+    MAX_SCENE_TILE_LAYERS,
+    MIN_SCENE_TILE_LAYERS,
     Scene,
     load_scene,
     save_scene,
+    tile_size_for_tile_layer,
 )
 from tortuengine.tileset import Tileset, load_tileset
+from tortustudio.scene_assets import list_background_paths, list_tileset_paths
 from tortustudio.tileset_editor import TilesetStripCanvas
 
 
@@ -43,7 +52,7 @@ class Tool(str, Enum):
 
 
 class SceneMapCanvas(QWidget):
-    """Scrollable tile map — composites visible layers, edits the active one."""
+    """Scrollable tile map — composites visible tile layers, edits the active one."""
 
     TILE_GRID_COLOR = (48, 48, 64)
     MAP_BG = (30, 30, 40)
@@ -53,9 +62,15 @@ class SceneMapCanvas(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.scene: Scene | None = None
-        self.tileset: Tileset | None = None
+        self.project_root: Path | None = None
+        self.tilesets: dict[str, Tileset] = {}
+        self.backgrounds: dict[str, Background] = {}
+        self.bg_palettes: dict[str, list[tuple[int, int, int]]] = {}
+        self.active_tileset: Tileset | None = None
         self.palette: list[tuple[int, int, int]] = []
-        self.active_layer = 0
+        self.active_tile_layer = 0
+        self.camera_x = 0
+        self.show_backgrounds = True
         self.selected_tile = 0
         self.tool = Tool.PAINT
         self.show_grid = True
@@ -68,16 +83,29 @@ class SceneMapCanvas(QWidget):
     def set_context(
         self,
         scene: Scene | None,
-        tileset: Tileset | None,
+        project_root: Path | None,
+        tilesets: dict[str, Tileset],
+        backgrounds: dict[str, Background],
+        bg_palettes: dict[str, list[tuple[int, int, int]]],
+        active_tileset: Tileset | None,
         palette: list[tuple[int, int, int]],
-        active_layer: int,
+        active_tile_layer: int,
         selected_tile: int,
+        *,
+        camera_x: int = 0,
+        show_backgrounds: bool = True,
     ) -> None:
         self.scene = scene
-        self.tileset = tileset
+        self.project_root = project_root
+        self.tilesets = tilesets
+        self.backgrounds = backgrounds
+        self.bg_palettes = bg_palettes
+        self.active_tileset = active_tileset
         self.palette = palette
-        self.active_layer = active_layer
+        self.active_tile_layer = active_tile_layer
         self.selected_tile = selected_tile
+        self.camera_x = camera_x
+        self.show_backgrounds = show_backgrounds
         self._refresh()
 
     def set_tool(self, tool: Tool) -> None:
@@ -89,17 +117,15 @@ class SceneMapCanvas(QWidget):
 
     def set_zoom(self, zoom: int) -> None:
         self.zoom = max(1, min(16, zoom))
-        if self.scene and self.tileset:
-            tw = self.scene.width_tiles * self.tileset.tile_size * self.zoom
-            th = self.scene.height_tiles * self.tileset.tile_size * self.zoom
-            self.setMinimumSize(tw, th)
+        if self.scene:
+            self.setMinimumSize(self.scene.width * self.zoom, self.scene.height * self.zoom)
         self.update()
 
-    def _tile_surface(self, tile_index: int) -> pygame.Surface | None:
-        if not self.tileset or tile_index < 0 or tile_index >= self.tileset.tile_count:
+    def _tile_surface(self, tileset: Tileset, tile_index: int) -> pygame.Surface | None:
+        if tile_index < 0 or tile_index >= tileset.tile_count:
             return None
-        size = self.tileset.tile_size
-        tile = self.tileset.get_tile(tile_index)
+        size = tileset.tile_size
+        tile = tileset.get_tile(tile_index)
         surface = pygame.Surface((size, size), pygame.SRCALPHA)
         for ly in range(size):
             for lx in range(size):
@@ -110,30 +136,100 @@ class SceneMapCanvas(QWidget):
                 surface.set_at((lx, ly), (*rgb, 255))
         return surface
 
+    def _tile_layer_tileset(self, tileset_path: str) -> Tileset | None:
+        if not tileset_path:
+            return None
+        if tileset_path in self.tilesets:
+            return self.tilesets[tileset_path]
+        if self.project_root is None:
+            return None
+        path = (self.project_root / tileset_path).resolve()
+        if not path.is_file():
+            return None
+        loaded = load_tileset(path)
+        self.tilesets[tileset_path] = loaded
+        return loaded
+
+    def _get_background(self, rel_path: str) -> Background | None:
+        if not rel_path:
+            return None
+        if rel_path in self.backgrounds:
+            return self.backgrounds[rel_path]
+        if self.project_root is None:
+            return None
+        path = (self.project_root / rel_path).resolve()
+        if not path.is_file():
+            return None
+        loaded = load_background(path)
+        self.backgrounds[rel_path] = loaded
+        return loaded
+
+    def _background_palette(self, background: Background) -> list[tuple[int, int, int]] | None:
+        if background.palette in self.bg_palettes:
+            return self.bg_palettes[background.palette]
+        if self.project_root is None:
+            return None
+        path = palette_path(self.project_root, background.palette)
+        if not path.is_file():
+            return None
+        colors = load_palette(path)
+        self.bg_palettes[background.palette] = colors
+        return colors
+
     def _refresh(self) -> None:
-        if not self.scene or not self.tileset:
+        if not self.scene:
             self._frame = None
             self.update()
             return
 
-        tile_size = self.tileset.tile_size
-        map_w = self.scene.width_tiles * tile_size
-        map_h = self.scene.height_tiles * tile_size
+        map_w = self.scene.width
+        map_h = self.scene.height
         composite = pygame.Surface((map_w, map_h))
         composite.fill(self.MAP_BG)
 
-        for layer_index, layer in enumerate(self.scene.layers):
-            if not layer.visible:
+        if self.show_backgrounds:
+            for scene_bg in self.scene.scene_bg_layers:
+                if not scene_bg.visible or not scene_bg.background:
+                    continue
+                bg = self._get_background(scene_bg.background)
+                if bg is None:
+                    continue
+                bg_palette = self._background_palette(bg)
+                if bg_palette is None:
+                    continue
+                bg.draw_parallax(
+                    composite,
+                    bg_palette,
+                    parallax_x=scene_bg.parallax_x,
+                    parallax_y=scene_bg.parallax_y,
+                    camera_x=float(self.camera_x),
+                    fixed=scene_bg.fixed,
+                    repeat_x=scene_bg.repeat_x,
+                    repeat_y=scene_bg.repeat_y,
+                )
+
+        for tile_layer in self.scene.tile_layers:
+            if not tile_layer.visible or not tile_layer.tileset:
                 continue
-            for ty in range(self.scene.height_tiles):
-                for tx in range(self.scene.width_tiles):
-                    tile_index = layer.tiles[ty * self.scene.width_tiles + tx]
+            tileset = self._tile_layer_tileset(tile_layer.tileset)
+            if tileset is None:
+                continue
+            tile_size = tileset.tile_size
+            cols = self.scene.grid_columns(tile_size)
+            rows = self.scene.grid_rows(tile_size)
+            for ty in range(rows):
+                for tx in range(cols):
+                    px = tx * tile_size
+                    py = ty * tile_size
+                    if px >= map_w or py >= map_h:
+                        continue
+                    tile_index = tile_layer.tiles[ty * cols + tx]
                     if tile_index == EMPTY_TILE:
                         continue
-                    tile_surface = self._tile_surface(tile_index)
+                    tile_surface = self._tile_surface(tileset, tile_index)
                     if tile_surface is None:
                         continue
-                    composite.blit(tile_surface, (tx * tile_size, ty * tile_size))
+                    composite.blit(tile_surface, (px, py))
 
         data = pygame.image.tobytes(composite, "RGBA")
         self._frame = QImage(data, map_w, map_h, map_w * 4, QImage.Format.Format_RGBA8888)
@@ -143,13 +239,13 @@ class SceneMapCanvas(QWidget):
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.fillRect(self.rect(), Qt.GlobalColor.darkGray)
-        if self._frame is None or not self.scene or not self.tileset:
+        if self._frame is None or not self.scene:
             painter.end()
             return
 
-        tile_size = self.tileset.tile_size
-        sw = self.scene.width_tiles * tile_size * self.zoom
-        sh = self.scene.height_tiles * tile_size * self.zoom
+        tile_size = self.active_tileset.tile_size if self.active_tileset else TILE_BLOCK
+        sw = self.scene.width * self.zoom
+        sh = self.scene.height * self.zoom
         ox = max(0, (self.width() - sw) // 2)
         oy = max(0, (self.height() - sh) // 2)
 
@@ -161,19 +257,19 @@ class SceneMapCanvas(QWidget):
         )
         painter.drawImage(ox, oy, scaled)
 
-        if self.show_grid:
+        if self.show_grid and tile_size > 0:
             pen = QPen(QColor(*self.TILE_GRID_COLOR))
             pen.setWidth(1)
             pen.setCosmetic(True)
             painter.setPen(pen)
-            for tx in range(1, self.scene.width_tiles):
-                lx = ox + tx * tile_size * self.zoom
+            for px in range(tile_size, self.scene.width, tile_size):
+                lx = ox + px * self.zoom
                 painter.drawLine(lx, oy, lx, oy + sh)
-            for ty in range(1, self.scene.height_tiles):
-                ly = oy + ty * tile_size * self.zoom
+            for py in range(tile_size, self.scene.height, tile_size):
+                ly = oy + py * self.zoom
                 painter.drawLine(ox, ly, ox + sw, ly)
 
-        if self.scene.collision_layer == self.active_layer:
+        if self.scene.collision_tile_layer == self.active_tile_layer:
             pen = QPen(QColor(255, 220, 80, 180))
             pen.setWidth(2)
             pen.setCosmetic(True)
@@ -184,28 +280,37 @@ class SceneMapCanvas(QWidget):
         painter.end()
 
     def _event_to_tile(self, event: QMouseEvent) -> tuple[int, int] | None:
-        if self._frame is None or not self.scene or not self.tileset:
+        if self._frame is None or not self.scene or not self.active_tileset:
             return None
-        tile_size = self.tileset.tile_size
-        sw = self.scene.width_tiles * tile_size * self.zoom
-        sh = self.scene.height_tiles * tile_size * self.zoom
+        tile_size = self.active_tileset.tile_size
+        sw = self.scene.width * self.zoom
+        sh = self.scene.height * self.zoom
         ox = max(0, (self.width() - sw) // 2)
         oy = max(0, (self.height() - sh) // 2)
-        tx = int((event.position().x() - ox) // (tile_size * self.zoom))
-        ty = int((event.position().y() - oy) // (tile_size * self.zoom))
-        if 0 <= tx < self.scene.width_tiles and 0 <= ty < self.scene.height_tiles:
+        px = (event.position().x() - ox) / self.zoom
+        py = (event.position().y() - oy) / self.zoom
+        if px < 0 or py < 0 or px >= self.scene.width or py >= self.scene.height:
+            return None
+        tx = int(px // tile_size)
+        ty = int(py // tile_size)
+        cols = self.scene.grid_columns(tile_size)
+        rows = self.scene.grid_rows(tile_size)
+        if 0 <= tx < cols and 0 <= ty < rows:
             return tx, ty
         return None
 
     def _apply_tool(self, x: int, y: int) -> None:
-        if not self.scene:
+        if not self.scene or not self.active_tileset:
             return
+        tile_size = self.active_tileset.tile_size
         if self.tool == Tool.PAINT:
-            self.scene.set_tile(self.active_layer, x, y, self.selected_tile)
+            self.scene.set_tile(
+                self.active_tile_layer, x, y, self.selected_tile, tile_size
+            )
         elif self.tool == Tool.ERASE:
-            self.scene.set_tile(self.active_layer, x, y, EMPTY_TILE)
+            self.scene.set_tile(self.active_tile_layer, x, y, EMPTY_TILE, tile_size)
         elif self.tool == Tool.EYEDROPPER:
-            picked = self.scene.get_tile(self.active_layer, x, y)
+            picked = self.scene.get_tile(self.active_tile_layer, x, y, tile_size)
             if picked != EMPTY_TILE:
                 self.selected_tile = picked
                 self.changed.emit()
@@ -249,7 +354,10 @@ class SceneEditorWidget(QWidget):
         self.project_root = project_root
         self.file_path: Path | None = None
         self.scene: Scene | None = None
-        self.tileset: Tileset | None = None
+        self._active_tileset: Tileset | None = None
+        self._tilesets_cache: dict[str, Tileset] = {}
+        self._backgrounds_cache: dict[str, Background] = {}
+        self._bg_palettes_cache: dict[str, list[tuple[int, int, int]]] = {}
         self._palette_colors: list[tuple[int, int, int]] = []
         self._dirty = False
         self._selected_tile = 0
@@ -268,29 +376,98 @@ class SceneEditorWidget(QWidget):
         self.btn_open.clicked.connect(self.open_scene_requested.emit)
 
         self.status_label = QLabel("No scene open")
-        self.tileset_label = QLabel("—")
+        self.map_size_label = QLabel("—")
 
-        self.layer_combo = QComboBox()
-        self.layer_combo.currentIndexChanged.connect(self._on_layer_changed)
+        self.tile_layer_combo = QComboBox()
+        self.tile_layer_combo.currentIndexChanged.connect(self._on_tile_layer_changed)
 
-        self.layer_visible = QCheckBox("Layer visible")
-        self.layer_visible.setChecked(True)
-        self.layer_visible.toggled.connect(self._on_layer_visible_toggled)
+        self.tile_layer_tileset_combo = QComboBox()
+        self.tile_layer_tileset_combo.setToolTip("Tileset used by the active tile layer")
+        self.tile_layer_tileset_combo.currentIndexChanged.connect(
+            self._on_tile_layer_tileset_changed
+        )
 
-        self.collision_layer_combo = QComboBox()
-        self.collision_layer_combo.currentIndexChanged.connect(self._on_collision_layer_changed)
+        self.tile_layer_visible = QCheckBox("Tile layer visible")
+        self.tile_layer_visible.setChecked(True)
+        self.tile_layer_visible.toggled.connect(self._on_tile_layer_visible_toggled)
 
-        self.btn_add_layer = QPushButton("Add layer")
-        self.btn_add_layer.clicked.connect(self._add_layer)
-        self.btn_remove_layer = QPushButton("Remove layer")
-        self.btn_remove_layer.clicked.connect(self._remove_layer)
+        self.collision_tile_layer_combo = QComboBox()
+        self.collision_tile_layer_combo.currentIndexChanged.connect(
+            self._on_collision_tile_layer_changed
+        )
+
+        self.btn_add_tile_layer = QPushButton("Add tile layer")
+        self.btn_add_tile_layer.clicked.connect(self._add_tile_layer)
+        self.btn_remove_tile_layer = QPushButton("Remove tile layer")
+        self.btn_remove_tile_layer.clicked.connect(self._remove_tile_layer)
+
+        self.scene_bg_layer_combo = QComboBox()
+        self.scene_bg_layer_combo.currentIndexChanged.connect(self._on_scene_bg_layer_changed)
+
+        self.scene_bg_background_combo = QComboBox()
+        self.scene_bg_background_combo.setToolTip("Background asset for the active scene bg layer")
+        self.scene_bg_background_combo.currentIndexChanged.connect(
+            self._on_scene_bg_background_changed
+        )
+
+        self.scene_bg_visible = QCheckBox("Bg layer visible")
+        self.scene_bg_visible.setChecked(True)
+        self.scene_bg_visible.toggled.connect(self._on_scene_bg_visible_toggled)
+
+        self.scene_bg_parallax_x = QDoubleSpinBox()
+        self.scene_bg_parallax_x.setRange(0.0, 1.0)
+        self.scene_bg_parallax_x.setSingleStep(0.05)
+        self.scene_bg_parallax_x.setValue(0.5)
+        self.scene_bg_parallax_x.setToolTip("Scroll factor when camera moves (disabled when Fixed)")
+        self.scene_bg_parallax_x.valueChanged.connect(self._on_scene_bg_parallax_changed)
+
+        self.scene_bg_parallax_y = QDoubleSpinBox()
+        self.scene_bg_parallax_y.setRange(0.0, 1.0)
+        self.scene_bg_parallax_y.setSingleStep(0.05)
+        self.scene_bg_parallax_y.valueChanged.connect(self._on_scene_bg_parallax_changed)
+
+        self.scene_bg_fixed = QCheckBox("Fixed")
+        self.scene_bg_fixed.setToolTip("Background stays on screen and ignores camera scroll")
+        self.scene_bg_fixed.toggled.connect(self._on_scene_bg_fixed_toggled)
+
+        self.scene_bg_repeat_x = QCheckBox("Repeat X")
+        self.scene_bg_repeat_x.setToolTip("Tile the background horizontally")
+        self.scene_bg_repeat_x.toggled.connect(self._on_scene_bg_repeat_x_toggled)
+
+        self.scene_bg_repeat_y = QCheckBox("Repeat Y")
+        self.scene_bg_repeat_y.setToolTip("Tile the background vertically")
+        self.scene_bg_repeat_y.toggled.connect(self._on_scene_bg_repeat_y_toggled)
+
+        self.btn_add_scene_bg_layer = QPushButton("Add bg layer")
+        self.btn_add_scene_bg_layer.clicked.connect(self._add_scene_bg_layer)
+        self.btn_remove_scene_bg_layer = QPushButton("Remove bg layer")
+        self.btn_remove_scene_bg_layer.clicked.connect(self._remove_scene_bg_layer)
+
+        self.show_backgrounds = QCheckBox("Show backgrounds")
+        self.show_backgrounds.setChecked(True)
+        self.show_backgrounds.toggled.connect(self._on_show_backgrounds_toggled)
+
+        self.camera_slider = QSlider(Qt.Orientation.Horizontal)
+        self.camera_slider.setRange(0, DEFAULT_SCENE_WIDTH)
+        self.camera_slider.valueChanged.connect(self._on_camera_changed)
 
         self.map_width = QSpinBox()
-        self.map_width.setRange(1, 256)
+        self.map_width.setRange(8, 2048)
+        self.map_width.setValue(DEFAULT_SCENE_WIDTH)
+        self.map_width.setSuffix(" px")
+
         self.map_height = QSpinBox()
-        self.map_height.setRange(1, 256)
+        self.map_height.setRange(8, 2048)
+        self.map_height.setValue(DEFAULT_SCENE_HEIGHT)
+        self.map_height.setSuffix(" px")
+
         self.btn_resize_map = QPushButton("Resize map")
         self.btn_resize_map.clicked.connect(self._resize_map)
+        self.btn_reset_screen = QPushButton("Reset to screen")
+        self.btn_reset_screen.setToolTip(
+            f"Set map size to {SCREEN_WIDTH}×{SCREEN_HEIGHT} (camera / screen)"
+        )
+        self.btn_reset_screen.clicked.connect(self._reset_map_to_screen)
 
         self.show_grid = QCheckBox("Tile grid")
         self.show_grid.setChecked(True)
@@ -338,17 +515,36 @@ class SceneEditorWidget(QWidget):
 
         side = QVBoxLayout()
         form = QFormLayout()
-        form.addRow("Tileset:", self.tileset_label)
-        form.addRow("Active layer:", self.layer_combo)
-        form.addRow("", self.layer_visible)
-        form.addRow("Collision layer:", self.collision_layer_combo)
-        layer_btns = QHBoxLayout()
-        layer_btns.addWidget(self.btn_add_layer)
-        layer_btns.addWidget(self.btn_remove_layer)
-        form.addRow(layer_btns)
-        form.addRow("Map width:", self.map_width)
-        form.addRow("Map height:", self.map_height)
-        form.addRow(self.btn_resize_map)
+        form.addRow("Map size:", self.map_size_label)
+        form.addRow("Active tile layer:", self.tile_layer_combo)
+        form.addRow("Tileset:", self.tile_layer_tileset_combo)
+        form.addRow("", self.tile_layer_visible)
+        form.addRow("Collision tile layer:", self.collision_tile_layer_combo)
+        tile_layer_btns = QHBoxLayout()
+        tile_layer_btns.addWidget(self.btn_add_tile_layer)
+        tile_layer_btns.addWidget(self.btn_remove_tile_layer)
+        form.addRow(tile_layer_btns)
+        form.addRow(QLabel("<b>Background layers</b>"))
+        form.addRow("Active bg layer:", self.scene_bg_layer_combo)
+        form.addRow("Background:", self.scene_bg_background_combo)
+        form.addRow("", self.scene_bg_visible)
+        form.addRow("Parallax X:", self.scene_bg_parallax_x)
+        form.addRow("Parallax Y:", self.scene_bg_parallax_y)
+        form.addRow("", self.scene_bg_fixed)
+        form.addRow("", self.scene_bg_repeat_x)
+        form.addRow("", self.scene_bg_repeat_y)
+        scene_bg_btns = QHBoxLayout()
+        scene_bg_btns.addWidget(self.btn_add_scene_bg_layer)
+        scene_bg_btns.addWidget(self.btn_remove_scene_bg_layer)
+        form.addRow(scene_bg_btns)
+        form.addRow("Camera X:", self.camera_slider)
+        form.addRow(self.show_backgrounds)
+        form.addRow("Width:", self.map_width)
+        form.addRow("Height:", self.map_height)
+        resize_row = QHBoxLayout()
+        resize_row.addWidget(self.btn_resize_map)
+        resize_row.addWidget(self.btn_reset_screen)
+        form.addRow(resize_row)
         form.addRow("Zoom:", self.zoom_spin)
         form.addRow(self.show_grid)
         side.addLayout(form)
@@ -370,6 +566,53 @@ class SceneEditorWidget(QWidget):
         strip_layout.addWidget(strip_scroll)
         outer.addWidget(strip_group)
 
+    def _active_tile_layer_index(self) -> int:
+        if not self.scene or self.tile_layer_combo.count() == 0:
+            return 0
+        return self.tile_layer_combo.currentIndex()
+
+    def _active_scene_bg_layer_index(self) -> int:
+        if not self.scene or self.scene_bg_layer_combo.count() == 0:
+            return -1
+        return self.scene_bg_layer_combo.currentIndex()
+
+    def _active_tile_layer_tile_size(self) -> int:
+        if not self.scene:
+            return TILE_BLOCK
+        tile_layer = self.scene.tile_layers[self._active_tile_layer_index()]
+        return tile_size_for_tile_layer(tile_layer, self.project_root)
+
+    def _get_tileset(self, rel_path: str) -> Tileset | None:
+        if not rel_path:
+            return None
+        if rel_path in self._tilesets_cache:
+            return self._tilesets_cache[rel_path]
+        path = (self.project_root / rel_path).resolve()
+        if not path.is_file():
+            return None
+        loaded = load_tileset(path)
+        self._tilesets_cache[rel_path] = loaded
+        return loaded
+
+    def _get_background(self, rel_path: str) -> Background | None:
+        if not rel_path:
+            return None
+        if rel_path in self._backgrounds_cache:
+            return self._backgrounds_cache[rel_path]
+        path = (self.project_root / rel_path).resolve()
+        if not path.is_file():
+            return None
+        loaded = load_background(path)
+        self._backgrounds_cache[rel_path] = loaded
+        return loaded
+
+    def _load_active_tile_layer_tileset(self) -> None:
+        if not self.scene:
+            self._active_tileset = None
+            return
+        tile_layer = self.scene.tile_layers[self._active_tile_layer_index()]
+        self._active_tileset = self._get_tileset(tile_layer.tileset)
+
     def _set_tool(self, tool: Tool) -> None:
         self.btn_paint.setChecked(tool == Tool.PAINT)
         self.btn_erase.setChecked(tool == Tool.ERASE)
@@ -377,7 +620,10 @@ class SceneEditorWidget(QWidget):
         self.map_canvas.set_tool(tool)
 
     def _on_map_changed(self) -> None:
-        if self.map_canvas.tool == Tool.EYEDROPPER and self.map_canvas.selected_tile != self._selected_tile:
+        if (
+            self.map_canvas.tool == Tool.EYEDROPPER
+            and self.map_canvas.selected_tile != self._selected_tile
+        ):
             self._selected_tile = self.map_canvas.selected_tile
             self.strip_canvas.set_selected_index(self._selected_tile)
         self._mark_dirty()
@@ -398,18 +644,118 @@ class SceneEditorWidget(QWidget):
         state = "edited" if self._dirty else "saved"
         self.status_label.setText(f"{self.file_path.name} ({state})")
 
-    def _relative_path(self, path: Path) -> str:
-        return path.resolve().relative_to(self.project_root.resolve()).as_posix()
-
-    def _load_tileset_for_scene(self) -> None:
+    def _update_map_size_label(self) -> None:
         if not self.scene:
-            self.tileset = None
+            self.map_size_label.setText("—")
             return
-        tileset_path = self.scene.tileset_path(self.project_root)
-        if not tileset_path.is_file():
-            raise FileNotFoundError(f"Tileset not found: {tileset_path}")
-        self.tileset = load_tileset(tileset_path)
-        self.tileset_label.setText(self.scene.tileset)
+        ts = self._active_tile_layer_tile_size()
+        cols = self.scene.grid_columns(ts)
+        rows = self.scene.grid_rows(ts)
+        self.map_size_label.setText(
+            f"{self.scene.width}×{self.scene.height} px  ({cols}×{rows} @ {ts}px tiles)"
+        )
+
+    def _sync_tile_layer_tileset_combo(self) -> None:
+        self.tile_layer_tileset_combo.blockSignals(True)
+        self.tile_layer_tileset_combo.clear()
+        self.tile_layer_tileset_combo.addItem("(none)", "")
+        for rel in list_tileset_paths(self.project_root):
+            self.tile_layer_tileset_combo.addItem(rel, rel)
+        if not self.scene:
+            self.tile_layer_tileset_combo.blockSignals(False)
+            return
+        tile_layer = self.scene.tile_layers[self._active_tile_layer_index()]
+        index = self.tile_layer_tileset_combo.findData(tile_layer.tileset)
+        self.tile_layer_tileset_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.tile_layer_tileset_combo.blockSignals(False)
+
+    def _update_scene_bg_parallax_enabled(self, scene_bg) -> None:
+        enabled = not scene_bg.fixed
+        self.scene_bg_parallax_x.setEnabled(enabled)
+        self.scene_bg_parallax_y.setEnabled(enabled)
+
+    def _sync_scene_bg_background_combo(self) -> None:
+        self.scene_bg_background_combo.blockSignals(True)
+        self.scene_bg_background_combo.clear()
+        self.scene_bg_background_combo.addItem("(none)", "")
+        for rel in list_background_paths(self.project_root):
+            self.scene_bg_background_combo.addItem(rel, rel)
+        index = self._active_scene_bg_layer_index()
+        if not self.scene or index < 0:
+            self.scene_bg_background_combo.blockSignals(False)
+            return
+        scene_bg = self.scene.scene_bg_layers[index]
+        bg_index = self.scene_bg_background_combo.findData(scene_bg.background)
+        self.scene_bg_background_combo.setCurrentIndex(bg_index if bg_index >= 0 else 0)
+        self.scene_bg_background_combo.blockSignals(False)
+
+    def _sync_scene_bg_layer_controls(self) -> None:
+        if not self.scene:
+            return
+        self.scene_bg_layer_combo.blockSignals(True)
+        self.scene_bg_layer_combo.clear()
+        for i, scene_bg in enumerate(self.scene.scene_bg_layers):
+            self.scene_bg_layer_combo.addItem(f"{i}: {scene_bg.name}", i)
+        if self.scene.scene_bg_layer_count == 0:
+            self.scene_bg_visible.setEnabled(False)
+            self.scene_bg_background_combo.setEnabled(False)
+            self.scene_bg_parallax_x.setEnabled(False)
+            self.scene_bg_parallax_y.setEnabled(False)
+            self.scene_bg_fixed.setEnabled(False)
+            self.scene_bg_repeat_x.setEnabled(False)
+            self.scene_bg_repeat_y.setEnabled(False)
+            self.scene_bg_layer_combo.blockSignals(False)
+            self.btn_add_scene_bg_layer.setEnabled(True)
+            self.btn_remove_scene_bg_layer.setEnabled(False)
+            return
+        self.scene_bg_visible.setEnabled(True)
+        self.scene_bg_background_combo.setEnabled(True)
+        self.scene_bg_parallax_x.setEnabled(True)
+        self.scene_bg_parallax_y.setEnabled(True)
+        self.scene_bg_fixed.setEnabled(True)
+        self.scene_bg_repeat_x.setEnabled(True)
+        self.scene_bg_repeat_y.setEnabled(True)
+        active = self.scene_bg_layer_combo.currentIndex()
+        if active < 0:
+            active = 0
+        if self.scene_bg_layer_combo.count() > 0:
+            self.scene_bg_layer_combo.setCurrentIndex(
+                min(active, self.scene.scene_bg_layer_count - 1)
+            )
+            scene_bg = self.scene.scene_bg_layers[self.scene_bg_layer_combo.currentIndex()]
+            self.scene_bg_visible.blockSignals(True)
+            self.scene_bg_visible.setChecked(scene_bg.visible)
+            self.scene_bg_visible.blockSignals(False)
+            self.scene_bg_parallax_x.blockSignals(True)
+            self.scene_bg_parallax_y.blockSignals(True)
+            self.scene_bg_parallax_x.setValue(scene_bg.parallax_x)
+            self.scene_bg_parallax_y.setValue(scene_bg.parallax_y)
+            self.scene_bg_parallax_x.blockSignals(False)
+            self.scene_bg_parallax_y.blockSignals(False)
+            self.scene_bg_fixed.blockSignals(True)
+            self.scene_bg_repeat_x.blockSignals(True)
+            self.scene_bg_repeat_y.blockSignals(True)
+            self.scene_bg_fixed.setChecked(scene_bg.fixed)
+            self.scene_bg_repeat_x.setChecked(scene_bg.repeat_x)
+            self.scene_bg_repeat_y.setChecked(scene_bg.repeat_y)
+            self.scene_bg_fixed.blockSignals(False)
+            self.scene_bg_repeat_x.blockSignals(False)
+            self.scene_bg_repeat_y.blockSignals(False)
+            self._update_scene_bg_parallax_enabled(scene_bg)
+        self.scene_bg_layer_combo.blockSignals(False)
+        self.btn_add_scene_bg_layer.setEnabled(
+            self.scene.scene_bg_layer_count < MAX_SCENE_BG_LAYERS
+        )
+        self.btn_remove_scene_bg_layer.setEnabled(self.scene.scene_bg_layer_count > 0)
+
+    def _update_camera_slider(self) -> None:
+        if not self.scene:
+            return
+        max_cam = max(0, self.scene.width - SCREEN_WIDTH)
+        self.camera_slider.blockSignals(True)
+        self.camera_slider.setRange(0, max_cam)
+        self.camera_slider.setValue(min(self.camera_slider.value(), max_cam))
+        self.camera_slider.blockSignals(False)
 
     def _load_palette_for_scene(self) -> None:
         if not self.scene:
@@ -419,42 +765,57 @@ class SceneEditorWidget(QWidget):
             raise FileNotFoundError(f"Palette not found: {path}")
         self._palette_colors = load_palette(path)
 
-    def _sync_layer_controls(self) -> None:
+    def _sync_tile_layer_controls(self) -> None:
         if not self.scene:
             return
-        self.layer_combo.blockSignals(True)
-        self.collision_layer_combo.blockSignals(True)
-        self.layer_combo.clear()
-        self.collision_layer_combo.clear()
-        for i, layer in enumerate(self.scene.layers):
-            label = f"{i}: {layer.name}"
-            self.layer_combo.addItem(label, i)
-            self.collision_layer_combo.addItem(label, i)
-        active = min(self.map_canvas.active_layer, max(0, self.scene.layer_count - 1))
-        self.layer_combo.setCurrentIndex(active)
-        self.collision_layer_combo.setCurrentIndex(self.scene.collision_layer)
-        self.layer_visible.setChecked(self.scene.layers[active].visible)
-        self.layer_combo.blockSignals(False)
-        self.collision_layer_combo.blockSignals(False)
-        self.btn_remove_layer.setEnabled(self.scene.layer_count > MIN_SCENE_LAYERS)
-        self.btn_add_layer.setEnabled(self.scene.layer_count < MAX_SCENE_LAYERS)
+        self.tile_layer_combo.blockSignals(True)
+        self.collision_tile_layer_combo.blockSignals(True)
+        self.tile_layer_combo.clear()
+        self.collision_tile_layer_combo.clear()
+        for i, tile_layer in enumerate(self.scene.tile_layers):
+            label = f"{i}: {tile_layer.name}"
+            self.tile_layer_combo.addItem(label, i)
+            self.collision_tile_layer_combo.addItem(label, i)
+        active = min(
+            self.map_canvas.active_tile_layer,
+            max(0, self.scene.tile_layer_count - 1),
+        )
+        self.tile_layer_combo.setCurrentIndex(active)
+        self.collision_tile_layer_combo.setCurrentIndex(self.scene.collision_tile_layer)
+        self.tile_layer_visible.setChecked(self.scene.tile_layers[active].visible)
+        self.tile_layer_combo.blockSignals(False)
+        self.collision_tile_layer_combo.blockSignals(False)
+        self.btn_remove_tile_layer.setEnabled(
+            self.scene.tile_layer_count > MIN_SCENE_TILE_LAYERS
+        )
+        self.btn_add_tile_layer.setEnabled(
+            self.scene.tile_layer_count < MAX_SCENE_TILE_LAYERS
+        )
 
     def _refresh_map(self) -> None:
         if not self.scene:
-            self.map_canvas.set_context(None, None, [], 0, 0)
+            self.map_canvas.set_context(
+                None, None, {}, {}, {}, None, [], 0, 0, camera_x=0, show_backgrounds=True
+            )
             return
-        active = self.layer_combo.currentIndex() if self.layer_combo.count() else 0
+        active = self._active_tile_layer_index()
         self.map_canvas.set_context(
             self.scene,
-            self.tileset,
+            self.project_root,
+            self._tilesets_cache,
+            self._backgrounds_cache,
+            self._bg_palettes_cache,
+            self._active_tileset,
             self._palette_colors,
             active,
             self._selected_tile,
+            camera_x=self.camera_slider.value(),
+            show_backgrounds=self.show_backgrounds.isChecked(),
         )
 
     def _refresh_strip(self) -> None:
-        if self.tileset:
-            self.strip_canvas.set_tileset(self.tileset, self._palette_colors)
+        if self._active_tileset:
+            self.strip_canvas.set_tileset(self._active_tileset, self._palette_colors)
             self.strip_canvas.set_selected_index(self._selected_tile)
         else:
             self.strip_canvas.set_tileset(None, [])
@@ -464,62 +825,223 @@ class SceneEditorWidget(QWidget):
             return
         self.map_width.blockSignals(True)
         self.map_height.blockSignals(True)
-        self.map_width.setValue(self.scene.width_tiles)
-        self.map_height.setValue(self.scene.height_tiles)
+        self.map_width.setValue(self.scene.width)
+        self.map_height.setValue(self.scene.height)
         self.map_width.blockSignals(False)
         self.map_height.blockSignals(False)
-        self._sync_layer_controls()
+        self._update_map_size_label()
+        self._sync_tile_layer_controls()
+        self._sync_tile_layer_tileset_combo()
+        self._sync_scene_bg_layer_controls()
+        self._sync_scene_bg_background_combo()
+        self._update_camera_slider()
+        self._load_active_tile_layer_tileset()
         self._refresh_map()
         self._refresh_strip()
 
-    def _on_layer_changed(self, index: int) -> None:
+    def _on_scene_bg_layer_changed(self, index: int) -> None:
         if not self.scene or index < 0:
             return
-        self.layer_visible.blockSignals(True)
-        self.layer_visible.setChecked(self.scene.layers[index].visible)
-        self.layer_visible.blockSignals(False)
+        scene_bg = self.scene.scene_bg_layers[index]
+        self.scene_bg_visible.blockSignals(True)
+        self.scene_bg_visible.setChecked(scene_bg.visible)
+        self.scene_bg_visible.blockSignals(False)
+        self.scene_bg_parallax_x.blockSignals(True)
+        self.scene_bg_parallax_y.blockSignals(True)
+        self.scene_bg_parallax_x.setValue(scene_bg.parallax_x)
+        self.scene_bg_parallax_y.setValue(scene_bg.parallax_y)
+        self.scene_bg_parallax_x.blockSignals(False)
+        self.scene_bg_parallax_y.blockSignals(False)
+        self.scene_bg_fixed.blockSignals(True)
+        self.scene_bg_repeat_x.blockSignals(True)
+        self.scene_bg_repeat_y.blockSignals(True)
+        self.scene_bg_fixed.setChecked(scene_bg.fixed)
+        self.scene_bg_repeat_x.setChecked(scene_bg.repeat_x)
+        self.scene_bg_repeat_y.setChecked(scene_bg.repeat_y)
+        self.scene_bg_fixed.blockSignals(False)
+        self.scene_bg_repeat_x.blockSignals(False)
+        self.scene_bg_repeat_y.blockSignals(False)
+        self._update_scene_bg_parallax_enabled(scene_bg)
+        self._sync_scene_bg_background_combo()
         self._refresh_map()
 
-    def _on_layer_visible_toggled(self, visible: bool) -> None:
+    def _on_scene_bg_background_changed(self, index: int) -> None:
+        if not self.scene or index < 0:
+            return
+        bg_index = self._active_scene_bg_layer_index()
+        if bg_index < 0:
+            return
+        rel = self.scene_bg_background_combo.itemData(index)
+        rel_path = str(rel) if rel else ""
+        scene_bg = self.scene.scene_bg_layers[bg_index]
+        if scene_bg.background == rel_path:
+            return
+        scene_bg.background = rel_path
+        if rel_path:
+            self._get_background(rel_path)
+        self._mark_dirty()
+        self._refresh_map()
+
+    def _on_scene_bg_visible_toggled(self, visible: bool) -> None:
         if not self.scene:
             return
-        index = self.layer_combo.currentIndex()
-        if 0 <= index < self.scene.layer_count:
-            self.scene.layers[index].visible = visible
+        index = self._active_scene_bg_layer_index()
+        if 0 <= index < self.scene.scene_bg_layer_count:
+            self.scene.scene_bg_layers[index].visible = visible
             self._mark_dirty()
             self._refresh_map()
 
-    def _on_collision_layer_changed(self, index: int) -> None:
+    def _on_scene_bg_parallax_changed(self) -> None:
+        if not self.scene:
+            return
+        index = self._active_scene_bg_layer_index()
+        if index < 0:
+            return
+        scene_bg = self.scene.scene_bg_layers[index]
+        scene_bg.parallax_x = self.scene_bg_parallax_x.value()
+        scene_bg.parallax_y = self.scene_bg_parallax_y.value()
+        self._mark_dirty()
+        self._refresh_map()
+
+    def _on_scene_bg_fixed_toggled(self, fixed: bool) -> None:
+        if not self.scene:
+            return
+        index = self._active_scene_bg_layer_index()
+        if index < 0:
+            return
+        scene_bg = self.scene.scene_bg_layers[index]
+        scene_bg.fixed = fixed
+        self._update_scene_bg_parallax_enabled(scene_bg)
+        self._mark_dirty()
+        self._refresh_map()
+
+    def _on_scene_bg_repeat_x_toggled(self, repeat_x: bool) -> None:
+        if not self.scene:
+            return
+        index = self._active_scene_bg_layer_index()
+        if index < 0:
+            return
+        self.scene.scene_bg_layers[index].repeat_x = repeat_x
+        self._mark_dirty()
+        self._refresh_map()
+
+    def _on_scene_bg_repeat_y_toggled(self, repeat_y: bool) -> None:
+        if not self.scene:
+            return
+        index = self._active_scene_bg_layer_index()
+        if index < 0:
+            return
+        self.scene.scene_bg_layers[index].repeat_y = repeat_y
+        self._mark_dirty()
+        self._refresh_map()
+
+    def _on_camera_changed(self, _value: int) -> None:
+        self._refresh_map()
+
+    def _on_show_backgrounds_toggled(self, _visible: bool) -> None:
+        self._refresh_map()
+
+    def _add_scene_bg_layer(self) -> None:
+        if not self.scene:
+            return
+        try:
+            index = self.scene.add_scene_bg_layer()
+        except ValueError as exc:
+            QMessageBox.warning(self, "Add Bg Layer", str(exc))
+            return
+        self._mark_dirty()
+        self._sync_scene_bg_layer_controls()
+        self.scene_bg_layer_combo.setCurrentIndex(index)
+        self._sync_scene_bg_background_combo()
+        self._refresh_map()
+
+    def _remove_scene_bg_layer(self) -> None:
+        if not self.scene:
+            return
+        index = self._active_scene_bg_layer_index()
+        if index < 0:
+            return
+        try:
+            self.scene.remove_scene_bg_layer(index)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Remove Bg Layer", str(exc))
+            return
+        self._mark_dirty()
+        self._sync_scene_bg_layer_controls()
+        self._sync_scene_bg_background_combo()
+        self._refresh_map()
+
+    def _on_tile_layer_changed(self, index: int) -> None:
         if not self.scene or index < 0:
             return
-        self.scene.set_collision_layer(index)
+        self.tile_layer_visible.blockSignals(True)
+        self.tile_layer_visible.setChecked(self.scene.tile_layers[index].visible)
+        self.tile_layer_visible.blockSignals(False)
+        self._sync_tile_layer_tileset_combo()
+        self._load_active_tile_layer_tileset()
+        self._update_map_size_label()
+        self._refresh_map()
+        self._refresh_strip()
+
+    def _on_tile_layer_tileset_changed(self, index: int) -> None:
+        if not self.scene or index < 0:
+            return
+        rel = self.tile_layer_tileset_combo.itemData(index)
+        rel_path = str(rel) if rel else ""
+        tile_layer_index = self._active_tile_layer_index()
+        tile_layer = self.scene.tile_layers[tile_layer_index]
+        if tile_layer.tileset == rel_path:
+            return
+        tile_layer.tileset = rel_path
+        self.scene.ensure_tile_layer_grid(
+            tile_layer_index, tile_size_for_tile_layer(tile_layer, self.project_root)
+        )
+        self._load_active_tile_layer_tileset()
+        self._mark_dirty()
+        self._update_map_size_label()
+        self._refresh_map()
+        self._refresh_strip()
+
+    def _on_tile_layer_visible_toggled(self, visible: bool) -> None:
+        if not self.scene:
+            return
+        index = self.tile_layer_combo.currentIndex()
+        if 0 <= index < self.scene.tile_layer_count:
+            self.scene.tile_layers[index].visible = visible
+            self._mark_dirty()
+            self._refresh_map()
+
+    def _on_collision_tile_layer_changed(self, index: int) -> None:
+        if not self.scene or index < 0:
+            return
+        self.scene.set_collision_tile_layer(index)
         self._mark_dirty()
         self._refresh_map()
 
-    def _add_layer(self) -> None:
+    def _add_tile_layer(self) -> None:
         if not self.scene:
             return
         try:
-            index = self.scene.add_layer()
+            index = self.scene.add_tile_layer(TILE_BLOCK)
         except ValueError as exc:
-            QMessageBox.warning(self, "Add Layer", str(exc))
+            QMessageBox.warning(self, "Add Tile Layer", str(exc))
             return
         self._mark_dirty()
-        self._sync_layer_controls()
-        self.layer_combo.setCurrentIndex(index)
+        self._sync_tile_layer_controls()
+        self.tile_layer_combo.setCurrentIndex(index)
         self._refresh_map()
 
-    def _remove_layer(self) -> None:
+    def _remove_tile_layer(self) -> None:
         if not self.scene:
             return
-        index = self.layer_combo.currentIndex()
+        index = self.tile_layer_combo.currentIndex()
         try:
-            self.scene.remove_layer(index)
+            self.scene.remove_tile_layer(index)
         except ValueError as exc:
-            QMessageBox.warning(self, "Remove Layer", str(exc))
+            QMessageBox.warning(self, "Remove Tile Layer", str(exc))
             return
         self._mark_dirty()
-        self._sync_layer_controls()
+        self._sync_tile_layer_controls()
         self._refresh_map()
 
     def _resize_map(self) -> None:
@@ -527,58 +1049,77 @@ class SceneEditorWidget(QWidget):
             return
         new_w = self.map_width.value()
         new_h = self.map_height.value()
-        if new_w == self.scene.width_tiles and new_h == self.scene.height_tiles:
+        if new_w == self.scene.width and new_h == self.scene.height:
             return
-        if any(any(v != EMPTY_TILE for v in layer.tiles) for layer in self.scene.layers):
+        if any(
+            any(v != EMPTY_TILE for v in tile_layer.tiles)
+            for tile_layer in self.scene.tile_layers
+        ):
             reply = QMessageBox.question(
                 self,
                 "Resize Map",
-                "Resample all layers to the new map size?",
+                "Resample all tile layers to the new map size?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply != QMessageBox.StandardButton.Yes:
-                self.map_width.setValue(self.scene.width_tiles)
-                self.map_height.setValue(self.scene.height_tiles)
+                self.map_width.setValue(self.scene.width)
+                self.map_height.setValue(self.scene.height)
                 return
-        self.scene.resize(new_w, new_h)
+        self.scene.resize_pixels(new_w, new_h, self.project_root)
         self._mark_dirty()
         self._refresh_editor()
 
-    def new_scene(
-        self,
-        path: Path,
-        palette: str,
-        tileset: str,
-        width_tiles: int,
-        height_tiles: int,
-        *,
-        layer_count: int = MIN_SCENE_LAYERS,
-        collision_layer: int = 0,
-    ) -> None:
+    def _reset_map_to_screen(self) -> None:
+        self.map_width.setValue(SCREEN_WIDTH)
+        self.map_height.setValue(SCREEN_HEIGHT)
+        self._resize_map()
+
+    def new_scene(self, path: Path, palette: str) -> None:
         self.file_path = path.resolve()
-        self.scene = Scene.create(
-            palette,
-            tileset,
-            width_tiles,
-            height_tiles,
-            layer_count=layer_count,
-            collision_layer=collision_layer,
-        )
+        self._tilesets_cache.clear()
+        self._backgrounds_cache.clear()
+        self._bg_palettes_cache.clear()
+        self._active_tileset = None
+        try:
+            self.scene = Scene.create(palette)
+        except ValueError as exc:
+            QMessageBox.warning(self, "New Scene", str(exc))
+            self.scene = None
+            self.file_path = None
+            return
         self._dirty = True
         self._selected_tile = 0
         self._open_scene_data()
 
     def open_scene(self, path: Path) -> None:
         self.file_path = path.resolve()
-        self.scene = load_scene(self.file_path)
+        self._tilesets_cache.clear()
+        self._backgrounds_cache.clear()
+        self._bg_palettes_cache.clear()
+        self._active_tileset = None
+        try:
+            self.scene = load_scene(self.file_path, project_root=self.project_root)
+        except (FileNotFoundError, ValueError, OSError) as exc:
+            QMessageBox.warning(self, "Open Scene", str(exc))
+            self.scene = None
+            self.file_path = None
+            return
         self._dirty = False
         self._selected_tile = 0
         self._open_scene_data()
 
     def _open_scene_data(self) -> None:
+        if not self.scene:
+            return
         try:
-            self._load_tileset_for_scene()
             self._load_palette_for_scene()
+            self.scene.ensure_all_tile_layer_grids(self.project_root)
+            for tile_layer in self.scene.tile_layers:
+                if tile_layer.tileset:
+                    self._get_tileset(tile_layer.tileset)
+            for scene_bg in self.scene.scene_bg_layers:
+                if scene_bg.background:
+                    self._get_background(scene_bg.background)
         except FileNotFoundError as exc:
             QMessageBox.warning(self, "Open Scene", str(exc))
             self.scene = None
@@ -590,7 +1131,7 @@ class SceneEditorWidget(QWidget):
     def save(self) -> None:
         if not self.scene or not self.file_path:
             return
-        save_scene(self.scene, self.file_path)
+        save_scene(self.scene, self.file_path, project_root=self.project_root)
         self._dirty = False
         self._update_status()
         self.saved.emit(self.file_path)
