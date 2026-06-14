@@ -9,6 +9,33 @@
       "visible": true,
       "parallax_x": 0.45,
       "parallax_y": 0.0,
+      "band_parallax": true,
+      "parallax_bands": [
+        {
+          "y0": 0,
+          "y1": 20,
+          "parallax_x": 0.35,
+          "fixed": true
+        },
+        {
+          "y0": 21,
+          "y1": 80,
+          "parallax_x": 0.45,
+          "repeat_x": true
+        },
+        {
+          "y0": 81,
+          "y1": 125,
+          "parallax_x": 0.65,
+          "repeat_x": true
+        },
+        {
+          "y0": 126,
+          "y1": 197,
+          "parallax_x": 0.8,
+          "repeat_x": true
+        }
+      ],
       "background": "assets/backgrounds/bg1.tortubackground"
     }
   ],

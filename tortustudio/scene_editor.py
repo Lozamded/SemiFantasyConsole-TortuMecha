@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pygame
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QImage, QMouseEvent, QPainter, QPen, QWheelEvent
+from PyQt6.QtGui import QColor, QFont, QImage, QMouseEvent, QPainter, QPen, QWheelEvent
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -59,6 +59,16 @@ class SceneMapCanvas(QWidget):
 
     TILE_GRID_COLOR = (48, 48, 64)
     MAP_BG = (30, 30, 40)
+    BAND_GUIDE_COLORS = (
+        (80, 180, 255),
+        (255, 170, 80),
+        (140, 220, 120),
+        (220, 140, 255),
+        (255, 220, 90),
+        (120, 200, 200),
+        (255, 120, 160),
+        (180, 180, 255),
+    )
 
     changed = pyqtSignal()
 
@@ -74,13 +84,16 @@ class SceneMapCanvas(QWidget):
         self.active_tile_layer = 0
         self.camera_x = 0
         self.show_backgrounds = True
+        self.show_band_guides = False
+        self.parallax_bands: list[SceneBgParallaxBand] = []
+        self.active_band_index = -1
         self.selected_tile = 0
         self.tool = Tool.PAINT
         self.show_grid = True
         self.zoom = 2
         self._drawing = False
         self._frame: QImage | None = None
-        self.setMinimumSize(200, 200)
+        self.resize(200, 200)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     def set_context(
@@ -97,6 +110,9 @@ class SceneMapCanvas(QWidget):
         *,
         camera_x: int = 0,
         show_backgrounds: bool = True,
+        show_band_guides: bool = False,
+        parallax_bands: list[SceneBgParallaxBand] | None = None,
+        active_band_index: int = -1,
     ) -> None:
         self.scene = scene
         self.project_root = project_root
@@ -109,10 +125,99 @@ class SceneMapCanvas(QWidget):
         self.selected_tile = selected_tile
         self.camera_x = camera_x
         self.show_backgrounds = show_backgrounds
+        self.show_band_guides = show_band_guides
+        self.parallax_bands = list(parallax_bands or [])
+        self.active_band_index = active_band_index
         self._refresh()
 
     def set_tool(self, tool: Tool) -> None:
         self.tool = tool
+
+    def set_show_band_guides(self, visible: bool) -> None:
+        self.show_band_guides = visible
+        self.update()
+
+    def _band_overlap_regions(
+        self, bands: list[SceneBgParallaxBand]
+    ) -> list[tuple[int, int]]:
+        regions: list[tuple[int, int]] = []
+        for i, left in enumerate(bands):
+            for right in bands[i + 1 :]:
+                y0 = max(left.y0, right.y0)
+                y1 = min(left.y1, right.y1)
+                if y0 <= y1:
+                    regions.append((y0, y1))
+        return regions
+
+    def _paint_band_guides(
+        self,
+        painter: QPainter,
+        ox: int,
+        oy: int,
+        sw: int,
+        sh: int,
+    ) -> None:
+        if not self.show_band_guides or not self.parallax_bands or not self.scene:
+            return
+
+        map_h = self.scene.height
+        z = self.zoom
+
+        for y0, y1 in self._band_overlap_regions(self.parallax_bands):
+            top = max(0, y0)
+            bottom = min(map_h, y1 + 1)
+            if top >= bottom:
+                continue
+            painter.fillRect(
+                ox,
+                oy + top * z,
+                sw,
+                (bottom - top) * z,
+                QColor(255, 70, 70, 70),
+            )
+
+        font = QFont()
+        font.setPixelSize(max(10, min(16, 8 + z)))
+        painter.setFont(font)
+
+        for i, band in enumerate(self.parallax_bands):
+            active = i == self.active_band_index
+            rgb = self.BAND_GUIDE_COLORS[i % len(self.BAND_GUIDE_COLORS)]
+            alpha = 255 if active else 190
+            pen = QPen(QColor(*rgb, alpha))
+            pen.setWidth(3 if active else 2)
+            pen.setCosmetic(True)
+            pen.setStyle(
+                Qt.PenStyle.SolidLine if active else Qt.PenStyle.DashLine
+            )
+            painter.setPen(pen)
+            for boundary in (band.y0, band.y1 + 1):
+                if 0 <= boundary <= map_h:
+                    ly = oy + boundary * z
+                    painter.drawLine(ox, ly, ox + sw, ly)
+
+            mid_y = (band.y0 + band.y1) / 2.0
+            if mid_y < 0 or mid_y > map_h:
+                continue
+            label_y = oy + int(mid_y * z) - 8
+            label = f"Band {i}"
+            detail = f"Y {band.y0}–{band.y1}"
+            metrics = painter.fontMetrics()
+            text_w = max(metrics.horizontalAdvance(label), metrics.horizontalAdvance(detail))
+            text_h = metrics.height() * 2 + 4
+            label_x = ox + 6
+            label_y = max(oy + 2, min(oy + sh - text_h - 2, label_y))
+            painter.fillRect(label_x - 2, label_y - 2, text_w + 8, text_h + 4, QColor(20, 20, 28, 190))
+            painter.setPen(QColor(*rgb, 255))
+            painter.drawText(label_x + 2, label_y + metrics.ascent(), label)
+            painter.setPen(QColor(220, 220, 220, 230))
+            painter.drawText(
+                label_x + 2,
+                label_y + metrics.ascent() + metrics.height() + 2,
+                detail,
+            )
+
+        painter.setPen(Qt.PenStyle.NoPen)
 
     def set_show_grid(self, visible: bool) -> None:
         self.show_grid = visible
@@ -120,9 +225,14 @@ class SceneMapCanvas(QWidget):
 
     def set_zoom(self, zoom: int) -> None:
         self.zoom = max(1, min(16, zoom))
-        if self.scene:
-            self.setMinimumSize(self.scene.width * self.zoom, self.scene.height * self.zoom)
+        self._apply_canvas_pixel_size()
         self.update()
+
+    def _apply_canvas_pixel_size(self) -> None:
+        if self.scene:
+            self.resize(self.scene.width * self.zoom, self.scene.height * self.zoom)
+        else:
+            self.resize(200, 200)
 
     def _tile_surface(self, tileset: Tileset, tile_index: int) -> pygame.Surface | None:
         if tile_index < 0 or tile_index >= tileset.tile_count:
@@ -246,7 +356,7 @@ class SceneMapCanvas(QWidget):
 
         data = pygame.image.tobytes(composite, "RGBA")
         self._frame = QImage(data, map_w, map_h, map_w * 4, QImage.Format.Format_RGBA8888)
-        self.setMinimumSize(map_w * self.zoom, map_h * self.zoom)
+        self._apply_canvas_pixel_size()
         self.update()
 
     def paintEvent(self, event) -> None:  # noqa: N802
@@ -289,6 +399,8 @@ class SceneMapCanvas(QWidget):
             painter.setPen(pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(ox, oy, sw, sh)
+
+        self._paint_band_guides(painter, ox, oy, sw, sh)
 
         painter.end()
 
@@ -457,6 +569,12 @@ class SceneEditorWidget(QWidget):
         )
         self.scene_bg_band_parallax.toggled.connect(self._on_scene_bg_band_parallax_toggled)
 
+        self.show_band_guides = QCheckBox("Show band guides on map")
+        self.show_band_guides.setToolTip(
+            "Draw Y band lines, names, and overlap highlights on the map canvas"
+        )
+        self.show_band_guides.toggled.connect(self._on_show_band_guides_toggled)
+
         self.band_combo = QComboBox()
         self.band_combo.currentIndexChanged.connect(self._on_band_changed)
 
@@ -557,12 +675,14 @@ class SceneEditorWidget(QWidget):
         map_group = QGroupBox("Map")
         map_layout = QVBoxLayout(map_group)
         map_scroll = QScrollArea()
-        map_scroll.setWidgetResizable(True)
+        map_scroll.setWidgetResizable(False)
         map_scroll.setWidget(self.map_canvas)
         map_layout.addWidget(map_scroll)
         body.addWidget(map_group, stretch=1)
 
-        side = QVBoxLayout()
+        side_widget = QWidget()
+        side = QVBoxLayout(side_widget)
+        side.setContentsMargins(0, 0, 0, 0)
         form = QFormLayout()
         form.addRow("Map size:", self.map_size_label)
         form.addRow("Active tile layer:", self.tile_layer_combo)
@@ -583,6 +703,7 @@ class SceneEditorWidget(QWidget):
         form.addRow("", self.scene_bg_repeat_x)
         form.addRow("", self.scene_bg_repeat_y)
         form.addRow("", self.scene_bg_band_parallax)
+        form.addRow("", self.show_band_guides)
         form.addRow("Parallax band:", self.band_combo)
         form.addRow("Band Y from:", self.band_y0)
         form.addRow("Band Y to:", self.band_y1)
@@ -615,8 +736,13 @@ class SceneEditorWidget(QWidget):
         tools.addWidget(self.btn_erase)
         tools.addWidget(self.btn_dropper)
         side.addLayout(tools)
-        side.addStretch()
-        body.addLayout(side)
+
+        side_scroll = QScrollArea()
+        side_scroll.setWidgetResizable(True)
+        side_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        side_scroll.setWidget(side_widget)
+        side_scroll.setMinimumWidth(260)
+        body.addWidget(side_scroll)
 
         strip_group = QGroupBox("Tileset")
         strip_layout = QVBoxLayout(strip_group)
@@ -758,6 +884,7 @@ class SceneEditorWidget(QWidget):
             self.band_repeat_y,
             self.btn_add_band,
             self.btn_remove_band,
+            self.show_band_guides,
         ):
             widget.setEnabled(enabled)
 
@@ -957,6 +1084,20 @@ class SceneEditorWidget(QWidget):
                 None, None, {}, {}, {}, None, [], 0, 0, camera_x=0, show_backgrounds=True
             )
             return
+        scene_bg_index = self._active_scene_bg_layer_index()
+        show_band_guides = False
+        parallax_bands: list[SceneBgParallaxBand] = []
+        active_band_index = -1
+        if scene_bg_index >= 0:
+            scene_bg = self.scene.scene_bg_layers[scene_bg_index]
+            if (
+                scene_bg.band_parallax
+                and scene_bg.background
+                and self.show_band_guides.isChecked()
+            ):
+                show_band_guides = True
+                parallax_bands = scene_bg.parallax_bands
+                active_band_index = self._active_band_index()
         active = self._active_tile_layer_index()
         self.map_canvas.set_context(
             self.scene,
@@ -970,6 +1111,9 @@ class SceneEditorWidget(QWidget):
             self._selected_tile,
             camera_x=self.camera_slider.value(),
             show_backgrounds=self.show_backgrounds.isChecked(),
+            show_band_guides=show_band_guides,
+            parallax_bands=parallax_bands,
+            active_band_index=active_band_index,
         )
 
     def _refresh_strip(self) -> None:
@@ -1084,6 +1228,7 @@ class SceneEditorWidget(QWidget):
         if index >= len(scene_bg.parallax_bands):
             return
         self._load_band_fields(scene_bg.parallax_bands[index])
+        self._refresh_map()
 
     def _on_band_fields_changed(self) -> None:
         if not self.scene:
@@ -1201,6 +1346,9 @@ class SceneEditorWidget(QWidget):
         self._refresh_map()
 
     def _on_show_backgrounds_toggled(self, _visible: bool) -> None:
+        self._refresh_map()
+
+    def _on_show_band_guides_toggled(self, _visible: bool) -> None:
         self._refresh_map()
 
     def _add_scene_bg_layer(self) -> None:
