@@ -23,6 +23,14 @@ from tortuengine.scene import (
     load_scene,
     save_scene,
 )
+from tortuengine.object import (
+    ObjectAnimation,
+    ObjectHitbox,
+    ObjectOrigin,
+    TortuObject,
+    load_object,
+    save_object,
+)
 from tortuengine.sprite import Sprite, load_sprite, save_sprite
 
 __all__ = [
@@ -49,6 +57,12 @@ __all__ = [
     "Sprite",
     "load_sprite",
     "save_sprite",
+    "TortuObject",
+    "ObjectAnimation",
+    "ObjectHitbox",
+    "ObjectOrigin",
+    "load_object",
+    "save_object",
     "Background",
     "BackgroundLayer",
     "load_background",

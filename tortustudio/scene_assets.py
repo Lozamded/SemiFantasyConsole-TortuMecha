@@ -20,3 +20,21 @@ def list_background_paths(project_root: Path) -> list[str]:
         p.relative_to(project_root).as_posix()
         for p in backgrounds_dir.glob("*.tortubackground")
     )
+
+
+def list_sprite_paths(project_root: Path) -> list[str]:
+    sprites_dir = project_root / "assets" / "sprites"
+    if not sprites_dir.is_dir():
+        return []
+    return sorted(
+        p.relative_to(project_root).as_posix() for p in sprites_dir.glob("*.tortusprite")
+    )
+
+
+def list_object_paths(project_root: Path) -> list[str]:
+    objects_dir = project_root / "assets" / "objects"
+    if not objects_dir.is_dir():
+        return []
+    return sorted(
+        p.relative_to(project_root).as_posix() for p in objects_dir.glob("*.tortuobject")
+    )

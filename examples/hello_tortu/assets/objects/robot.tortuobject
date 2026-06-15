@@ -1,0 +1,21 @@
+{
+  "name": "robot",
+  "default_animation": "idle",
+  "animations": [
+    {
+      "name": "idle",
+      "sprite": "assets/sprites/robot_idle.tortusprite"
+    }
+  ],
+  "solid": true,
+  "origin": {
+    "x": 10,
+    "y": 19
+  },
+  "hitbox": {
+    "x": 4,
+    "y": 3,
+    "w": 13,
+    "h": 17
+  }
+}
