@@ -13,8 +13,8 @@
       "parallax_bands": [
         {
           "y0": 0,
-          "y1": 20,
-          "parallax_x": 0.35,
+          "y1": 19,
+          "parallax_x": 0.3,
           "fixed": true
         },
         {
@@ -4777,6 +4777,13 @@
         -1,
         -1
       ]
+    }
+  ],
+  "objects": [
+    {
+      "object": "assets/objects/robot.tortuobject",
+      "x": 38,
+      "y": 191
     }
   ]
 }

@@ -31,6 +31,20 @@ MAX_SCENE_BG_LAYERS = BACKGROUND_LAYERS
 DEFAULT_SCENE_BG_LAYER_NAMES = tuple(f"scene_bg_{i}" for i in range(MAX_SCENE_BG_LAYERS))
 
 MAX_PARALLAX_BANDS = 8
+MAX_SCENE_OBJECTS = 256
+
+
+@dataclass
+class SceneObject:
+    """Placed object instance in a scene (prefab path + origin position)."""
+
+    prefab: str
+    x: int
+    y: int
+    animation: str = ""
+
+    def copy(self) -> SceneObject:
+        return SceneObject(self.prefab, self.x, self.y, self.animation)
 
 
 @dataclass
@@ -154,6 +168,7 @@ class Scene:
     height: int
     tile_layers: list[SceneTileLayer] = field(default_factory=list)
     scene_bg_layers: list[SceneBgLayer] = field(default_factory=list)
+    objects: list[SceneObject] = field(default_factory=list)
     collision_tile_layer: int = 0
 
     @property
@@ -190,6 +205,37 @@ class Scene:
             SceneTileLayer(DEFAULT_TILE_LAYER_NAMES[0], _blank_tile_layer_grid(cols, rows))
         ]
         return cls(palette, width, height, tile_layers, [], collision_tile_layer=0)
+
+    def add_object(
+        self,
+        prefab: str,
+        x: int,
+        y: int,
+        *,
+        animation: str = "",
+    ) -> int:
+        if len(self.objects) >= MAX_SCENE_OBJECTS:
+            raise ValueError(f"Scene cannot have more than {MAX_SCENE_OBJECTS} objects")
+        self.objects.append(SceneObject(prefab, x, y, animation))
+        return len(self.objects) - 1
+
+    def remove_object(self, object_index: int) -> None:
+        if not (0 <= object_index < len(self.objects)):
+            raise IndexError(f"Object index out of range: {object_index}")
+        self.objects.pop(object_index)
+
+    def find_object_near(self, x: int, y: int, radius: int = 12) -> int | None:
+        radius_sq = radius * radius
+        best_index: int | None = None
+        best_dist = radius_sq + 1
+        for index, inst in enumerate(self.objects):
+            dx = inst.x - x
+            dy = inst.y - y
+            dist = dx * dx + dy * dy
+            if dist <= radius_sq and dist < best_dist:
+                best_dist = dist
+                best_index = index
+        return best_index
 
     def _validate_scene_bg_layer(self, scene_bg_layer_index: int) -> None:
         if not (0 <= scene_bg_layer_index < len(self.scene_bg_layers)):
@@ -508,6 +554,23 @@ def _normalize_scene_bg_layers(raw_scene_bg_layers: list[dict]) -> list[SceneBgL
     ]
 
 
+def _normalize_scene_object(raw: dict, path: Path) -> SceneObject:
+    prefab = _normalize_asset_path(str(raw.get("object", raw.get("prefab", ""))))
+    if not prefab:
+        raise ValueError(f"Scene object missing prefab path in {path.name}")
+    animation = str(raw.get("animation", "")).strip()
+    return SceneObject(prefab, int(raw.get("x", 0)), int(raw.get("y", 0)), animation)
+
+
+def _normalize_scene_objects(raw_objects: list[dict], path: Path) -> list[SceneObject]:
+    if len(raw_objects) > MAX_SCENE_OBJECTS:
+        raise ValueError(
+            f"Scene has {len(raw_objects)} objects in {path.name}; "
+            f"maximum is {MAX_SCENE_OBJECTS}"
+        )
+    return [_normalize_scene_object(raw, path) for raw in raw_objects]
+
+
 def _read_scene_size(data: dict, path: Path, tile_size: int) -> tuple[int, int]:
     if "width" in data and "height" in data:
         width = int(data["width"])
@@ -544,9 +607,10 @@ def load_scene(path: Path, *, project_root: Path | None = None) -> Scene:
         path,
     )
     scene_bg_layers = _normalize_scene_bg_layers(data.get("bg_layers", []))
+    objects = _normalize_scene_objects(data.get("objects", []), path)
 
     scene = Scene(
-        palette, width, height, tile_layers, scene_bg_layers, collision_tile_layer
+        palette, width, height, tile_layers, scene_bg_layers, objects, collision_tile_layer
     )
     scene.ensure_all_tile_layer_grids(project_root)
     return scene
@@ -610,6 +674,15 @@ def save_scene(scene: Scene, path: Path, *, project_root: Path | None = None) ->
                 "tiles": tile_layer.tiles,
             }
             for tile_layer in scene.tile_layers
+        ],
+        "objects": [
+            {
+                "object": _normalize_asset_path(inst.prefab),
+                "x": inst.x,
+                "y": inst.y,
+                **({"animation": inst.animation} if inst.animation else {}),
+            }
+            for inst in scene.objects
         ],
     }
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")

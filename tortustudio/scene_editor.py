@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QSlider,
     QSpinBox,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -28,23 +29,28 @@ from PyQt6.QtWidgets import (
 from tortuengine.background import Background, load_background
 from tortuengine.constants import SCREEN_HEIGHT, SCREEN_WIDTH, TILE_BLOCK
 from tortuengine.palette import TRANSPARENT_INDEX, load_palette, palette_path
+from tortuengine.object import TortuObject, load_object
 from tortuengine.scene import (
     DEFAULT_SCENE_HEIGHT,
     DEFAULT_SCENE_WIDTH,
     EMPTY_TILE,
     MAX_PARALLAX_BANDS,
     MAX_SCENE_BG_LAYERS,
+    MAX_SCENE_OBJECTS,
     MAX_SCENE_TILE_LAYERS,
     MIN_SCENE_TILE_LAYERS,
     Scene,
     SceneBgParallaxBand,
+    SceneObject,
     default_parallax_band,
     load_scene,
     save_scene,
     tile_size_for_tile_layer,
 )
+from tortuengine.sprite import Sprite, load_sprite
 from tortuengine.tileset import Tileset, load_tileset
-from tortustudio.scene_assets import list_background_paths, list_tileset_paths
+from tortustudio.object_strip import ObjectStripCanvas
+from tortustudio.scene_assets import list_background_paths, list_object_paths, list_tileset_paths
 from tortustudio.tileset_editor import TilesetStripCanvas
 
 
@@ -79,6 +85,9 @@ class SceneMapCanvas(QWidget):
         self.tilesets: dict[str, Tileset] = {}
         self.backgrounds: dict[str, Background] = {}
         self.bg_palettes: dict[str, list[tuple[int, int, int]]] = {}
+        self.tortu_objects: dict[str, TortuObject] = {}
+        self.object_sprites: dict[str, Sprite] = {}
+        self.object_sprite_palettes: dict[str, list[tuple[int, int, int]]] = {}
         self.active_tileset: Tileset | None = None
         self.palette: list[tuple[int, int, int]] = []
         self.active_tile_layer = 0
@@ -88,6 +97,9 @@ class SceneMapCanvas(QWidget):
         self.parallax_bands: list[SceneBgParallaxBand] = []
         self.active_band_index = -1
         self.selected_tile = 0
+        self.selected_object_prefab = ""
+        self.edit_objects = False
+        self.show_objects = True
         self.tool = Tool.PAINT
         self.show_grid = True
         self.zoom = 2
@@ -113,6 +125,9 @@ class SceneMapCanvas(QWidget):
         show_band_guides: bool = False,
         parallax_bands: list[SceneBgParallaxBand] | None = None,
         active_band_index: int = -1,
+        edit_objects: bool = False,
+        selected_object_prefab: str = "",
+        show_objects: bool = True,
     ) -> None:
         self.scene = scene
         self.project_root = project_root
@@ -128,6 +143,9 @@ class SceneMapCanvas(QWidget):
         self.show_band_guides = show_band_guides
         self.parallax_bands = list(parallax_bands or [])
         self.active_band_index = active_band_index
+        self.edit_objects = edit_objects
+        self.selected_object_prefab = selected_object_prefab
+        self.show_objects = show_objects
         self._refresh()
 
     def set_tool(self, tool: Tool) -> None:
@@ -289,6 +307,74 @@ class SceneMapCanvas(QWidget):
         self.bg_palettes[background.palette] = colors
         return colors
 
+    def _get_tortu_object(self, prefab_path: str) -> TortuObject | None:
+        if not prefab_path:
+            return None
+        if prefab_path in self.tortu_objects:
+            return self.tortu_objects[prefab_path]
+        if self.project_root is None:
+            return None
+        path = (self.project_root / prefab_path).resolve()
+        if not path.is_file():
+            return None
+        loaded = load_object(path)
+        self.tortu_objects[prefab_path] = loaded
+        return loaded
+
+    def _get_object_sprite(self, sprite_path: str) -> Sprite | None:
+        if not sprite_path:
+            return None
+        if sprite_path in self.object_sprites:
+            return self.object_sprites[sprite_path]
+        if self.project_root is None:
+            return None
+        path = (self.project_root / sprite_path).resolve()
+        if not path.is_file():
+            return None
+        loaded = load_sprite(path)
+        self.object_sprites[sprite_path] = loaded
+        return loaded
+
+    def _sprite_palette(self, palette_name: str) -> list[tuple[int, int, int]] | None:
+        if palette_name in self.object_sprite_palettes:
+            return self.object_sprite_palettes[palette_name]
+        if self.project_root is None:
+            return None
+        path = palette_path(self.project_root, palette_name)
+        if not path.is_file():
+            return None
+        colors = load_palette(path)
+        self.object_sprite_palettes[palette_name] = colors
+        return colors
+
+    def _object_instance_surface(self, inst: SceneObject) -> pygame.Surface | None:
+        tortu_object = self._get_tortu_object(inst.prefab)
+        if tortu_object is None:
+            return None
+        anim = inst.animation or tortu_object.default_animation
+        sprite_path = tortu_object.sprite_for(anim) or tortu_object.default_sprite
+        sprite = self._get_object_sprite(sprite_path)
+        if sprite is None:
+            return None
+        palette = self._sprite_palette(sprite.palette)
+        if palette is None:
+            return None
+        return sprite.to_surface(palette, frame_index=0)
+
+    def _draw_scene_objects(self, composite: pygame.Surface) -> None:
+        if not self.scene or not self.show_objects:
+            return
+        for inst in self.scene.objects:
+            surface = self._object_instance_surface(inst)
+            if surface is None:
+                continue
+            tortu_object = self._get_tortu_object(inst.prefab)
+            if tortu_object is None:
+                continue
+            draw_x = inst.x - tortu_object.origin.x
+            draw_y = inst.y - tortu_object.origin.y
+            composite.blit(surface, (draw_x, draw_y))
+
     def _refresh(self) -> None:
         if not self.scene:
             self._frame = None
@@ -354,6 +440,8 @@ class SceneMapCanvas(QWidget):
                         continue
                     composite.blit(tile_surface, (px, py))
 
+        self._draw_scene_objects(composite)
+
         data = pygame.image.tobytes(composite, "RGBA")
         self._frame = QImage(data, map_w, map_h, map_w * 4, QImage.Format.Format_RGBA8888)
         self._apply_canvas_pixel_size()
@@ -402,7 +490,31 @@ class SceneMapCanvas(QWidget):
 
         self._paint_band_guides(painter, ox, oy, sw, sh)
 
+        if self.edit_objects and self.scene and self.show_objects:
+            pen = QPen(QColor(255, 120, 120, 200))
+            pen.setWidth(2)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            for inst in self.scene.objects:
+                lx = ox + inst.x * self.zoom
+                ly = oy + inst.y * self.zoom
+                painter.drawLine(int(lx - 4), int(ly), int(lx + 4), int(ly))
+                painter.drawLine(int(lx), int(ly - 4), int(lx), int(ly + 4))
+
         painter.end()
+
+    def _event_to_map_pixel(self, event: QMouseEvent) -> tuple[int, int] | None:
+        if self._frame is None or not self.scene:
+            return None
+        sw = self.scene.width * self.zoom
+        sh = self.scene.height * self.zoom
+        ox = max(0, (self.width() - sw) // 2)
+        oy = max(0, (self.height() - sh) // 2)
+        px = (event.position().x() - ox) / self.zoom
+        py = (event.position().y() - oy) / self.zoom
+        if px < 0 or py < 0 or px >= self.scene.width or py >= self.scene.height:
+            return None
+        return int(px), int(py)
 
     def _event_to_tile(self, event: QMouseEvent) -> tuple[int, int] | None:
         if self._frame is None or not self.scene or not self.active_tileset:
@@ -441,8 +553,29 @@ class SceneMapCanvas(QWidget):
                 self.changed.emit()
         self._refresh()
 
+    def _apply_object_tool(self, px: int, py: int) -> None:
+        if not self.scene:
+            return
+        if self.tool == Tool.ERASE:
+            index = self.scene.find_object_near(px, py)
+            if index is not None:
+                self.scene.remove_object(index)
+        elif self.tool == Tool.PAINT and self.selected_object_prefab:
+            try:
+                self.scene.add_object(self.selected_object_prefab, px, py)
+            except ValueError:
+                pass
+        self._refresh()
+
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton:
+            if self.edit_objects:
+                pos = self._event_to_map_pixel(event)
+                if pos:
+                    self._drawing = True
+                    self._apply_object_tool(*pos)
+                    self.changed.emit()
+                return
             pos = self._event_to_tile(event)
             if pos:
                 self._drawing = True
@@ -451,6 +584,13 @@ class SceneMapCanvas(QWidget):
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if self._drawing and event.buttons() & Qt.MouseButton.LeftButton:
+            if self.edit_objects:
+                if self.tool == Tool.ERASE:
+                    pos = self._event_to_map_pixel(event)
+                    if pos:
+                        self._apply_object_tool(*pos)
+                        self.changed.emit()
+                return
             pos = self._event_to_tile(event)
             if pos:
                 self._apply_tool(*pos)
@@ -492,6 +632,9 @@ class SceneEditorWidget(QWidget):
 
         self.strip_canvas = TilesetStripCanvas()
         self.strip_canvas.tile_clicked.connect(self._on_strip_tile_clicked)
+
+        self.object_strip = ObjectStripCanvas()
+        self.object_strip.object_clicked.connect(self._on_object_strip_clicked)
 
         self.btn_save = QPushButton("Save scene")
         self.btn_save.clicked.connect(self.save)
@@ -614,6 +757,10 @@ class SceneEditorWidget(QWidget):
         self.show_backgrounds.setChecked(True)
         self.show_backgrounds.toggled.connect(self._on_show_backgrounds_toggled)
 
+        self.show_objects = QCheckBox("Show objects")
+        self.show_objects.setChecked(True)
+        self.show_objects.toggled.connect(self._on_show_objects_toggled)
+
         self.camera_slider = QSlider(Qt.Orientation.Horizontal)
         self.camera_slider.setRange(0, DEFAULT_SCENE_WIDTH)
         self.camera_slider.valueChanged.connect(self._on_camera_changed)
@@ -721,6 +868,7 @@ class SceneEditorWidget(QWidget):
         form.addRow(scene_bg_btns)
         form.addRow("Camera X:", self.camera_slider)
         form.addRow(self.show_backgrounds)
+        form.addRow(self.show_objects)
         form.addRow("Width:", self.map_width)
         form.addRow("Height:", self.map_height)
         resize_row = QHBoxLayout()
@@ -744,14 +892,29 @@ class SceneEditorWidget(QWidget):
         side_scroll.setMinimumWidth(260)
         body.addWidget(side_scroll)
 
-        strip_group = QGroupBox("Tileset")
-        strip_layout = QVBoxLayout(strip_group)
-        strip_scroll = QScrollArea()
-        strip_scroll.setWidgetResizable(True)
-        strip_scroll.setMaximumHeight(140)
-        strip_scroll.setWidget(self.strip_canvas)
-        strip_layout.addWidget(strip_scroll)
-        outer.addWidget(strip_group)
+        self.bottom_tabs = QTabWidget()
+        tile_tab = QWidget()
+        tile_tab_layout = QVBoxLayout(tile_tab)
+        tile_tab_layout.setContentsMargins(0, 0, 0, 0)
+        tile_strip_scroll = QScrollArea()
+        tile_strip_scroll.setWidgetResizable(True)
+        tile_strip_scroll.setMaximumHeight(140)
+        tile_strip_scroll.setWidget(self.strip_canvas)
+        tile_tab_layout.addWidget(tile_strip_scroll)
+        self.bottom_tabs.addTab(tile_tab, "Tileset")
+
+        object_tab = QWidget()
+        object_tab_layout = QVBoxLayout(object_tab)
+        object_tab_layout.setContentsMargins(0, 0, 0, 0)
+        object_strip_scroll = QScrollArea()
+        object_strip_scroll.setWidgetResizable(True)
+        object_strip_scroll.setMaximumHeight(140)
+        object_strip_scroll.setWidget(self.object_strip)
+        object_tab_layout.addWidget(object_strip_scroll)
+        self.bottom_tabs.addTab(object_tab, "Objects")
+        self.bottom_tabs.currentChanged.connect(self._on_bottom_tab_changed)
+
+        outer.addWidget(self.bottom_tabs)
 
     def _active_tile_layer_index(self) -> int:
         if not self.scene or self.tile_layer_combo.count() == 0:
@@ -818,6 +981,15 @@ class SceneEditorWidget(QWidget):
 
     def _on_strip_tile_clicked(self, index: int) -> None:
         self._selected_tile = index
+        self._set_tool(Tool.PAINT)
+        self.bottom_tabs.setCurrentIndex(0)
+        self._refresh_map()
+
+    def _on_object_strip_clicked(self, _index: int) -> None:
+        self._set_tool(Tool.PAINT)
+        self._refresh_map()
+
+    def _on_bottom_tab_changed(self, _index: int) -> None:
         self._refresh_map()
 
     def _mark_dirty(self) -> None:
@@ -1114,7 +1286,14 @@ class SceneEditorWidget(QWidget):
             show_band_guides=show_band_guides,
             parallax_bands=parallax_bands,
             active_band_index=active_band_index,
+            edit_objects=self.bottom_tabs.currentIndex() == 1,
+            selected_object_prefab=self.object_strip.selected_prefab(),
+            show_objects=self.show_objects.isChecked(),
         )
+
+    def _refresh_object_strip(self) -> None:
+        paths = list_object_paths(self.project_root)
+        self.object_strip.set_project(self.project_root, paths)
 
     def _refresh_strip(self) -> None:
         if self._active_tileset:
@@ -1142,6 +1321,7 @@ class SceneEditorWidget(QWidget):
         self._load_active_tile_layer_tileset()
         self._refresh_map()
         self._refresh_strip()
+        self._refresh_object_strip()
 
     def _on_scene_bg_layer_changed(self, index: int) -> None:
         if not self.scene or index < 0:
@@ -1346,6 +1526,9 @@ class SceneEditorWidget(QWidget):
         self._refresh_map()
 
     def _on_show_backgrounds_toggled(self, _visible: bool) -> None:
+        self._refresh_map()
+
+    def _on_show_objects_toggled(self, _visible: bool) -> None:
         self._refresh_map()
 
     def _on_show_band_guides_toggled(self, _visible: bool) -> None:
