@@ -56,3 +56,12 @@ def list_object_paths(project_root: Path) -> list[str]:
     return sorted(
         p.relative_to(project_root).as_posix() for p in objects_dir.glob("*.tortuobject")
     )
+
+
+def list_scene_paths(project_root: Path) -> list[str]:
+    scenes_dir = project_root / "scenes"
+    if not scenes_dir.is_dir():
+        return []
+    return sorted(
+        p.relative_to(project_root).as_posix() for p in scenes_dir.glob("*.tortuscene")
+    )

@@ -11,6 +11,7 @@ from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QComboBox,
     QFileDialog,
     QFormLayout,
     QLabel,
@@ -46,7 +47,7 @@ from tortustudio.new_scene_dialog import NewSceneDialog
 from tortustudio.new_sprite_dialog import NewSpriteDialog
 from tortustudio.new_tileset_dialog import NewTilesetDialog
 from tortustudio.object_editor import ObjectEditorWidget
-from tortustudio.scene_assets import is_engine_asset
+from tortustudio.scene_assets import is_engine_asset, list_scene_paths
 from tortustudio.scene_editor import SceneEditorWidget
 from tortustudio.sprite_editor import SpriteEditorWidget
 from tortustudio.tileset_editor import TilesetEditorWidget
@@ -256,10 +257,11 @@ class MainWindow(QMainWindow):
         self.field_game_fps.setValue(60)
         inspector_layout.addRow("Game FPS:", self.field_game_fps)
 
-        self.field_start_scene = QLineEdit()
-        self.field_start_scene.setPlaceholderText("scenes/level_01.tortuscene")
+        self.field_start_scene = QComboBox()
+        self.field_start_scene.setEditable(True)
+        self.field_start_scene.lineEdit().setPlaceholderText("scenes/level_01.tortuscene")
         self.field_start_scene.setToolTip(
-            "First scene loaded at boot and in Game Preview (path relative to project root)"
+            "Scene loaded in Game Preview when you press Play (F5). Save game settings to keep."
         )
         inspector_layout.addRow("Start scene:", self.field_start_scene)
 
@@ -317,6 +319,7 @@ class MainWindow(QMainWindow):
         self.workspace_tabs.reset()
         self.setWindowTitle(f"TortuStudio — {project.name}")
         self._load_game_settings_form()
+        self._populate_start_scene_combo()
         self._populate_tree()
         self._start_watcher()
         self._load_cart(silent=False)
@@ -404,16 +407,67 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self.log(f"Reload error: {exc}")
 
+    def _populate_start_scene_combo(self) -> None:
+        if not self.project:
+            return
+        current = self.field_start_scene.currentText().strip()
+        self.field_start_scene.blockSignals(True)
+        self.field_start_scene.clear()
+        self.field_start_scene.addItem("")
+        for rel in list_scene_paths(self.project.root):
+            self.field_start_scene.addItem(rel)
+        if current:
+            index = self.field_start_scene.findText(current)
+            if index >= 0:
+                self.field_start_scene.setCurrentIndex(index)
+            else:
+                self.field_start_scene.setEditText(current)
+        elif self.project.game.start_scene:
+            index = self.field_start_scene.findText(self.project.game.start_scene)
+            if index >= 0:
+                self.field_start_scene.setCurrentIndex(index)
+            else:
+                self.field_start_scene.setEditText(self.project.game.start_scene)
+        self.field_start_scene.blockSignals(False)
+
+    def _start_scene_rel_path(self) -> str:
+        return self.field_start_scene.currentText().strip().replace("\\", "/")
+
     def _action_play(self) -> None:
         self._activate_preview_tab()
+        if not self.project:
+            QMessageBox.information(self, "Play", "Open a project first.")
+            return
+
+        start_rel = self._start_scene_rel_path() or self.project.game.start_scene.strip()
+        scene_path = (self.project.root / start_rel).resolve() if start_rel else None
+
+        if scene_path and scene_path.is_file():
+            self.viewport.set_scene_preview(self.project.root, scene_path)
+            self.viewport.set_fps(self.project.game.fps)
+            if not self.viewport.playing:
+                self.viewport.start_playback()
+            self.log(f"Playing scene {start_rel}")
+            return
+
         if self._pending_reload:
             self._pending_reload = False
             self._reload_scripts()
+
+        if start_rel:
+            self.log(f"Start scene not found: {start_rel}")
+            QMessageBox.warning(
+                self,
+                "Play",
+                f"Start scene not found:\n{start_rel}\n\nPick a scene in Game Settings and save.",
+            )
+            return
+
+        self.viewport.set_game(self._game_module)
+        self.viewport.set_fps(self.project.game.fps)
         if not self.viewport.playing:
             self.viewport.start_playback()
-            self.log("Play")
-        else:
-            self.log("Already playing")
+        self.log("Play (entry script)")
 
     def _action_stop(self) -> None:
         self.viewport.stop_playback()
@@ -429,7 +483,14 @@ class MainWindow(QMainWindow):
         self.field_game_name.setText(game.game_name)
         self.field_cart_name.setText(game.cart_name)
         self.field_game_fps.setValue(game.fps)
-        self.field_start_scene.setText(game.start_scene)
+        if game.start_scene:
+            index = self.field_start_scene.findText(game.start_scene)
+            if index >= 0:
+                self.field_start_scene.setCurrentIndex(index)
+            else:
+                self.field_start_scene.setEditText(game.start_scene)
+        else:
+            self.field_start_scene.setCurrentIndex(0)
         self.field_author.setText(game.author)
         self.field_description.setText(game.description)
         self.viewport.set_fps(game.fps)
@@ -444,7 +505,8 @@ class MainWindow(QMainWindow):
         self.project.game.game_name = self.field_game_name.text().strip() or "Untitled Game"
         self.project.game.cart_name = cart_name
         self.project.game.fps = self.field_game_fps.value()
-        self.project.game.start_scene = self.field_start_scene.text().strip().replace("\\", "/")
+        self.project.game.start_scene = self._start_scene_rel_path()
+        self.field_start_scene.setEditText(self.project.game.start_scene)
         self.project.game.author = self.field_author.text().strip()
         self.project.game.description = self.field_description.text().strip()
         try:
@@ -793,7 +855,10 @@ class MainWindow(QMainWindow):
 
     def _on_scene_saved(self, path: Path) -> None:
         self.log(f"Saved {path.relative_to(self.project.root)}")
+        self._populate_start_scene_combo()
         self._populate_tree()
+        if self.viewport.scene_preview_active and self.project:
+            self.viewport.reload_scene_preview(self.project.root)
 
     def _on_background_saved(self, path: Path) -> None:
         self.log(f"Saved {path.relative_to(self.project.root)}")
