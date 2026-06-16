@@ -35,7 +35,14 @@ from tortuengine.palette import (
     load_palette,
     palette_path,
 )
-from tortuengine.sprite import Sprite, load_sprite, reference_sidecar_path, save_sprite
+from tortuengine.sprite import (
+    Sprite,
+    load_sprite,
+    reference_sidecar_path,
+    save_all_sprite_frame_pngs,
+    save_sprite,
+    save_sprite_frame_png,
+)
 
 
 class Tool(str, Enum):
@@ -724,8 +731,20 @@ class SpriteEditorWidget(QWidget):
         if not self.sprite or not self.file_path:
             return
         save_sprite(self.sprite, self.file_path)
+        self._save_all_render_sidecars()
         self._dirty = False
         self.saved.emit(self.file_path)
+
+    def _save_render_sidecar(self, frame_index: int | None = None) -> None:
+        if not self.sprite or not self.file_path or not self._palette_colors:
+            return
+        idx = frame_index if frame_index is not None else self.sprite.current_frame
+        save_sprite_frame_png(self.sprite, self._palette_colors, self.file_path, idx)
+
+    def _save_all_render_sidecars(self) -> None:
+        if not self.sprite or not self.file_path or not self._palette_colors:
+            return
+        save_all_sprite_frame_pngs(self.sprite, self._palette_colors, self.file_path)
 
     def _reference_sidecar(self, frame_index: int | None = None) -> Path | None:
         if not self.file_path:
@@ -791,6 +810,7 @@ class SpriteEditorWidget(QWidget):
 
         self.sprite.fill_from_surface(self.canvas.reference, self._palette_colors)
         self._dirty = True
+        self._save_render_sidecar()
         self._refresh_canvas()
 
     def has_unsaved_changes(self) -> bool:

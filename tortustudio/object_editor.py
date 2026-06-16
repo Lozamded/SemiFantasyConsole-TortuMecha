@@ -35,6 +35,7 @@ from tortuengine.object import (
 )
 from tortuengine.palette import load_palette, palette_path
 from tortuengine.sprite import Sprite, load_sprite
+from tortustudio.asset_drag import SpriteDropCombo
 from tortustudio.scene_assets import list_sprite_paths
 
 
@@ -210,8 +211,9 @@ class ObjectEditorWidget(QWidget):
         self.anim_name_edit = QLineEdit()
         self.anim_name_edit.textChanged.connect(self._on_animation_fields_changed)
 
-        self.anim_sprite_combo = QComboBox()
+        self.anim_sprite_combo = SpriteDropCombo()
         self.anim_sprite_combo.currentIndexChanged.connect(self._on_animation_sprite_changed)
+        self.anim_sprite_combo.sprite_dropped.connect(self._on_sprite_dropped)
 
         self.default_animation_combo = QComboBox()
         self.default_animation_combo.currentIndexChanged.connect(self._on_default_animation_changed)
@@ -351,14 +353,32 @@ class ObjectEditorWidget(QWidget):
             return -1
         return self.animation_combo.currentIndex()
 
+    def _set_combo_sprite(self, combo: QComboBox, rel_path: str) -> None:
+        if not rel_path:
+            return
+        index = combo.findData(rel_path)
+        if index < 0:
+            combo.addItem(rel_path, rel_path)
+            index = combo.findData(rel_path)
+        if index >= 0:
+            combo.setCurrentIndex(index)
+
     def _populate_sprite_combo(self, combo: QComboBox, current: str) -> None:
         combo.blockSignals(True)
         combo.clear()
         for rel in list_sprite_paths(self.project_root):
             combo.addItem(rel, rel)
+        if current and combo.findData(current) < 0:
+            combo.addItem(current, current)
         index = combo.findData(current)
         combo.setCurrentIndex(index if index >= 0 else 0)
         combo.blockSignals(False)
+
+    def _on_sprite_dropped(self, rel_path: str) -> None:
+        if not self.tortu_object:
+            return
+        self._set_combo_sprite(self.anim_sprite_combo, rel_path)
+        self._on_animation_sprite_changed(self.anim_sprite_combo.currentIndex())
 
     def _sync_animation_controls(self) -> None:
         if not self.tortu_object:

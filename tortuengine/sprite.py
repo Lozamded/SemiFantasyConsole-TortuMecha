@@ -191,6 +191,39 @@ def save_sprite(sprite: Sprite, path: Path) -> None:
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
+def render_sidecar_path(sprite_path: Path, frame_index: int) -> Path:
+    """Exported palette render for one frame (distinct from `.ref*` tracing images)."""
+    return sprite_path.with_name(f"{sprite_path.stem}.f{frame_index}.png")
+
+
+def primary_render_path(sprite_path: Path) -> Path:
+    """Frame 0 export — e.g. `hero.tortusprite` → `hero.png`."""
+    return sprite_path.with_suffix(".png")
+
+
+def save_sprite_frame_png(
+    sprite: Sprite,
+    palette: list[tuple[int, int, int]],
+    sprite_path: Path,
+    frame_index: int,
+) -> None:
+    """Write a palette-rendered PNG for one frame."""
+    surface = sprite.to_surface(palette, frame_index=frame_index)
+    render_sidecar_path(sprite_path, frame_index).parent.mkdir(parents=True, exist_ok=True)
+    pygame.image.save(surface, str(render_sidecar_path(sprite_path, frame_index)))
+    if frame_index == 0:
+        pygame.image.save(surface, str(primary_render_path(sprite_path)))
+
+
+def save_all_sprite_frame_pngs(
+    sprite: Sprite,
+    palette: list[tuple[int, int, int]],
+    sprite_path: Path,
+) -> None:
+    for frame_index in range(sprite.frame_count):
+        save_sprite_frame_png(sprite, palette, sprite_path, frame_index)
+
+
 def load_sprite_surface(
     project_root: Path,
     sprite_path: Path,

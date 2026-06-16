@@ -10,6 +10,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QFileDialog,
     QFormLayout,
     QLabel,
@@ -37,6 +38,7 @@ from tortuengine.project import Project, create_project, load_project, save_proj
 from tortuengine.scene import save_scene
 from tortuengine.sprite import save_sprite
 from tortuengine.tileset import save_tileset
+from tortustudio.asset_drag import DraggableProjectTree
 from tortustudio.background_editor import BackgroundEditorWidget
 from tortustudio.new_background_dialog import NewBackgroundDialog
 from tortustudio.new_object_dialog import NewObjectDialog
@@ -44,6 +46,7 @@ from tortustudio.new_scene_dialog import NewSceneDialog
 from tortustudio.new_sprite_dialog import NewSpriteDialog
 from tortustudio.new_tileset_dialog import NewTilesetDialog
 from tortustudio.object_editor import ObjectEditorWidget
+from tortustudio.scene_assets import is_engine_asset
 from tortustudio.scene_editor import SceneEditorWidget
 from tortustudio.sprite_editor import SpriteEditorWidget
 from tortustudio.tileset_editor import TilesetEditorWidget
@@ -184,11 +187,26 @@ class MainWindow(QMainWindow):
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        self.project_tree = QTreeWidget()
+        tree_panel = QWidget()
+        tree_layout = QVBoxLayout(tree_panel)
+        tree_layout.setContentsMargins(0, 0, 0, 0)
+        tree_layout.setSpacing(4)
+
+        self.tree_engine_only = QCheckBox("Engine assets only")
+        self.tree_engine_only.setChecked(True)
+        self.tree_engine_only.setToolTip(
+            "Hide sidecar PNGs and other files; show .tortusprite, .tortuscene, .pal, etc."
+        )
+        self.tree_engine_only.toggled.connect(self._populate_tree)
+        tree_layout.addWidget(self.tree_engine_only)
+
+        self.project_tree = DraggableProjectTree(drag_suffixes=(".tortusprite",))
         self.project_tree.setHeaderLabel("Project")
         self.project_tree.setMinimumWidth(180)
         self.project_tree.itemDoubleClicked.connect(self._on_tree_double_click)
-        splitter.addWidget(self.project_tree)
+        tree_layout.addWidget(self.project_tree, stretch=1)
+
+        splitter.addWidget(tree_panel)
 
         self.center_stack = QStackedWidget()
         self.viewport = ViewportWidget()
@@ -315,6 +333,10 @@ class MainWindow(QMainWindow):
         root_item = QTreeWidgetItem([self.project.name])
         self.project_tree.addTopLevelItem(root_item)
 
+        project_file = self.project.root / "tortu.project"
+        if project_file.is_file() and self._tree_include_file(project_file):
+            QTreeWidgetItem(root_item, [project_file.relative_to(self.project.root).as_posix()])
+
         for label, path in (
             ("Palettes", self.project.palettes_dir()),
             ("Tiles", self.project.tiles_dir()),
@@ -329,11 +351,16 @@ class MainWindow(QMainWindow):
             root_item.addChild(folder)
             if path.is_dir():
                 for child in sorted(path.rglob("*")):
-                    if child.is_file() and child.suffix != ".ref.png":
+                    if child.is_file() and self._tree_include_file(child):
                         rel = child.relative_to(self.project.root)
                         QTreeWidgetItem(folder, [str(rel)])
 
         root_item.setExpanded(True)
+
+    def _tree_include_file(self, path: Path) -> bool:
+        if self.tree_engine_only.isChecked():
+            return is_engine_asset(path)
+        return True
 
     def _start_watcher(self) -> None:
         self._stop_watcher()

@@ -1,8 +1,26 @@
-"""Shared helpers for scene editor asset pickers."""
+"""Shared helpers for scene editor asset pickers and project tree filtering."""
 
 from __future__ import annotations
 
 from pathlib import Path
+
+ENGINE_ASSET_SUFFIXES = frozenset(
+    {
+        ".tortusprite",
+        ".tortutileset",
+        ".tortubackground",
+        ".tortuscene",
+        ".tortuobject",
+        ".pal",
+    }
+)
+
+
+def is_engine_asset(path: Path) -> bool:
+    """True for Tortu asset files shown when the project tree filter is on."""
+    if path.name == "tortu.project":
+        return True
+    return path.suffix.lower() in ENGINE_ASSET_SUFFIXES
 
 
 def list_tileset_paths(project_root: Path) -> list[str]:

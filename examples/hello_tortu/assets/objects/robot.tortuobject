@@ -5,6 +5,22 @@
     {
       "name": "idle",
       "sprite": "assets/sprites/robot_idle.tortusprite"
+    },
+    {
+      "name": "damage",
+      "sprite": "assets/sprites/robot_damage.tortusprite"
+    },
+    {
+      "name": "walk",
+      "sprite": "assets/sprites/robot_walk.tortusprite"
+    },
+    {
+      "name": "jump",
+      "sprite": "assets/sprites/robot_jump.tortusprite"
+    },
+    {
+      "name": "fall",
+      "sprite": "assets/sprites/robot_fall.tortusprite"
     }
   ],
   "solid": true,
