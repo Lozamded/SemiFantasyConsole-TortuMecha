@@ -75,6 +75,7 @@ class SceneMapCanvas(QWidget):
         (255, 120, 160),
         (180, 180, 255),
     )
+    CAMERA_FRAME_COLOR = (0, 220, 255)
 
     changed = pyqtSignal()
 
@@ -92,6 +93,8 @@ class SceneMapCanvas(QWidget):
         self.palette: list[tuple[int, int, int]] = []
         self.active_tile_layer = 0
         self.camera_x = 0
+        self.camera_y = 0
+        self.show_camera_frame = True
         self.show_backgrounds = True
         self.show_band_guides = False
         self.parallax_bands: list[SceneBgParallaxBand] = []
@@ -121,6 +124,8 @@ class SceneMapCanvas(QWidget):
         selected_tile: int,
         *,
         camera_x: int = 0,
+        camera_y: int = 0,
+        show_camera_frame: bool = True,
         show_backgrounds: bool = True,
         show_band_guides: bool = False,
         parallax_bands: list[SceneBgParallaxBand] | None = None,
@@ -139,6 +144,8 @@ class SceneMapCanvas(QWidget):
         self.active_tile_layer = active_tile_layer
         self.selected_tile = selected_tile
         self.camera_x = camera_x
+        self.camera_y = camera_y
+        self.show_camera_frame = show_camera_frame
         self.show_backgrounds = show_backgrounds
         self.show_band_guides = show_band_guides
         self.parallax_bands = list(parallax_bands or [])
@@ -154,6 +161,60 @@ class SceneMapCanvas(QWidget):
     def set_show_band_guides(self, visible: bool) -> None:
         self.show_band_guides = visible
         self.update()
+
+    def set_show_camera_frame(self, visible: bool) -> None:
+        self.show_camera_frame = visible
+        self.update()
+
+    def _clamped_camera(self) -> tuple[int, int, int, int]:
+        """Return camera x, y and viewport size clamped to the map."""
+        if not self.scene:
+            return 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT
+        map_w, map_h = self.scene.width, self.scene.height
+        max_x = max(0, map_w - SCREEN_WIDTH)
+        max_y = max(0, map_h - SCREEN_HEIGHT)
+        cx = max(0, min(self.camera_x, max_x))
+        cy = max(0, min(self.camera_y, max_y))
+        view_w = min(SCREEN_WIDTH, map_w - cx)
+        view_h = min(SCREEN_HEIGHT, map_h - cy)
+        return cx, cy, view_w, view_h
+
+    def _paint_camera_frame(
+        self,
+        painter: QPainter,
+        ox: int,
+        oy: int,
+    ) -> None:
+        if not self.show_camera_frame or not self.scene:
+            return
+
+        cx, cy, view_w, view_h = self._clamped_camera()
+        z = self.zoom
+        rx = ox + cx * z
+        ry = oy + cy * z
+        rw = view_w * z
+        rh = view_h * z
+
+        painter.fillRect(rx, ry, rw, rh, QColor(*self.CAMERA_FRAME_COLOR, 28))
+        pen = QPen(QColor(*self.CAMERA_FRAME_COLOR, 230))
+        pen.setWidth(2)
+        pen.setCosmetic(True)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRect(rx, ry, rw, rh)
+
+        font = QFont()
+        font.setPixelSize(max(10, min(14, 8 + z)))
+        painter.setFont(font)
+        label = f"Camera {view_w}×{view_h}"
+        metrics = painter.fontMetrics()
+        text_w = metrics.horizontalAdvance(label) + 8
+        text_h = metrics.height() + 4
+        label_x = rx + 4
+        label_y = ry + 4
+        painter.fillRect(label_x, label_y, text_w, text_h, QColor(20, 20, 28, 200))
+        painter.setPen(QColor(*self.CAMERA_FRAME_COLOR, 255))
+        painter.drawText(label_x + 4, label_y + metrics.ascent() + 2, label)
 
     def _band_overlap_regions(
         self, bands: list[SceneBgParallaxBand]
@@ -403,7 +464,7 @@ class SceneMapCanvas(QWidget):
                         scene_bg.parallax_bands,
                         parallax_y=scene_bg.parallax_y,
                         camera_x=float(self.camera_x),
-                        camera_y=0.0,
+                        camera_y=float(self.camera_y),
                     )
                 else:
                     bg.draw_parallax(
@@ -412,6 +473,7 @@ class SceneMapCanvas(QWidget):
                         parallax_x=scene_bg.parallax_x,
                         parallax_y=scene_bg.parallax_y,
                         camera_x=float(self.camera_x),
+                        camera_y=float(self.camera_y),
                         fixed=scene_bg.fixed,
                         repeat_x=scene_bg.repeat_x,
                         repeat_y=scene_bg.repeat_y,
@@ -489,6 +551,7 @@ class SceneMapCanvas(QWidget):
             painter.drawRect(ox, oy, sw, sh)
 
         self._paint_band_guides(painter, ox, oy, sw, sh)
+        self._paint_camera_frame(painter, ox, oy)
 
         if self.edit_objects and self.scene and self.show_objects:
             pen = QPen(QColor(255, 120, 120, 200))
@@ -765,6 +828,17 @@ class SceneEditorWidget(QWidget):
         self.camera_slider.setRange(0, DEFAULT_SCENE_WIDTH)
         self.camera_slider.valueChanged.connect(self._on_camera_changed)
 
+        self.camera_y_slider = QSlider(Qt.Orientation.Horizontal)
+        self.camera_y_slider.setRange(0, 0)
+        self.camera_y_slider.valueChanged.connect(self._on_camera_changed)
+
+        self.show_camera_frame = QCheckBox("Show camera frame")
+        self.show_camera_frame.setChecked(True)
+        self.show_camera_frame.setToolTip(
+            f"Overlay the {SCREEN_WIDTH}×{SCREEN_HEIGHT} game viewport"
+        )
+        self.show_camera_frame.toggled.connect(self._on_show_camera_frame_toggled)
+
         self.map_width = QSpinBox()
         self.map_width.setRange(8, 2048)
         self.map_width.setValue(DEFAULT_SCENE_WIDTH)
@@ -867,6 +941,8 @@ class SceneEditorWidget(QWidget):
         scene_bg_btns.addWidget(self.btn_remove_scene_bg_layer)
         form.addRow(scene_bg_btns)
         form.addRow("Camera X:", self.camera_slider)
+        form.addRow("Camera Y:", self.camera_y_slider)
+        form.addRow(self.show_camera_frame)
         form.addRow(self.show_backgrounds)
         form.addRow(self.show_objects)
         form.addRow("Width:", self.map_width)
@@ -1209,11 +1285,17 @@ class SceneEditorWidget(QWidget):
     def _update_camera_slider(self) -> None:
         if not self.scene:
             return
-        max_cam = max(0, self.scene.width - SCREEN_WIDTH)
+        max_cam_x = max(0, self.scene.width - SCREEN_WIDTH)
+        max_cam_y = max(0, self.scene.height - SCREEN_HEIGHT)
         self.camera_slider.blockSignals(True)
-        self.camera_slider.setRange(0, max_cam)
-        self.camera_slider.setValue(min(self.camera_slider.value(), max_cam))
+        self.camera_slider.setRange(0, max_cam_x)
+        self.camera_slider.setValue(min(self.camera_slider.value(), max_cam_x))
         self.camera_slider.blockSignals(False)
+        self.camera_y_slider.blockSignals(True)
+        self.camera_y_slider.setRange(0, max_cam_y)
+        self.camera_y_slider.setValue(min(self.camera_y_slider.value(), max_cam_y))
+        self.camera_y_slider.setEnabled(max_cam_y > 0)
+        self.camera_y_slider.blockSignals(False)
 
     def _load_palette_for_scene(self) -> None:
         if not self.scene:
@@ -1282,6 +1364,8 @@ class SceneEditorWidget(QWidget):
             active,
             self._selected_tile,
             camera_x=self.camera_slider.value(),
+            camera_y=self.camera_y_slider.value(),
+            show_camera_frame=self.show_camera_frame.isChecked(),
             show_backgrounds=self.show_backgrounds.isChecked(),
             show_band_guides=show_band_guides,
             parallax_bands=parallax_bands,
@@ -1524,6 +1608,9 @@ class SceneEditorWidget(QWidget):
 
     def _on_camera_changed(self, _value: int) -> None:
         self._refresh_map()
+
+    def _on_show_camera_frame_toggled(self, _visible: bool) -> None:
+        self.map_canvas.set_show_camera_frame(self.show_camera_frame.isChecked())
 
     def _on_show_backgrounds_toggled(self, _visible: bool) -> None:
         self._refresh_map()

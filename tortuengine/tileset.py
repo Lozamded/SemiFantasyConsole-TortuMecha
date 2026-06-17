@@ -202,6 +202,25 @@ class Tileset:
             return self.tiles[index]
         return self.blank_tile()
 
+    def tile_surface(
+        self,
+        palette: list[tuple[int, int, int]],
+        tile_index: int,
+    ) -> pygame.Surface:
+        if tile_index < 0 or tile_index >= self.tile_count:
+            raise IndexError(f"Tile index out of range: {tile_index}")
+        size = self.tile_size
+        tile = self.get_tile(tile_index)
+        surface = pygame.Surface((size, size), pygame.SRCALPHA)
+        for ly in range(size):
+            for lx in range(size):
+                index = tile[ly * size + lx]
+                if index == TRANSPARENT_INDEX:
+                    continue
+                rgb = palette[index]
+                surface.set_at((lx, ly), (*rgb, 255))
+        return surface
+
     def replace_tile(self, index: int, pixels: list[int]) -> None:
         expected = self.tile_size * self.tile_size
         if len(pixels) != expected:

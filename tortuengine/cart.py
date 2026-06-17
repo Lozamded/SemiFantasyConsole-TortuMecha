@@ -6,6 +6,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+from tortuengine.cart_manifest import CartManifest, is_cart_folder
+
 
 def load_game_module(project_root: Path, entry: str = "main.py"):
     """Import the cart entry script from *project_root*."""
@@ -35,3 +37,19 @@ def reload_game_module(module):
     import importlib
 
     return importlib.reload(module)
+
+
+def load_cart_manifest(cart_root: Path) -> CartManifest:
+    return CartManifest.load(cart_root)
+
+
+def resolve_cart_root(path: Path) -> Path | None:
+    """Return a .tortucart folder root if *path* is or contains one."""
+    path = path.resolve()
+    if is_cart_folder(path):
+        return path
+    if path.is_dir():
+        for child in path.iterdir():
+            if child.is_dir() and is_cart_folder(child):
+                return child
+    return None

@@ -75,6 +75,7 @@ class ViewportWidget(QWidget):
         self._scene_path = scene_path.resolve()
         self._scene = load_scene(self._scene_path, project_root=project_root)
         self._scene_renderer = SceneRenderer(project_root)
+        self._scene_renderer.reset_animations()
         self._camera_x = camera_x
         self._camera_y = camera_y
         self._refresh_frame()
@@ -85,7 +86,16 @@ class ViewportWidget(QWidget):
         self._scene = load_scene(self._scene_path, project_root=project_root)
         if self._scene_renderer is None:
             self._scene_renderer = SceneRenderer(project_root)
+        else:
+            self._scene_renderer.reset_animations()
         self._refresh_frame()
+
+    def invalidate_baked_assets(self) -> None:
+        """Drop baked surfaces after asset edits while scene preview is active."""
+        if self._scene_renderer is not None:
+            self._scene_renderer.clear_baked_cache()
+        if self._use_scene_preview:
+            self._refresh_frame()
 
     def set_camera(self, camera_x: int, camera_y: int = 0) -> None:
         self._camera_x = camera_x
@@ -105,6 +115,8 @@ class ViewportWidget(QWidget):
         if not self._playing:
             return
         if self._use_scene_preview:
+            if self._scene and self._scene_renderer:
+                self._scene_renderer.tick(self._scene, 1.0 / self._fps)
             self._refresh_frame()
             return
         self.engine.tick(1.0 / self._fps)

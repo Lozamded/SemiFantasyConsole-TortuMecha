@@ -32,6 +32,7 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from tortuengine.cart import load_game_module, reload_game_module
+from tortuengine.export_cart import export_cart
 from tortuengine.game_settings import MAX_GAME_FPS, MIN_GAME_FPS, slugify_cart_name
 from tortuengine.background import save_background
 from tortuengine.object import save_object
@@ -474,7 +475,50 @@ class MainWindow(QMainWindow):
         self.log("Stop")
 
     def _action_export_cart(self) -> None:
-        self.log("Export .tortucart — coming soon.")
+        if not self.project:
+            QMessageBox.information(self, "Export Cart", "Open a project first.")
+            return
+        try:
+            self.project.game.validate()
+        except ValueError as exc:
+            QMessageBox.warning(self, "Export Cart", str(exc))
+            return
+        if not self.project.game.start_scene.strip():
+            QMessageBox.warning(
+                self,
+                "Export Cart",
+                "Set a start scene in Game Settings before exporting.",
+            )
+            return
+
+        default_name = f"{self.project.game.cart_name}.tortucart"
+        dest = QFileDialog.getExistingDirectory(self, "Export .tortucart To…")
+        if not dest:
+            return
+        cart_path = Path(dest) / default_name
+        if cart_path.exists():
+            reply = QMessageBox.question(
+                self,
+                "Export Cart",
+                f"Overwrite existing cart?\n{cart_path}",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+        try:
+            export_cart(self.project, cart_path)
+        except Exception as exc:
+            QMessageBox.warning(self, "Export Cart", str(exc))
+            return
+
+        self.log(f"Exported cart to {cart_path}")
+        QMessageBox.information(
+            self,
+            "Export Cart",
+            f"Cart exported to:\n{cart_path}\n\n"
+            f"Run: python -m tortuplayer {cart_path}",
+        )
 
     def _load_game_settings_form(self) -> None:
         if not self.project:
@@ -848,10 +892,14 @@ class MainWindow(QMainWindow):
     def _on_sprite_saved(self, path: Path) -> None:
         self.log(f"Saved {path.relative_to(self.project.root)}")
         self._populate_tree()
+        if self.viewport.scene_preview_active:
+            self.viewport.invalidate_baked_assets()
 
     def _on_tileset_saved(self, path: Path) -> None:
         self.log(f"Saved {path.relative_to(self.project.root)}")
         self._populate_tree()
+        if self.viewport.scene_preview_active:
+            self.viewport.invalidate_baked_assets()
 
     def _on_scene_saved(self, path: Path) -> None:
         self.log(f"Saved {path.relative_to(self.project.root)}")
@@ -863,10 +911,14 @@ class MainWindow(QMainWindow):
     def _on_background_saved(self, path: Path) -> None:
         self.log(f"Saved {path.relative_to(self.project.root)}")
         self._populate_tree()
+        if self.viewport.scene_preview_active:
+            self.viewport.invalidate_baked_assets()
 
     def _on_object_saved(self, path: Path) -> None:
         self.log(f"Saved {path.relative_to(self.project.root)}")
         self._populate_tree()
+        if self.viewport.scene_preview_active:
+            self.viewport.invalidate_baked_assets()
 
     def _action_open_project(self) -> None:
         if not self._confirm_discard_editor_changes():

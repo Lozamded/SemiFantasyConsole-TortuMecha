@@ -1,0 +1,137 @@
+{
+  "format": 1,
+  "game": {
+    "game_name": "Hello Tortu",
+    "cart_name": "hello_tortu",
+    "fps": 60,
+    "start_scene": "scenes/level_01.tortuscene"
+  },
+  "start_scene": "scenes/level_01",
+  "sprites": {
+    "assets/sprites/robot_damage.tortusprite": {
+      "fps": 8,
+      "width": 20,
+      "height": 20,
+      "frames": [
+        "baked/assets/sprites/robot_damage/f0.png"
+      ]
+    },
+    "assets/sprites/robot_fall.tortusprite": {
+      "fps": 8,
+      "width": 20,
+      "height": 20,
+      "frames": [
+        "baked/assets/sprites/robot_fall/f0.png"
+      ]
+    },
+    "assets/sprites/robot_idle.tortusprite": {
+      "fps": 8,
+      "width": 20,
+      "height": 20,
+      "frames": [
+        "baked/assets/sprites/robot_idle/f0.png",
+        "baked/assets/sprites/robot_idle/f1.png"
+      ]
+    },
+    "assets/sprites/robot_jump.tortusprite": {
+      "fps": 8,
+      "width": 20,
+      "height": 20,
+      "frames": [
+        "baked/assets/sprites/robot_jump/f0.png"
+      ]
+    },
+    "assets/sprites/robot_walk.tortusprite": {
+      "fps": 8,
+      "width": 20,
+      "height": 20,
+      "frames": [
+        "baked/assets/sprites/robot_walk/f0.png",
+        "baked/assets/sprites/robot_walk/f1.png",
+        "baked/assets/sprites/robot_walk/f2.png",
+        "baked/assets/sprites/robot_walk/f3.png",
+        "baked/assets/sprites/robot_walk/f4.png",
+        "baked/assets/sprites/robot_walk/f5.png"
+      ]
+    }
+  },
+  "tilesets": {
+    "assets/tiles/terrain.tortutileset@default": {
+      "tile_size": 16,
+      "tiles": [
+        "baked/assets/tiles/terrain/default/t0.png",
+        "baked/assets/tiles/terrain/default/t1.png",
+        "baked/assets/tiles/terrain/default/t2.png",
+        "baked/assets/tiles/terrain/default/t3.png",
+        "baked/assets/tiles/terrain/default/t4.png",
+        "baked/assets/tiles/terrain/default/t5.png",
+        "baked/assets/tiles/terrain/default/t6.png",
+        "baked/assets/tiles/terrain/default/t7.png",
+        "baked/assets/tiles/terrain/default/t8.png",
+        "baked/assets/tiles/terrain/default/t9.png",
+        "baked/assets/tiles/terrain/default/t10.png",
+        "baked/assets/tiles/terrain/default/t11.png",
+        "baked/assets/tiles/terrain/default/t12.png",
+        "baked/assets/tiles/terrain/default/t13.png",
+        "baked/assets/tiles/terrain/default/t14.png",
+        "baked/assets/tiles/terrain/default/t15.png",
+        "baked/assets/tiles/terrain/default/t16.png",
+        "baked/assets/tiles/terrain/default/t17.png",
+        "baked/assets/tiles/terrain/default/t18.png",
+        "baked/assets/tiles/terrain/default/t19.png",
+        "baked/assets/tiles/terrain/default/t20.png",
+        "baked/assets/tiles/terrain/default/t21.png",
+        "baked/assets/tiles/terrain/default/t22.png",
+        "baked/assets/tiles/terrain/default/t23.png",
+        "baked/assets/tiles/terrain/default/t24.png",
+        "baked/assets/tiles/terrain/default/t25.png",
+        "baked/assets/tiles/terrain/default/t26.png",
+        "baked/assets/tiles/terrain/default/t27.png",
+        "baked/assets/tiles/terrain/default/t28.png",
+        "baked/assets/tiles/terrain/default/t29.png"
+      ]
+    }
+  },
+  "backgrounds": {
+    "assets/backgrounds/bg1.tortubackground": {
+      "width": 312,
+      "height": 198,
+      "full": "baked/assets/backgrounds/bg1/full.png",
+      "bands": {
+        "0:19": "baked/assets/backgrounds/bg1/band_0_19.png",
+        "21:80": "baked/assets/backgrounds/bg1/band_21_80.png",
+        "81:125": "baked/assets/backgrounds/bg1/band_81_125.png",
+        "126:197": "baked/assets/backgrounds/bg1/band_126_197.png"
+      }
+    }
+  },
+  "objects": {
+    "assets/objects/robot.tortuobject": {
+      "name": "robot",
+      "default_animation": "idle",
+      "animations": {
+        "idle": "assets/sprites/robot_idle.tortusprite",
+        "damage": "assets/sprites/robot_damage.tortusprite",
+        "walk": "assets/sprites/robot_walk.tortusprite",
+        "jump": "assets/sprites/robot_jump.tortusprite",
+        "fall": "assets/sprites/robot_fall.tortusprite"
+      },
+      "solid": true,
+      "origin": {
+        "x": 10,
+        "y": 19
+      },
+      "hitbox": {
+        "x": 4,
+        "y": 3,
+        "w": 13,
+        "h": 17
+      },
+      "script": ""
+    }
+  },
+  "scenes": {
+    "scenes/level_01": "scenes/level_01.json",
+    "scenes/level_01.tortuscene": "scenes/level_01.json"
+  }
+}
