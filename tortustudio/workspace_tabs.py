@@ -16,6 +16,7 @@ class TabKind(str, Enum):
     TILESET_EDITOR = "tileset_editor"
     BACKGROUND_EDITOR = "background_editor"
     OBJECT_EDITOR = "object_editor"
+    FONT_EDITOR = "font_editor"
 
 
 @dataclass
@@ -34,6 +35,7 @@ class WorkspaceTabs(QWidget):
     TILESET_EDITOR_LABEL = "Tileset Editor"
     BACKGROUND_EDITOR_LABEL = "Background Editor"
     OBJECT_EDITOR_LABEL = "Object Editor"
+    FONT_EDITOR_LABEL = "Font Editor"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -54,6 +56,7 @@ class WorkspaceTabs(QWidget):
         self._add_sprite_editor_tab()
         self._add_tileset_editor_tab()
         self._add_background_editor_tab()
+        self._add_font_editor_tab()
         self._add_object_editor_tab()
 
     @property
@@ -77,8 +80,12 @@ class WorkspaceTabs(QWidget):
         return 4
 
     @property
-    def object_editor_index(self) -> int:
+    def font_editor_index(self) -> int:
         return 5
+
+    @property
+    def object_editor_index(self) -> int:
+        return 6
 
     @property
     def current_ref(self) -> TabRef | None:
@@ -107,6 +114,10 @@ class WorkspaceTabs(QWidget):
         self.tab_bar.addTab(self.BACKGROUND_EDITOR_LABEL)
         self._refs.append(TabRef(kind=TabKind.BACKGROUND_EDITOR))
 
+    def _add_font_editor_tab(self) -> None:
+        self.tab_bar.addTab(self.FONT_EDITOR_LABEL)
+        self._refs.append(TabRef(kind=TabKind.FONT_EDITOR))
+
     def _add_object_editor_tab(self) -> None:
         self.tab_bar.addTab(self.OBJECT_EDITOR_LABEL)
         self._refs.append(TabRef(kind=TabKind.OBJECT_EDITOR))
@@ -120,6 +131,7 @@ class WorkspaceTabs(QWidget):
         self._add_sprite_editor_tab()
         self._add_tileset_editor_tab()
         self._add_background_editor_tab()
+        self._add_font_editor_tab()
         self._add_object_editor_tab()
 
     def select_preview(self) -> None:
@@ -136,6 +148,9 @@ class WorkspaceTabs(QWidget):
 
     def select_background_editor(self) -> None:
         self.tab_bar.setCurrentIndex(self.background_editor_index)
+
+    def select_font_editor(self) -> None:
+        self.tab_bar.setCurrentIndex(self.font_editor_index)
 
     def select_object_editor(self) -> None:
         self.tab_bar.setCurrentIndex(self.object_editor_index)

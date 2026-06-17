@@ -42,6 +42,9 @@ class Project:
     def objects_dir(self) -> Path:
         return self.root / "assets" / "objects"
 
+    def fonts_dir(self) -> Path:
+        return self.root / "assets" / "fonts"
+
     def backgrounds_dir(self) -> Path:
         return self.root / "assets" / "backgrounds"
 
@@ -98,6 +101,7 @@ def create_project(root: Path, name: str = "Untitled") -> Project:
         "assets/tiles",
         "assets/backgrounds",
         "assets/objects",
+        "assets/fonts",
         "assets/audio",
         "scripts",
     ):

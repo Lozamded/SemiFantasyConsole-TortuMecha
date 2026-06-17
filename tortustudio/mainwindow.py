@@ -42,6 +42,7 @@ from tortuengine.sprite import save_sprite
 from tortuengine.tileset import save_tileset
 from tortustudio.asset_drag import DraggableProjectTree
 from tortustudio.background_editor import BackgroundEditorWidget
+from tortustudio.font_editor import FontEditorWidget
 from tortustudio.new_background_dialog import NewBackgroundDialog
 from tortustudio.new_object_dialog import NewObjectDialog
 from tortustudio.new_scene_dialog import NewSceneDialog
@@ -74,7 +75,8 @@ class MainWindow(QMainWindow):
     SPRITE_EDITOR = 2
     TILESET_EDITOR = 3
     BACKGROUND_EDITOR = 4
-    OBJECT_EDITOR = 5
+    FONT_EDITOR = 5
+    OBJECT_EDITOR = 6
 
     def __init__(self, project: Project | None = None) -> None:
         super().__init__()
@@ -88,6 +90,7 @@ class MainWindow(QMainWindow):
         self._active_scene_path: Path | None = None
         self._active_background_path: Path | None = None
         self._active_object_path: Path | None = None
+        self._active_font_path: Path | None = None
 
         self.setWindowTitle("TortuStudio")
         self.resize(1280, 720)
@@ -228,6 +231,10 @@ class MainWindow(QMainWindow):
         self.background_editor.saved.connect(self._on_background_saved)
         self.background_editor.new_background_requested.connect(self._action_new_background)
         self.background_editor.open_background_requested.connect(self._action_open_background)
+        self.font_editor = FontEditorWidget(Path("."))
+        self.font_editor.saved.connect(self._on_font_saved)
+        self.font_editor.new_font_requested.connect(self._action_new_text_font)
+        self.font_editor.open_font_requested.connect(self._action_open_text_font)
         self.object_editor = ObjectEditorWidget(Path("."))
         self.object_editor.saved.connect(self._on_object_saved)
         self.object_editor.new_object_requested.connect(self._action_new_object)
@@ -238,6 +245,7 @@ class MainWindow(QMainWindow):
         self.center_stack.addWidget(self.sprite_editor)
         self.center_stack.addWidget(self.tileset_editor)
         self.center_stack.addWidget(self.background_editor)
+        self.center_stack.addWidget(self.font_editor)
         self.center_stack.addWidget(self.object_editor)
         splitter.addWidget(self.center_stack)
 
@@ -311,12 +319,14 @@ class MainWindow(QMainWindow):
         self.tileset_editor.project_root = project.root
         self.scene_editor.project_root = project.root
         self.background_editor.project_root = project.root
+        self.font_editor.set_project_root(project.root)
         self.object_editor.project_root = project.root
         self._active_sprite_path = None
         self._active_tileset_path = None
         self._active_scene_path = None
         self._active_background_path = None
         self._active_object_path = None
+        self._active_font_path = None
         self.workspace_tabs.reset()
         self.setWindowTitle(f"TortuStudio — {project.name}")
         self._load_game_settings_form()
@@ -347,6 +357,7 @@ class MainWindow(QMainWindow):
             ("Backgrounds", self.project.backgrounds_dir()),
             ("Scenes", self.project.scenes_dir()),
             ("Objects", self.project.objects_dir()),
+            ("Fonts", self.project.fonts_dir()),
             ("Sprites", self.project.sprites_dir()),
             ("Assets", self.project.assets_dir()),
             ("Scripts", self.project.scripts_dir()),
@@ -629,7 +640,6 @@ class MainWindow(QMainWindow):
         self._show_object_editor()
 
     def _activate_font_editor_tab(self) -> None:
-        return
         if not self._confirm_discard_editor_changes():
             return
         self._switching_tabs = True
@@ -676,6 +686,14 @@ class MainWindow(QMainWindow):
         self.workspace_tabs.select_object_editor()
         self._switching_tabs = False
         self._show_object(path)
+
+    def _open_text_font(self, path: Path) -> None:
+        if not self._confirm_discard_editor_changes():
+            return
+        self._switching_tabs = True
+        self.workspace_tabs.select_font_editor()
+        self._switching_tabs = False
+        self._show_text_font(path)
 
     def _show_preview(self) -> None:
         self.viewport.stop_playback()
@@ -751,6 +769,21 @@ class MainWindow(QMainWindow):
         self.center_stack.setCurrentIndex(self.OBJECT_EDITOR)
         self.field_name.setText(path.name)
 
+    def _show_font_editor(self) -> None:
+        self.center_stack.setCurrentIndex(self.FONT_EDITOR)
+        if self._active_font_path:
+            self.field_name.setText(self._active_font_path.name)
+        else:
+            self.field_name.setPlaceholderText(
+                "No font open — use New / Open Text Font above"
+            )
+
+    def _show_text_font(self, path: Path) -> None:
+        self.font_editor.open_text_font(path)
+        self._active_font_path = path.resolve()
+        self.center_stack.setCurrentIndex(self.FONT_EDITOR)
+        self.field_name.setText(path.name)
+
     def _on_workspace_tab_selected(self, ref: TabRef) -> None:
         if self._switching_tabs:
             return
@@ -811,6 +844,18 @@ class MainWindow(QMainWindow):
                 self._show_background_editor()
             return
 
+        if ref.kind == TabKind.FONT_EDITOR:
+            if not self._confirm_discard_editor_changes():
+                self._switching_tabs = True
+                self._restore_editor_tab()
+                self._switching_tabs = False
+                return
+            if self._active_font_path and self._active_font_path.is_file():
+                self._show_text_font(self._active_font_path)
+            else:
+                self._show_font_editor()
+            return
+
         if ref.kind == TabKind.OBJECT_EDITOR:
             if not self._confirm_discard_editor_changes():
                 self._switching_tabs = True
@@ -832,6 +877,8 @@ class MainWindow(QMainWindow):
             self.workspace_tabs.select_tileset_editor()
         elif index == self.BACKGROUND_EDITOR:
             self.workspace_tabs.select_background_editor()
+        elif index == self.FONT_EDITOR:
+            self.workspace_tabs.select_font_editor()
         elif index == self.OBJECT_EDITOR:
             self.workspace_tabs.select_object_editor()
         else:
@@ -847,6 +894,8 @@ class MainWindow(QMainWindow):
             return self._confirm_discard_unsaved("tileset", self.tileset_editor.save)
         if index == self.BACKGROUND_EDITOR and self.background_editor.has_unsaved_changes():
             return self._confirm_discard_unsaved("background", self.background_editor.save)
+        if index == self.FONT_EDITOR and self.font_editor.has_unsaved_changes():
+            return self._confirm_discard_unsaved("font", self.font_editor.save)
         if index == self.OBJECT_EDITOR and self.object_editor.has_unsaved_changes():
             return self._confirm_discard_unsaved("object", self.object_editor.save)
         return True
@@ -884,6 +933,8 @@ class MainWindow(QMainWindow):
             self._open_background(path)
         elif path.suffix == ".tortuobject":
             self._open_object(path)
+        elif path.suffix == ".tortufont":
+            self._open_text_font(path)
         elif path.suffix == ".pal":
             self.log(f"Edit palette in external editor: {path}")
             cmd = self.project.editor_command.format(file=path, line=1)
@@ -913,6 +964,10 @@ class MainWindow(QMainWindow):
         self._populate_tree()
         if self.viewport.scene_preview_active:
             self.viewport.invalidate_baked_assets()
+
+    def _on_font_saved(self, path: Path) -> None:
+        self.log(f"Saved {path.relative_to(self.project.root)}")
+        self._populate_tree()
 
     def _on_object_saved(self, path: Path) -> None:
         self.log(f"Saved {path.relative_to(self.project.root)}")
@@ -1120,6 +1175,34 @@ class MainWindow(QMainWindow):
         )
         if path:
             self._open_background(Path(path))
+
+    def _action_new_text_font(self) -> None:
+        if not self.project:
+            QMessageBox.information(self, "New Text Font", "Open a project first.")
+            return
+        if not self._confirm_discard_editor_changes():
+            return
+        self.font_editor.new_text_font()
+        text_editor = self.font_editor.text_editor
+        if not text_editor.tortu_font or not text_editor.file_path:
+            return
+        text_editor.save()
+        self._populate_tree()
+        self._open_text_font(text_editor.file_path)
+        self.log(f"Created {text_editor.file_path.relative_to(self.project.root)}")
+
+    def _action_open_text_font(self) -> None:
+        if not self.project:
+            QMessageBox.information(self, "Open Text Font", "Open a project first.")
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Text Font",
+            str(self.project.fonts_dir()),
+            "Tortu Text Fonts (*.tortufont)",
+        )
+        if path:
+            self._open_text_font(Path(path))
 
     def _action_new_object(self) -> None:
         if not self.project:

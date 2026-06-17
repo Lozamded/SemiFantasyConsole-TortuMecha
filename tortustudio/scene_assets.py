@@ -11,6 +11,7 @@ ENGINE_ASSET_SUFFIXES = frozenset(
         ".tortubackground",
         ".tortuscene",
         ".tortuobject",
+        ".tortufont",
         ".pal",
     }
 )
@@ -55,6 +56,15 @@ def list_object_paths(project_root: Path) -> list[str]:
         return []
     return sorted(
         p.relative_to(project_root).as_posix() for p in objects_dir.glob("*.tortuobject")
+    )
+
+
+def list_text_font_paths(project_root: Path) -> list[str]:
+    fonts_dir = project_root / "assets" / "fonts"
+    if not fonts_dir.is_dir():
+        return []
+    return sorted(
+        p.relative_to(project_root).as_posix() for p in fonts_dir.glob("*.tortufont")
     )
 
 
