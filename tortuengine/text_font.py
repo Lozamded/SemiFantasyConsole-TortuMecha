@@ -150,13 +150,24 @@ def bake_glyph(
     if not char or len(char) != 1:
         return None
     try:
-        surface = font.render(char, False, (255, 255, 255))
+        # Antialiased render gets a real alpha channel; non-AA fills the bbox with opaque black.
+        surface = font.render(char, True, (255, 255, 255))
     except Exception:
         return None
     if surface.get_width() == 0 or surface.get_height() == 0:
         return None
     advance = max(1, font.size(char)[0])
     return _glyph_from_surface(surface, palette, advance=advance)
+
+
+def sync_line_height(tortu_font: TortuFont, *, min_linesize: int | None = None) -> None:
+    """Raise line_height so baked glyphs are not clipped when drawing."""
+    floor = tortu_font.size
+    if min_linesize is not None:
+        floor = max(floor, min_linesize)
+    if tortu_font.glyphs:
+        floor = max(floor, max(glyph.height for glyph in tortu_font.glyphs.values()))
+    tortu_font.line_height = max(tortu_font.line_height, floor)
 
 
 def rebuild_font_glyphs(
@@ -178,7 +189,6 @@ def rebuild_font_glyphs(
         palette_colors = load_palette(palette_path(project_root, tortu_font.palette))
 
     pygame_font = pygame.font.Font(str(ttf_path), tortu_font.size)
-    tortu_font.line_height = max(tortu_font.line_height, pygame_font.get_linesize())
 
     charset = tortu_font.resolved_charset()
     tortu_font.charset = unique_charset(charset)
@@ -188,6 +198,7 @@ def rebuild_font_glyphs(
         if glyph is not None:
             baked[ord(char)] = glyph
     tortu_font.glyphs = baked
+    sync_line_height(tortu_font, min_linesize=pygame_font.get_linesize())
 
 
 def install_ttf_source(project_root: Path, ttf_path: Path, font_name: str) -> str:
@@ -228,7 +239,7 @@ def load_tortu_font(path: Path) -> TortuFont:
     if preset not in CHARSET_PRESETS:
         preset = CHARSET_LATIN1
 
-    return TortuFont(
+    tortu_font = TortuFont(
         name=name,
         source=source,
         size=int(data.get("size", DEFAULT_FONT_SIZE)),
@@ -238,9 +249,12 @@ def load_tortu_font(path: Path) -> TortuFont:
         charset=str(data.get("charset", "")),
         glyphs=glyphs,
     )
+    sync_line_height(tortu_font)
+    return tortu_font
 
 
 def save_tortu_font(tortu_font: TortuFont, path: Path) -> None:
+    sync_line_height(tortu_font)
     path.parent.mkdir(parents=True, exist_ok=True)
     data = {
         "name": tortu_font.name,
@@ -269,17 +283,24 @@ def render_text_line(
     tortu_font: TortuFont,
     text: str,
     palette: list[tuple[int, int, int]],
+    *,
+    fore_index: int | None = None,
 ) -> pygame.Surface:
     """Lay out one line of UTF-8 text using baked glyphs."""
     if not text:
         return pygame.Surface((1, tortu_font.line_height), pygame.SRCALPHA)
 
     width = 0
+    max_glyph_h = 0
     for char in text:
         glyph = tortu_font.glyphs.get(ord(char))
-        width += glyph.advance if glyph else tortu_font.size // 2
+        if glyph:
+            width += glyph.advance
+            max_glyph_h = max(max_glyph_h, glyph.height)
+        else:
+            width += tortu_font.size // 2
 
-    height = tortu_font.line_height
+    height = max(tortu_font.line_height, max_glyph_h)
     surface = pygame.Surface((max(1, width), height), pygame.SRCALPHA)
     cursor_x = 0
     for char in text:
@@ -292,6 +313,8 @@ def render_text_line(
                 index = glyph.pixels[y * glyph.width + x]
                 if index == TRANSPARENT_INDEX:
                     continue
+                if fore_index is not None:
+                    index = fore_index
                 dst_x = cursor_x + x
                 dst_y = y
                 if 0 <= dst_x < surface.get_width() and 0 <= dst_y < surface.get_height():
