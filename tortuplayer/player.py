@@ -22,8 +22,9 @@ class WindowPlayer:
 
     def _ensure_window(self) -> pygame.Surface:
         if self.window is None:
-            w, h = SCREEN_WIDTH * self.scale, SCREEN_HEIGHT * self.scale
-            self.window = pygame.display.set_mode((w, h))
+            self.window = pygame.display.set_mode(
+                (SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SCALED
+            )
             pygame.display.set_caption(self.title)
         return self.window
 
@@ -43,8 +44,7 @@ class WindowPlayer:
 
             self.engine.tick(dt)
             frame = self.engine.render_frame()
-            scaled = pygame.transform.scale(frame, window.get_size())
-            window.blit(scaled, (0, 0))
+            window.blit(frame, (0, 0))
             pygame.display.flip()
 
         pygame.quit()

@@ -235,6 +235,8 @@ class MainWindow(QMainWindow):
         self.font_editor.saved.connect(self._on_font_saved)
         self.font_editor.new_font_requested.connect(self._action_new_text_font)
         self.font_editor.open_font_requested.connect(self._action_open_text_font)
+        self.font_editor.new_sprite_font_requested.connect(self._action_new_sprite_font)
+        self.font_editor.open_sprite_font_requested.connect(self._action_open_sprite_font)
         self.object_editor = ObjectEditorWidget(Path("."))
         self.object_editor.saved.connect(self._on_object_saved)
         self.object_editor.new_object_requested.connect(self._action_new_object)
@@ -695,6 +697,14 @@ class MainWindow(QMainWindow):
         self._switching_tabs = False
         self._show_text_font(path)
 
+    def _open_sprite_font(self, path: Path) -> None:
+        if not self._confirm_discard_editor_changes():
+            return
+        self._switching_tabs = True
+        self.workspace_tabs.select_font_editor()
+        self._switching_tabs = False
+        self._show_sprite_font(path)
+
     def _show_preview(self) -> None:
         self.viewport.stop_playback()
         self.center_stack.setCurrentIndex(self.VIEWPORT)
@@ -775,7 +785,7 @@ class MainWindow(QMainWindow):
             self.field_name.setText(self._active_font_path.name)
         else:
             self.field_name.setPlaceholderText(
-                "No font open — use New / Open Text Font above"
+                "No font open — use New / Open in the Font Editor"
             )
 
     def _show_text_font(self, path: Path) -> None:
@@ -783,6 +793,18 @@ class MainWindow(QMainWindow):
         self._active_font_path = path.resolve()
         self.center_stack.setCurrentIndex(self.FONT_EDITOR)
         self.field_name.setText(path.name)
+
+    def _show_sprite_font(self, path: Path) -> None:
+        self.font_editor.open_sprite_font(path)
+        self._active_font_path = path.resolve()
+        self.center_stack.setCurrentIndex(self.FONT_EDITOR)
+        self.field_name.setText(path.name)
+
+    def _show_active_font(self, path: Path) -> None:
+        if path.suffix == ".tortuspritefont":
+            self._show_sprite_font(path)
+        else:
+            self._show_text_font(path)
 
     def _on_workspace_tab_selected(self, ref: TabRef) -> None:
         if self._switching_tabs:
@@ -851,7 +873,7 @@ class MainWindow(QMainWindow):
                 self._switching_tabs = False
                 return
             if self._active_font_path and self._active_font_path.is_file():
-                self._show_text_font(self._active_font_path)
+                self._show_active_font(self._active_font_path)
             else:
                 self._show_font_editor()
             return
@@ -935,6 +957,8 @@ class MainWindow(QMainWindow):
             self._open_object(path)
         elif path.suffix == ".tortufont":
             self._open_text_font(path)
+        elif path.suffix == ".tortuspritefont":
+            self._open_sprite_font(path)
         elif path.suffix == ".pal":
             self.log(f"Edit palette in external editor: {path}")
             cmd = self.project.editor_command.format(file=path, line=1)
@@ -1203,6 +1227,34 @@ class MainWindow(QMainWindow):
         )
         if path:
             self._open_text_font(Path(path))
+
+    def _action_new_sprite_font(self) -> None:
+        if not self.project:
+            QMessageBox.information(self, "New Sprite Font", "Open a project first.")
+            return
+        if not self._confirm_discard_editor_changes():
+            return
+        self.font_editor.new_sprite_font()
+        sprite_editor = self.font_editor.sprite_editor
+        if not sprite_editor.sprite_font or not sprite_editor.file_path:
+            return
+        sprite_editor.save()
+        self._populate_tree()
+        self._open_sprite_font(sprite_editor.file_path)
+        self.log(f"Created {sprite_editor.file_path.relative_to(self.project.root)}")
+
+    def _action_open_sprite_font(self) -> None:
+        if not self.project:
+            QMessageBox.information(self, "Open Sprite Font", "Open a project first.")
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Sprite Font",
+            str(self.project.fonts_dir()),
+            "Tortu Sprite Fonts (*.tortuspritefont)",
+        )
+        if path:
+            self._open_sprite_font(Path(path))
 
     def _action_new_object(self) -> None:
         if not self.project:

@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QFormLayout,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -27,7 +28,7 @@ from PyQt6.QtWidgets import (
 )
 
 from tortuengine.constants import SCREEN_HEIGHT, SCREEN_WIDTH
-from tortuengine.palette import list_palette_names, load_palette, palette_path
+from tortuengine.palette import PAINTABLE_INDICES, list_palette_names, load_palette, palette_path
 from tortuengine.text_font import (
     CHARSET_ASCII,
     CHARSET_CUSTOM,
@@ -43,6 +44,7 @@ from tortuengine.text_font import (
     save_tortu_font,
 )
 from tortustudio.new_text_font_dialog import NewTextFontDialog
+from tortustudio.sprite_font_editor import SpriteFontEditorWidget
 
 
 class TextFontPreviewCanvas(QWidget):
@@ -146,7 +148,10 @@ class TextFontEditorWidget(QWidget):
         self.file_path: Path | None = None
         self.tortu_font: TortuFont | None = None
         self._palette_colors: list[tuple[int, int, int]] = []
+        self._preview_fore_index = 1
+        self._preview_swatch_buttons: list[QPushButton] = []
         self._dirty = False
+        self._syncing_fields = False
 
         self.btn_new = QPushButton("New Text Font…")
         self.btn_new.clicked.connect(self.new_font_requested.emit)
@@ -171,11 +176,13 @@ class TextFontEditorWidget(QWidget):
 
         self.size_spin = QSpinBox()
         self.size_spin.setRange(MIN_FONT_SIZE, MAX_FONT_SIZE)
-        self.size_spin.valueChanged.connect(self._on_fields_changed)
+        self.size_spin.setToolTip("Pixel size — glyphs rebuild automatically")
+        self.size_spin.valueChanged.connect(self._on_size_changed)
 
         self.line_height_spin = QSpinBox()
         self.line_height_spin.setRange(MIN_FONT_SIZE, MAX_FONT_SIZE * 2)
-        self.line_height_spin.valueChanged.connect(self._on_fields_changed)
+        self.line_height_spin.setToolTip("Vertical spacing between preview lines")
+        self.line_height_spin.valueChanged.connect(self._on_line_height_changed)
 
         self.charset_combo = QComboBox()
         self.charset_combo.addItem("Latin-1 (Spanish, etc.)", CHARSET_LATIN1)
@@ -186,7 +193,7 @@ class TextFontEditorWidget(QWidget):
         self.custom_charset = QPlainTextEdit()
         self.custom_charset.setPlaceholderText("Characters to bake when charset is Custom")
         self.custom_charset.setMaximumHeight(72)
-        self.custom_charset.textChanged.connect(self._on_fields_changed)
+        self.custom_charset.textChanged.connect(self._on_charset_text_changed)
 
         self.palette_combo = QComboBox()
         self.palette_combo.currentTextChanged.connect(self._on_palette_changed)
@@ -235,6 +242,25 @@ class TextFontEditorWidget(QWidget):
         preview_group = QVBoxLayout()
         preview_group.addWidget(QLabel("Preview"))
         preview_group.addWidget(self.preview_canvas, stretch=1)
+
+        preview_color_row = QHBoxLayout()
+        preview_color_row.addWidget(QLabel("Text color:"))
+        preview_color_row.addStretch()
+        preview_group.addLayout(preview_color_row)
+
+        self.preview_swatches_area = QScrollArea()
+        self.preview_swatches_area.setWidgetResizable(True)
+        self.preview_swatches_area.setMaximumHeight(88)
+        self.preview_swatches_widget = QWidget()
+        self.preview_swatches_grid = QGridLayout(self.preview_swatches_widget)
+        self.preview_swatches_grid.setContentsMargins(0, 0, 0, 0)
+        self.preview_swatches_area.setWidget(self.preview_swatches_widget)
+        preview_group.addWidget(self.preview_swatches_area)
+
+        preview_hint = QLabel("Preview only — does not change baked glyphs.")
+        preview_hint.setStyleSheet("color: #aaa; font-size: 11px;")
+        preview_group.addWidget(preview_hint)
+
         body.addLayout(preview_group, stretch=1)
 
         side_widget = QWidget()
@@ -263,6 +289,10 @@ class TextFontEditorWidget(QWidget):
     def set_project_root(self, project_root: Path) -> None:
         self.project_root = project_root
         self._refresh_palette_combo()
+        default_palette = palette_path(project_root, "default")
+        if default_palette.is_file():
+            self._palette_colors = load_palette(default_palette)
+            self._build_preview_swatches()
 
     def has_unsaved_changes(self) -> bool:
         return self._dirty
@@ -299,6 +329,7 @@ class TextFontEditorWidget(QWidget):
         self.file_path = dest
         self.tortu_font = tortu_font
         self._dirty = True
+        self._build_preview_swatches()
         self._sync_fields()
         self._refresh_preview()
         self.status_label.setText(f"New: {dest.name}")
@@ -315,6 +346,7 @@ class TextFontEditorWidget(QWidget):
         self.file_path = path.resolve()
         self.tortu_font = tortu_font
         self._dirty = False
+        self._build_preview_swatches()
         self._sync_fields()
         self._refresh_preview()
         self.status_label.setText(path.name)
@@ -348,6 +380,7 @@ class TextFontEditorWidget(QWidget):
     def _sync_fields(self) -> None:
         if not self.tortu_font:
             return
+        self._syncing_fields = True
         self._refresh_palette_combo()
         self.name_edit.blockSignals(True)
         self.size_spin.blockSignals(True)
@@ -377,7 +410,62 @@ class TextFontEditorWidget(QWidget):
         self.palette_combo.blockSignals(False)
 
         self.glyph_count_label.setText(f"Glyphs: {len(self.tortu_font.glyphs)}")
+        self._syncing_fields = False
+        self._build_preview_swatches()
         self._refresh_preview()
+
+    def _build_preview_swatches(self) -> None:
+        while self.preview_swatches_grid.count():
+            item = self.preview_swatches_grid.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self._preview_swatch_buttons.clear()
+
+        if not self._palette_colors:
+            return
+
+        cols = 16
+        for n, index in enumerate(PAINTABLE_INDICES):
+            r, g, b = self._palette_colors[index]
+            btn = QPushButton()
+            btn.setFixedSize(20, 20)
+            selected = index == self._preview_fore_index
+            border = "2px solid #00dcff" if selected else "1px solid #444"
+            btn.setStyleSheet(
+                f"background-color: rgb({r},{g},{b}); border: {border};"
+            )
+            btn.setToolTip(f"Preview text color — index {index}")
+            btn.clicked.connect(lambda _checked, i=index: self._pick_preview_color(i))
+            self.preview_swatches_grid.addWidget(btn, n // cols, n % cols)
+            self._preview_swatch_buttons.append(btn)
+
+    def _pick_preview_color(self, index: int) -> None:
+        self._preview_fore_index = index
+        self._build_preview_swatches()
+        self._refresh_preview()
+
+    def _on_size_changed(self, _value: int) -> None:
+        if not self.tortu_font or self._syncing_fields:
+            return
+        self._apply_fields()
+        self._rebuild_glyphs_internal()
+        self._mark_dirty()
+
+    def _on_line_height_changed(self, _value: int) -> None:
+        if not self.tortu_font or self._syncing_fields:
+            return
+        self._apply_fields()
+        self._refresh_preview()
+        self._mark_dirty()
+
+    def _on_charset_text_changed(self) -> None:
+        if not self.tortu_font or self._syncing_fields:
+            return
+        if self.tortu_font.charset_preset != CHARSET_CUSTOM:
+            return
+        self._apply_fields()
+        self._rebuild_glyphs_internal()
+        self._mark_dirty()
 
     def _refresh_palette_combo(self) -> None:
         current = self.palette_combo.currentText() if self.palette_combo.count() else "default"
@@ -405,17 +493,22 @@ class TextFontEditorWidget(QWidget):
             return
         custom = str(self.charset_combo.currentData()) == CHARSET_CUSTOM
         self.custom_charset.setEnabled(custom)
-        self._on_fields_changed()
+        if self._syncing_fields:
+            return
+        self._apply_fields()
+        self._rebuild_glyphs_internal()
+        self._mark_dirty()
 
     def _on_palette_changed(self, _name: str) -> None:
-        if not self.tortu_font:
+        if not self.tortu_font or self._syncing_fields:
             return
         path = palette_path(self.project_root, self.palette_combo.currentText())
         if path.is_file():
             self._palette_colors = load_palette(path)
         self.tortu_font.palette = self.palette_combo.currentText()
+        self._build_preview_swatches()
+        self._rebuild_glyphs_internal()
         self._mark_dirty()
-        self._refresh_preview()
 
     def _change_ttf(self) -> None:
         if not self.tortu_font:
@@ -432,14 +525,14 @@ class TextFontEditorWidget(QWidget):
             rel = install_ttf_source(self.project_root, Path(path), self.tortu_font.name)
             self.tortu_font.source = rel
             self.source_label.setText(rel)
+            self._rebuild_glyphs_internal()
             self._mark_dirty()
         except OSError as exc:
             QMessageBox.warning(self, "Change TTF", str(exc))
 
-    def _rebuild_glyphs(self) -> None:
+    def _rebuild_glyphs_internal(self) -> bool:
         if not self.tortu_font:
-            return
-        self._apply_fields()
+            return False
         try:
             if not self._palette_colors:
                 self._palette_colors = load_palette(
@@ -452,10 +545,27 @@ class TextFontEditorWidget(QWidget):
             )
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "Rebuild Glyphs", str(exc))
-            return
+            return False
+        self._sync_line_height_spin()
         self.glyph_count_label.setText(f"Glyphs: {len(self.tortu_font.glyphs)}")
-        self._mark_dirty()
         self._refresh_preview()
+        return True
+
+    def _sync_line_height_spin(self) -> None:
+        if not self.tortu_font:
+            return
+        if self.line_height_spin.value() == self.tortu_font.line_height:
+            return
+        self.line_height_spin.blockSignals(True)
+        self.line_height_spin.setValue(self.tortu_font.line_height)
+        self.line_height_spin.blockSignals(False)
+
+    def _rebuild_glyphs(self) -> None:
+        if not self.tortu_font:
+            return
+        self._apply_fields()
+        if self._rebuild_glyphs_internal():
+            self._mark_dirty()
 
     def _refresh_preview(self) -> None:
         screen = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
@@ -473,6 +583,7 @@ class TextFontEditorWidget(QWidget):
                             self.tortu_font,
                             line,
                             self._palette_colors,
+                            fore_index=self._preview_fore_index,
                         )
                         screen.blit(line_surface, (TextFontPreviewCanvas.TEXT_MARGIN, y))
                     except (KeyError, IndexError):
@@ -499,6 +610,8 @@ class FontEditorWidget(QWidget):
     saved = pyqtSignal(Path)
     new_font_requested = pyqtSignal()
     open_font_requested = pyqtSignal()
+    new_sprite_font_requested = pyqtSignal()
+    open_sprite_font_requested = pyqtSignal()
 
     def __init__(self, project_root: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -507,17 +620,14 @@ class FontEditorWidget(QWidget):
         self.text_editor.new_font_requested.connect(self.new_font_requested.emit)
         self.text_editor.open_font_requested.connect(self.open_font_requested.emit)
 
-        sprite_placeholder = QWidget()
-        sprite_layout = QVBoxLayout(sprite_placeholder)
-        sprite_layout.addWidget(
-            QLabel("Sprite fonts (.tortuspritefont) — coming soon.\n"
-                    "Pixel HUD fonts built from 4×4 blocks.")
-        )
-        sprite_layout.addStretch()
+        self.sprite_editor = SpriteFontEditorWidget(project_root)
+        self.sprite_editor.saved.connect(self.saved.emit)
+        self.sprite_editor.new_font_requested.connect(self.new_sprite_font_requested.emit)
+        self.sprite_editor.open_font_requested.connect(self.open_sprite_font_requested.emit)
 
         self.tabs = QTabWidget()
         self.tabs.addTab(self.text_editor, "Text fonts")
-        self.tabs.addTab(sprite_placeholder, "Sprite fonts")
+        self.tabs.addTab(self.sprite_editor, "Sprite fonts")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -525,17 +635,33 @@ class FontEditorWidget(QWidget):
 
     def set_project_root(self, project_root: Path) -> None:
         self.text_editor.set_project_root(project_root)
+        self.sprite_editor.set_project_root(project_root)
+
+    def _active_subtab(self) -> QWidget:
+        return self.tabs.currentWidget()
 
     def has_unsaved_changes(self) -> bool:
-        return self.text_editor.has_unsaved_changes()
+        return self.text_editor.has_unsaved_changes() or self.sprite_editor.has_unsaved_changes()
 
     def new_text_font(self) -> None:
         self.tabs.setCurrentIndex(0)
         self.text_editor.new_font()
 
+    def new_sprite_font(self) -> None:
+        self.tabs.setCurrentIndex(1)
+        self.sprite_editor.new_font()
+
     def open_text_font(self, path: Path) -> None:
         self.tabs.setCurrentIndex(0)
         self.text_editor.open_font(path)
 
+    def open_sprite_font(self, path: Path) -> None:
+        self.tabs.setCurrentIndex(1)
+        self.sprite_editor.open_font(path)
+
     def save(self) -> None:
-        self.text_editor.save()
+        widget = self._active_subtab()
+        if widget is self.sprite_editor:
+            self.sprite_editor.save()
+        else:
+            self.text_editor.save()

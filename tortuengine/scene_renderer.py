@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pygame
 
@@ -28,6 +30,27 @@ from tortuengine.tileset import Tileset, load_tileset
 MAP_BG = (30, 30, 40)
 
 
+class _LRUCache(OrderedDict):
+    """OrderedDict-backed LRU cache. Oldest entry is evicted when maxsize is reached."""
+
+    def __init__(self, maxsize: int) -> None:
+        super().__init__()
+        self._maxsize = maxsize
+
+    def get(self, key: Any, default: Any = None) -> Any:
+        if key not in self:
+            return default
+        self.move_to_end(key)
+        return super().__getitem__(key)
+
+    def __setitem__(self, key: Any, value: Any) -> None:
+        if key in self:
+            self.move_to_end(key)
+        super().__setitem__(key, value)
+        if len(self) > self._maxsize:
+            self.popitem(last=False)
+
+
 @dataclass
 class _ObjectAnimState:
     animation: str
@@ -48,11 +71,13 @@ class SceneRenderer:
         self._sprites: dict[str, Sprite] = {}
         self._objects: dict[str, TortuObject] = {}
         self._object_anim: list[_ObjectAnimState] = []
-        self._sprite_frame_cache: dict[tuple[str, int], pygame.Surface] = {}
-        self._tile_cache: dict[tuple[str, int, str], pygame.Surface] = {}
-        self._bg_cache: dict[str, pygame.Surface] = {}
-        self._bg_band_cache: dict[tuple[str, int, int], pygame.Surface] = {}
-        self._png_cache: dict[str, pygame.Surface] = {}
+        # Baked surface caches: LRU-bounded to prevent unbounded RAM growth.
+        # Source-asset dicts above are bounded by project size and don't need eviction.
+        self._sprite_frame_cache: _LRUCache = _LRUCache(256)
+        self._tile_cache: _LRUCache = _LRUCache(256)
+        self._bg_cache: _LRUCache = _LRUCache(8)   # full bgs are ~418KB each
+        self._bg_band_cache: _LRUCache = _LRUCache(32)
+        self._png_cache: _LRUCache = _LRUCache(128)
 
     @classmethod
     def from_cart(cls, cart_root: Path, manifest: CartManifest) -> SceneRenderer:

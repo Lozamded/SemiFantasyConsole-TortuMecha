@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pygame
 
 from tortuengine.background import Background
@@ -9,24 +10,6 @@ from tortuengine.palette import TRANSPARENT_INDEX
 from tortuengine.scene import SceneBgParallaxBand, find_parallax_band
 from tortuengine.sprite import Sprite
 from tortuengine.tileset import Tileset
-
-
-def _composite_bg_pixel(
-    background: Background,
-    x: int,
-    y: int,
-    palette: list[tuple[int, int, int]],
-) -> tuple[int, int, int, int] | None:
-    index = y * background.width + x
-    for bg_layer in background.bg_layers:
-        if not bg_layer.visible:
-            continue
-        pixel = bg_layer.pixels[index]
-        if pixel == TRANSPARENT_INDEX:
-            continue
-        rgb = palette[pixel]
-        return (*rgb, 255)
-    return None
 
 
 def bake_sprite_frame(
@@ -45,17 +28,54 @@ def bake_tile(
     return tileset.tile_surface(palette, tile_index)
 
 
+def _composite_layers_to_arrays(
+    bg_layers,
+    palette: list[tuple[int, int, int]],
+    w: int,
+    h: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return (rgb, alpha) arrays in surfarray (w, h) convention."""
+    pal_rgb = np.array(palette, dtype=np.uint8)  # (64, 3)
+    rgb = np.zeros((w, h, 3), dtype=np.uint8)
+    alpha = np.zeros((w, h), dtype=np.uint8)
+    filled = np.zeros((w, h), dtype=bool)
+
+    for layer in bg_layers:
+        if not layer.visible:
+            continue
+        # pixels is row-major (y*w + x); reshape to (h, w) then transpose to (w, h)
+        pixels = np.array(layer.pixels, dtype=np.uint8).reshape(h, w).T
+        can_set = ~filled & (pixels != TRANSPARENT_INDEX)
+        rgb[can_set] = pal_rgb[pixels[can_set]]
+        alpha[can_set] = 255
+        filled |= can_set
+        if filled.all():
+            break
+
+    return rgb, alpha
+
+
+def _write_arrays_to_surface(
+    surface: pygame.Surface,
+    rgb: np.ndarray,
+    alpha: np.ndarray,
+) -> None:
+    pix = pygame.surfarray.pixels3d(surface)
+    alp = pygame.surfarray.pixels_alpha(surface)
+    pix[:] = rgb
+    alp[:] = alpha
+    del pix, alp
+
+
 def bake_background(
     background: Background,
     palette: list[tuple[int, int, int]],
 ) -> pygame.Surface:
     """Composite visible bg layers into one RGBA surface."""
-    surface = pygame.Surface((background.width, background.height), pygame.SRCALPHA)
-    for y in range(background.height):
-        for x in range(background.width):
-            color = _composite_bg_pixel(background, x, y, palette)
-            if color is not None:
-                surface.set_at((x, y), color)
+    w, h = background.width, background.height
+    surface = pygame.Surface((w, h), pygame.SRCALPHA)
+    rgb, alpha = _composite_layers_to_arrays(background.bg_layers, palette, w, h)
+    _write_arrays_to_surface(surface, rgb, alpha)
     return surface
 
 
@@ -70,14 +90,30 @@ def bake_background_band(
     bottom = max(0, min(y1, background.height - 1))
     if bottom < top:
         top, bottom = bottom, top
-    height = bottom - top + 1
-    surface = pygame.Surface((background.width, height), pygame.SRCALPHA)
-    for y in range(top, bottom + 1):
-        local_y = y - top
-        for x in range(background.width):
-            color = _composite_bg_pixel(background, x, y, palette)
-            if color is not None:
-                surface.set_at((x, local_y), color)
+    band_h = bottom - top + 1
+    w = background.width
+
+    surface = pygame.Surface((w, band_h), pygame.SRCALPHA)
+
+    pal_rgb = np.array(palette, dtype=np.uint8)
+    rgb = np.zeros((w, band_h, 3), dtype=np.uint8)
+    alpha = np.zeros((w, band_h), dtype=np.uint8)
+    filled = np.zeros((w, band_h), dtype=bool)
+
+    for layer in background.bg_layers:
+        if not layer.visible:
+            continue
+        # Slice only the band rows before transposing to avoid full-image allocation
+        full = np.array(layer.pixels, dtype=np.uint8).reshape(background.height, w)
+        pixels = full[top : bottom + 1, :].T  # (w, band_h)
+        can_set = ~filled & (pixels != TRANSPARENT_INDEX)
+        rgb[can_set] = pal_rgb[pixels[can_set]]
+        alpha[can_set] = 255
+        filled |= can_set
+        if filled.all():
+            break
+
+    _write_arrays_to_surface(surface, rgb, alpha)
     return surface
 
 
