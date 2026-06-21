@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
 from tortuengine.constants import SCREEN_WIDTH
 from tortuengine.image import load_image
 from tortuengine.palette import list_palette_names
+from tortustudio.color_key_widget import ColorKeyWidget
 
 
 class NewBackgroundDialog(QDialog):
@@ -51,11 +52,14 @@ class NewBackgroundDialog(QDialog):
             names = ["default"]
         self.palette_combo.addItems(names)
 
+        self.color_key = ColorKeyWidget()
+
         form = QFormLayout()
         form.addRow("Name:", self.name_edit)
         form.addRow("Source image:", image_row)
         form.addRow("", self.image_info)
         form.addRow("Palette:", self.palette_combo)
+        form.addRow("", self.color_key)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -116,3 +120,7 @@ class NewBackgroundDialog(QDialog):
         if self._image_path is None:
             raise ValueError("No image selected")
         return self._image_path
+
+    @property
+    def color_key_rgb(self) -> tuple[int, int, int] | None:
+        return self.color_key.color_key_rgb

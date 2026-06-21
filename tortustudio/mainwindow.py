@@ -1236,6 +1236,7 @@ class MainWindow(QMainWindow):
             background_path,
             dialog.palette_name,
             dialog.image_path,
+            dialog.color_key_rgb,
         )
         if not self.background_editor.background:
             return

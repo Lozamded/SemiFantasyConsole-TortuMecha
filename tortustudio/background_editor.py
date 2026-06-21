@@ -35,7 +35,7 @@ from tortuengine.background import (
     save_background,
 )
 from tortuengine.constants import BACKGROUND_LAYERS, SCREEN_HEIGHT, SCREEN_WIDTH, TILE_BLOCK
-from tortuengine.image import load_image
+from tortuengine.image import apply_color_key, load_image
 from tortuengine.palette import (
     PAINTABLE_INDICES,
     TRANSPARENT_INDEX,
@@ -587,7 +587,13 @@ class BackgroundEditorWidget(QWidget):
         self.bg_height.setValue(SCREEN_HEIGHT)
         self._resize_background()
 
-    def new_background(self, path: Path, palette: str, image_path: Path) -> None:
+    def new_background(
+        self,
+        path: Path,
+        palette: str,
+        image_path: Path,
+        color_key_rgb: tuple[int, int, int] | None = None,
+    ) -> None:
         self.file_path = path.resolve()
         try:
             palette_file = palette_path(self.project_root, palette)
@@ -595,6 +601,8 @@ class BackgroundEditorWidget(QWidget):
                 raise FileNotFoundError(f"Palette not found: {palette_file}")
             colors = load_palette(palette_file)
             surface = load_image(image_path)
+            if color_key_rgb is not None:
+                surface = apply_color_key(surface, color_key_rgb)
             self.background = Background.create_from_image(palette, surface, colors)
         except (FileNotFoundError, ValueError, OSError) as exc:
             QMessageBox.warning(self, "New Background", str(exc))

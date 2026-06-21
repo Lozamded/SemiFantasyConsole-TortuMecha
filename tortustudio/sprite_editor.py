@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 )
 
 from tortuengine.image import load_image
+from tortustudio.color_key_widget import ColorKeyWidget
 from tortuengine.constants import SPRITE_BLOCK
 from tortuengine.palette import (
     PAINTABLE_INDICES,
@@ -316,6 +317,7 @@ class SpriteEditorWidget(QWidget):
         self.btn_open.clicked.connect(self.open_sprite_requested.emit)
         self.btn_load_ref = QPushButton("Load Reference…")
         self.btn_load_ref.clicked.connect(self._load_reference)
+        self.color_key = ColorKeyWidget()
         self.btn_convert = QPushButton("Convert to Current Palette")
         self.btn_convert.clicked.connect(self._convert_reference)
         self.btn_convert.setEnabled(False)
@@ -426,6 +428,7 @@ class SpriteEditorWidget(QWidget):
         side.addLayout(tools)
 
         side.addWidget(self.btn_load_ref)
+        side.addWidget(self.color_key)
         side.addWidget(self.btn_convert)
         side.addWidget(QLabel("Reference opacity:"))
         side.addWidget(self.ref_opacity)
@@ -783,7 +786,7 @@ class SpriteEditorWidget(QWidget):
         )
         if not path:
             return
-        surface = load_image(path)
+        surface = self.color_key.apply_to(load_image(path))
         self.canvas.set_reference(surface)
         self.btn_convert.setEnabled(True)
 

@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 )
 
 from tortuengine.image import load_image
+from tortustudio.color_key_widget import ColorKeyWidget
 from tortuengine.palette import (
     PAINTABLE_INDICES,
     TRANSPARENT_INDEX,
@@ -953,6 +954,7 @@ class TilesetEditorWidget(QWidget):
         self.btn_new.clicked.connect(self.new_tileset_requested.emit)
         self.btn_open = QPushButton("Open Tileset…")
         self.btn_open.clicked.connect(self.open_tileset_requested.emit)
+        self.color_key = ColorKeyWidget()
         self.btn_load_import = QPushButton("Load Import Image…")
         self.btn_load_import.clicked.connect(self._load_import_image)
         self.btn_save_all = QPushButton("Save all from image")
@@ -1004,6 +1006,7 @@ class TilesetEditorWidget(QWidget):
         import_scroll.setWidget(self.import_canvas)
         import_layout.addWidget(import_scroll)
         import_layout.addWidget(self.btn_load_import)
+        import_layout.addWidget(self.color_key)
         import_layout.addWidget(self.btn_save_all)
         canvases.addWidget(import_group, stretch=1)
 
@@ -1658,7 +1661,7 @@ class TilesetEditorWidget(QWidget):
         )
         if not path:
             return
-        self._set_import_image(load_image(path))
+        self._set_import_image(self.color_key.apply_to(load_image(path)))
 
     def has_unsaved_changes(self) -> bool:
         return self._dirty or self._buffer_dirty

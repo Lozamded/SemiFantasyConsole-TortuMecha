@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
 
 from tortuengine.constants import SCREEN_HEIGHT, SCREEN_WIDTH, SPRITE_BLOCK
 from tortuengine.image import load_image
+from tortustudio.color_key_widget import ColorKeyWidget
 from tortuengine.palette import (
     PAINTABLE_INDICES,
     TRANSPARENT_INDEX,
@@ -494,6 +495,7 @@ class SpriteFontEditorWidget(QWidget):
 
         self.import_canvas = ImportGlyphCanvas()
         self.import_canvas.cell_clicked.connect(self._on_import_cell_clicked)
+        self.color_key = ColorKeyWidget()
         self.btn_load_import = QPushButton("Load Import Image…")
         self.btn_load_import.clicked.connect(self._load_import_image)
         self.btn_load_to_glyph = QPushButton("Load to Glyph")
@@ -567,6 +569,7 @@ class SpriteFontEditorWidget(QWidget):
         import_scroll.setWidget(self.import_canvas)
         import_layout.addWidget(import_scroll, stretch=1)
         import_layout.addWidget(self.btn_load_import)
+        import_layout.addWidget(self.color_key)
         import_layout.addWidget(self.btn_load_to_glyph)
         import_layout.addWidget(self.btn_import_all)
         import_grid_row = QHBoxLayout()
@@ -792,7 +795,7 @@ class SpriteFontEditorWidget(QWidget):
         if not path:
             return
         try:
-            self._set_import_image(load_image(Path(path)))
+            self._set_import_image(self.color_key.apply_to(load_image(Path(path))))
         except OSError as exc:
             QMessageBox.warning(self, "Load Import Image", str(exc))
 
