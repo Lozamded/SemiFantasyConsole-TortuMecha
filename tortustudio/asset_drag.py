@@ -48,7 +48,10 @@ class DraggableProjectTree(QTreeWidget):
         item = self.currentItem()
         if item is None:
             return
-        rel = item.text(0)
+        rel = item.data(0, Qt.ItemDataRole.UserRole)
+        if not rel:
+            rel = item.text(0)
+        rel = str(rel)
         if "/" not in rel:
             return
         suffix = Path(rel).suffix.lower()

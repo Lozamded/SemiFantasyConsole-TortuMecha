@@ -9,7 +9,7 @@ from pathlib import Path
 import pygame
 
 from tortuengine.constants import SPRITE_BLOCK
-from tortuengine.palette import TRANSPARENT_INDEX, load_palette, palette_path
+from tortuengine.palette import TRANSPARENT_INDEX, closest_index, load_palette, palette_path
 from tortuengine.text_font import TortuGlyph, unique_charset
 
 DEFAULT_GLYPH_BLOCKS_W = 2
@@ -255,6 +255,37 @@ def save_sprite_font(font: TortuSpriteFont, path: Path) -> None:
         },
     }
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def surface_glyph_to_pixels(
+    surface: pygame.Surface,
+    cell_x: int,
+    cell_y: int,
+    width: int,
+    height: int,
+    palette: list[tuple[int, int, int]],
+    *,
+    src_width: int | None = None,
+    src_height: int | None = None,
+    alpha_threshold: int = 128,
+) -> list[int]:
+    """Palette-convert one glyph cell from an import image."""
+    sw = src_width if src_width is not None else width
+    sh = src_height if src_height is not None else height
+    src_x0 = cell_x * sw
+    src_y0 = cell_y * sh
+    pixels = [TRANSPARENT_INDEX] * (width * height)
+    for ly in range(height):
+        for lx in range(width):
+            sx = src_x0 + int(lx * sw / width) if width else src_x0
+            sy = src_y0 + int(ly * sh / height) if height else src_y0
+            if sx < 0 or sy < 0 or sx >= surface.get_width() or sy >= surface.get_height():
+                continue
+            r, g, b, a = surface.get_at((sx, sy))
+            if a < alpha_threshold:
+                continue
+            pixels[ly * width + lx] = closest_index(r, g, b, palette)
+    return pixels
 
 
 def render_sprite_text_line(

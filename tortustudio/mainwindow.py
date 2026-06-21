@@ -205,6 +205,17 @@ class MainWindow(QMainWindow):
         self.tree_engine_only.toggled.connect(self._populate_tree)
         tree_layout.addWidget(self.tree_engine_only)
 
+        self.tree_show_paths = QCheckBox("Show file paths")
+        self.tree_show_paths.setChecked(True)
+        self.tree_show_paths.setToolTip("Show each asset with its project path (e.g. assets/sprites/hero.tortusprite)")
+        self.tree_show_paths.toggled.connect(self._on_tree_show_paths_toggled)
+        tree_layout.addWidget(self.tree_show_paths)
+
+        self.tree_names_only = QCheckBox("Show names only")
+        self.tree_names_only.setToolTip("Show only the file name (e.g. hero.tortusprite)")
+        self.tree_names_only.toggled.connect(self._on_tree_names_only_toggled)
+        tree_layout.addWidget(self.tree_names_only)
+
         self.project_tree = DraggableProjectTree(drag_suffixes=(".tortusprite",))
         self.project_tree.setHeaderLabel("Project")
         self.project_tree.setMinimumWidth(180)
@@ -341,6 +352,50 @@ class MainWindow(QMainWindow):
         self._switching_tabs = False
         self._show_preview()
 
+    def _on_tree_show_paths_toggled(self, checked: bool) -> None:
+        if checked:
+            self.tree_names_only.blockSignals(True)
+            self.tree_names_only.setChecked(False)
+            self.tree_names_only.blockSignals(False)
+        elif not self.tree_names_only.isChecked():
+            self.tree_show_paths.blockSignals(True)
+            self.tree_show_paths.setChecked(True)
+            self.tree_show_paths.blockSignals(False)
+            return
+        self._populate_tree()
+
+    def _on_tree_names_only_toggled(self, checked: bool) -> None:
+        if checked:
+            self.tree_show_paths.blockSignals(True)
+            self.tree_show_paths.setChecked(False)
+            self.tree_show_paths.blockSignals(False)
+        elif not self.tree_show_paths.isChecked():
+            self.tree_names_only.blockSignals(True)
+            self.tree_names_only.setChecked(True)
+            self.tree_names_only.blockSignals(False)
+            return
+        self._populate_tree()
+
+    def _tree_item_label(self, rel: Path) -> str:
+        if self.tree_names_only.isChecked():
+            return rel.name
+        return rel.as_posix()
+
+    def _add_tree_file_item(self, parent: QTreeWidgetItem, rel: Path) -> None:
+        rel_str = rel.as_posix()
+        item = QTreeWidgetItem(parent, [self._tree_item_label(rel)])
+        item.setData(0, Qt.ItemDataRole.UserRole, rel_str)
+        item.setToolTip(0, rel_str)
+
+    def _tree_item_path(self, item: QTreeWidgetItem) -> str | None:
+        rel = item.data(0, Qt.ItemDataRole.UserRole)
+        if rel:
+            return str(rel)
+        text = item.text(0)
+        if "/" in text:
+            return text
+        return None
+
     def _populate_tree(self) -> None:
         self.project_tree.clear()
         if not self.project:
@@ -351,7 +406,8 @@ class MainWindow(QMainWindow):
 
         project_file = self.project.root / "tortu.project"
         if project_file.is_file() and self._tree_include_file(project_file):
-            QTreeWidgetItem(root_item, [project_file.relative_to(self.project.root).as_posix()])
+            rel = project_file.relative_to(self.project.root)
+            self._add_tree_file_item(root_item, rel)
 
         for label, path in (
             ("Palettes", self.project.palettes_dir()),
@@ -370,7 +426,7 @@ class MainWindow(QMainWindow):
                 for child in sorted(path.rglob("*")):
                     if child.is_file() and self._tree_include_file(child):
                         rel = child.relative_to(self.project.root)
-                        QTreeWidgetItem(folder, [str(rel)])
+                        self._add_tree_file_item(folder, rel)
 
         root_item.setExpanded(True)
 
@@ -943,7 +999,9 @@ class MainWindow(QMainWindow):
     def _on_tree_double_click(self, item: QTreeWidgetItem, _column: int) -> None:
         if not self.project:
             return
-        rel = item.text(0)
+        rel = self._tree_item_path(item)
+        if not rel:
+            return
         path = self.project.root / rel
         if path.suffix == ".tortuscene":
             self._open_scene(path)

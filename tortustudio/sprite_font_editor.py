@@ -11,6 +11,7 @@ from PyQt6.QtGui import QColor, QImage, QMouseEvent, QPainter, QPen, QWheelEvent
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QFormLayout,
     QGridLayout,
     QHBoxLayout,
@@ -23,11 +24,13 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSpinBox,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from tortuengine.constants import SCREEN_HEIGHT, SCREEN_WIDTH, SPRITE_BLOCK
+from tortuengine.image import load_image
 from tortuengine.palette import (
     PAINTABLE_INDICES,
     TRANSPARENT_INDEX,
@@ -44,6 +47,7 @@ from tortuengine.sprite_font import (
     load_sprite_font,
     render_sprite_text_line,
     save_sprite_font,
+    surface_glyph_to_pixels,
 )
 from tortustudio.new_sprite_font_dialog import NewSpriteFontDialog
 
@@ -52,6 +56,153 @@ class Tool(str, Enum):
     PENCIL = "pencil"
     ERASER = "eraser"
     EYEDROPPER = "eyedropper"
+
+
+class ImportGlyphCanvas(QWidget):
+    """Source sheet — click a glyph cell to select the import region."""
+
+    PIXEL_GRID_COLOR = (72, 72, 92)
+    CELL_GRID_COLOR = (36, 36, 50)
+    CELL_GRID_WIDTH = 2
+    SELECTION_COLOR = (255, 220, 80)
+
+    cell_clicked = pyqtSignal(int, int)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.zoom = 8
+        self.cell_w = 8
+        self.cell_h = 8
+        self.show_pixel_grid = False
+        self.show_cell_grid = True
+        self.selected_cell_x = 0
+        self.selected_cell_y = 0
+        self._frame: QImage | None = None
+        self._image_w = 0
+        self._image_h = 0
+        self.setMinimumSize(160, 160)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def set_image(self, surface: pygame.Surface | None) -> None:
+        if surface is None:
+            self._frame = None
+            self._image_w = 0
+            self._image_h = 0
+            self.update()
+            return
+        w, h = surface.get_width(), surface.get_height()
+        data = pygame.image.tobytes(surface, "RGBA")
+        self._frame = QImage(data, w, h, w * 4, QImage.Format.Format_RGBA8888)
+        self._image_w, self._image_h = w, h
+        self.setMinimumSize(w * self.zoom, h * self.zoom)
+        self.update()
+
+    def set_zoom(self, zoom: int) -> None:
+        self.zoom = max(2, min(32, zoom))
+        if self._image_w:
+            self.setMinimumSize(self._image_w * self.zoom, self._image_h * self.zoom)
+        self.update()
+
+    def set_cell_size(self, width: int, height: int) -> None:
+        self.cell_w = max(1, width)
+        self.cell_h = max(1, height)
+        self.update()
+
+    def set_selected_cell(self, cx: int, cy: int) -> None:
+        self.selected_cell_x = cx
+        self.selected_cell_y = cy
+        self.update()
+
+    def _image_offset(self) -> tuple[int, int]:
+        sw = self._image_w * self.zoom
+        sh = self._image_h * self.zoom
+        return (self.width() - sw) // 2, (self.height() - sh) // 2
+
+    def _event_to_pixel(self, event: QMouseEvent) -> tuple[int, int] | None:
+        if self._frame is None:
+            return None
+        ox, oy = self._image_offset()
+        px = int((event.position().x() - ox) // self.zoom)
+        py = int((event.position().y() - oy) // self.zoom)
+        if 0 <= px < self._image_w and 0 <= py < self._image_h:
+            return px, py
+        return None
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), Qt.GlobalColor.darkGray)
+        if self._frame is None:
+            painter.end()
+            return
+
+        scaled = self._frame.scaled(
+            self._image_w * self.zoom,
+            self._image_h * self.zoom,
+            Qt.AspectRatioMode.IgnoreAspectRatio,
+            Qt.TransformationMode.FastTransformation,
+        )
+        ox, oy = self._image_offset()
+        painter.drawImage(ox, oy, scaled)
+
+        cells_w = self._image_w // self.cell_w if self.cell_w else 0
+        cells_h = self._image_h // self.cell_h if self.cell_h else 0
+        if self.selected_cell_x < cells_w and self.selected_cell_y < cells_h:
+            tx = self.selected_cell_x * self.cell_w * self.zoom
+            ty = self.selected_cell_y * self.cell_h * self.zoom
+            sw = self.cell_w * self.zoom
+            sh = self.cell_h * self.zoom
+            pen = QPen(QColor(*self.SELECTION_COLOR))
+            pen.setWidth(2)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(ox + tx, oy + ty, sw, sh)
+
+        pw, ph = self._image_w, self._image_h
+        sw, sh = pw * self.zoom, ph * self.zoom
+        if self.show_pixel_grid:
+            pen = QPen(QColor(*self.PIXEL_GRID_COLOR))
+            pen.setWidth(1)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            for px in range(1, pw):
+                lx = ox + px * self.zoom
+                painter.drawLine(lx, oy, lx, oy + sh)
+            for py in range(1, ph):
+                ly = oy + py * self.zoom
+                painter.drawLine(ox, ly, ox + sw, ly)
+        if self.show_cell_grid and self.cell_w and self.cell_h:
+            pen = QPen(QColor(*self.CELL_GRID_COLOR))
+            pen.setWidth(self.CELL_GRID_WIDTH)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            for px in range(self.cell_w, pw, self.cell_w):
+                lx = ox + px * self.zoom
+                painter.drawLine(lx, oy, lx, oy + sh)
+            for py in range(self.cell_h, ph, self.cell_h):
+                ly = oy + py * self.zoom
+                painter.drawLine(ox, ly, ox + sw, ly)
+        painter.end()
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        pos = self._event_to_pixel(event)
+        if not pos:
+            return
+        cx = pos[0] // self.cell_w
+        cy = pos[1] // self.cell_h
+        if cx >= self._image_w // self.cell_w or cy >= self._image_h // self.cell_h:
+            return
+        self.set_selected_cell(cx, cy)
+        self.cell_clicked.emit(cx, cy)
+
+    def wheelEvent(self, event: QWheelEvent) -> None:  # noqa: N802
+        delta = event.angleDelta().y()
+        if delta > 0:
+            self.set_zoom(self.zoom + 2)
+        elif delta < 0:
+            self.set_zoom(self.zoom - 2)
 
 
 class GlyphCanvas(QWidget):
@@ -270,6 +421,7 @@ class SpriteFontEditorWidget(QWidget):
         self._syncing_fields = False
         self._current_char = "A"
         self._swatch_buttons: list[QPushButton] = []
+        self._import_image: pygame.Surface | None = None
 
         from tortustudio.font_editor import TextFontPreviewCanvas
 
@@ -340,6 +492,26 @@ class SpriteFontEditorWidget(QWidget):
         self.char_list.setMinimumHeight(140)
         self.char_list.currentTextChanged.connect(self._on_char_selected)
 
+        self.import_canvas = ImportGlyphCanvas()
+        self.import_canvas.cell_clicked.connect(self._on_import_cell_clicked)
+        self.btn_load_import = QPushButton("Load Import Image…")
+        self.btn_load_import.clicked.connect(self._load_import_image)
+        self.btn_load_to_glyph = QPushButton("Load to Glyph")
+        self.btn_load_to_glyph.setToolTip(
+            "Palette-convert the selected import cell into the current glyph"
+        )
+        self.btn_load_to_glyph.clicked.connect(self._load_import_to_glyph)
+        self.btn_import_all = QPushButton("Import All Glyphs")
+        self.btn_import_all.setToolTip(
+            "Convert every cell left-to-right, top-to-bottom into the character list"
+        )
+        self.btn_import_all.clicked.connect(self._import_all_glyphs)
+        self.show_import_pixel_grid = QCheckBox("Import: 1×1 grid")
+        self.show_import_pixel_grid.toggled.connect(self._toggle_import_pixel_grid)
+        self.show_import_cell_grid = QCheckBox("Import: glyph grid")
+        self.show_import_cell_grid.setChecked(True)
+        self.show_import_cell_grid.toggled.connect(self._toggle_import_cell_grid)
+
         self.canvas = GlyphCanvas()
         self.canvas.changed.connect(self._mark_dirty)
 
@@ -379,13 +551,33 @@ class SpriteFontEditorWidget(QWidget):
         body = QHBoxLayout()
         outer.addLayout(body, stretch=1)
 
-        preview_group = QVBoxLayout()
-        preview_group.addWidget(QLabel("Preview"))
-        preview_group.addWidget(self.preview_canvas, stretch=1)
+        preview_page = QWidget()
+        preview_layout = QVBoxLayout(preview_page)
+        preview_layout.setContentsMargins(0, 0, 0, 0)
+        preview_layout.addWidget(self.preview_canvas, stretch=1)
         preview_hint = QLabel("Colors are baked into glyphs (fixed palette).")
         preview_hint.setStyleSheet("color: #aaa; font-size: 11px;")
-        preview_group.addWidget(preview_hint)
-        body.addLayout(preview_group, stretch=1)
+        preview_layout.addWidget(preview_hint)
+
+        import_page = QWidget()
+        import_layout = QVBoxLayout(import_page)
+        import_layout.setContentsMargins(0, 0, 0, 0)
+        import_scroll = QScrollArea()
+        import_scroll.setWidgetResizable(True)
+        import_scroll.setWidget(self.import_canvas)
+        import_layout.addWidget(import_scroll, stretch=1)
+        import_layout.addWidget(self.btn_load_import)
+        import_layout.addWidget(self.btn_load_to_glyph)
+        import_layout.addWidget(self.btn_import_all)
+        import_grid_row = QHBoxLayout()
+        import_grid_row.addWidget(self.show_import_pixel_grid)
+        import_grid_row.addWidget(self.show_import_cell_grid)
+        import_layout.addLayout(import_grid_row)
+
+        self.left_tabs = QTabWidget()
+        self.left_tabs.addTab(preview_page, "Preview")
+        self.left_tabs.addTab(import_page, "Import image")
+        body.addWidget(self.left_tabs, stretch=1)
 
         paint_group = QVBoxLayout()
         paint_group.addWidget(QLabel("Glyph editor"))
@@ -562,6 +754,132 @@ class SpriteFontEditorWidget(QWidget):
         self._load_current_glyph_into_canvas()
 
         self._syncing_fields = False
+        self._sync_import_cell_size()
+        self._refresh_preview()
+
+    def _sync_import_cell_size(self) -> None:
+        if not self.sprite_font:
+            return
+        self.import_canvas.set_cell_size(
+            self.sprite_font.pixel_width,
+            self.sprite_font.pixel_height,
+        )
+
+    def _toggle_import_pixel_grid(self, visible: bool) -> None:
+        self.import_canvas.show_pixel_grid = visible
+        self.import_canvas.update()
+
+    def _toggle_import_cell_grid(self, visible: bool) -> None:
+        self.import_canvas.show_cell_grid = visible
+        self.import_canvas.update()
+
+    def _on_import_cell_clicked(self, _cx: int, _cy: int) -> None:
+        pass
+
+    def _set_import_image(self, surface: pygame.Surface | None) -> None:
+        self._import_image = surface
+        self.import_canvas.set_image(surface)
+        if surface is not None:
+            self.left_tabs.setCurrentIndex(1)
+
+    def _load_import_image(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load Import Image",
+            "",
+            "Images (*.png *.bmp *.gif *.jpg *.jpeg);;All files (*)",
+        )
+        if not path:
+            return
+        try:
+            self._set_import_image(load_image(Path(path)))
+        except OSError as exc:
+            QMessageBox.warning(self, "Load Import Image", str(exc))
+
+    def _load_import_to_glyph(self) -> None:
+        if not self.sprite_font or self._import_image is None:
+            QMessageBox.information(
+                self,
+                "Load to Glyph",
+                "Open a sprite font and load an import image first.",
+            )
+            return
+        if not self._palette_colors:
+            return
+        glyph = self.sprite_font.glyphs.get(ord(self._current_char))
+        if glyph is None:
+            return
+        pixels = surface_glyph_to_pixels(
+            self._import_image,
+            self.import_canvas.selected_cell_x,
+            self.import_canvas.selected_cell_y,
+            glyph.width,
+            glyph.height,
+            self._palette_colors,
+        )
+        glyph.pixels = pixels
+        self._load_current_glyph_into_canvas()
+        self._mark_dirty()
+        self._refresh_preview()
+
+    def _import_all_glyphs(self) -> None:
+        if not self.sprite_font or self._import_image is None:
+            QMessageBox.information(
+                self,
+                "Import All Glyphs",
+                "Open a sprite font and load an import image first.",
+            )
+            return
+        if not self._palette_colors:
+            return
+
+        gw = self.sprite_font.pixel_width
+        gh = self.sprite_font.pixel_height
+        if gw < 1 or gh < 1:
+            return
+        cells_w = self._import_image.get_width() // gw
+        cells_h = self._import_image.get_height() // gh
+        if cells_w == 0 or cells_h == 0:
+            QMessageBox.warning(
+                self,
+                "Import All Glyphs",
+                "Import image is smaller than one glyph cell.",
+            )
+            return
+
+        chars = self.sprite_font.resolved_charset()
+        total_cells = cells_w * cells_h
+        count = min(len(chars), total_cells)
+        reply = QMessageBox.question(
+            self,
+            "Import All Glyphs",
+            f"Convert {count} cells into the character list "
+            f"({cells_w}×{cells_h} grid, left-to-right)?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        self.sprite_font.ensure_glyphs()
+        for index, char in enumerate(chars):
+            if index >= total_cells:
+                break
+            cx = index % cells_w
+            cy = index // cells_w
+            glyph = self.sprite_font.glyphs.get(ord(char))
+            if glyph is None:
+                continue
+            glyph.pixels = surface_glyph_to_pixels(
+                self._import_image,
+                cx,
+                cy,
+                gw,
+                gh,
+                self._palette_colors,
+            )
+
+        self._load_current_glyph_into_canvas()
+        self._mark_dirty()
         self._refresh_preview()
 
     def _update_pixel_size_label(self) -> None:
@@ -754,6 +1072,7 @@ class SpriteFontEditorWidget(QWidget):
             return
         self._update_pixel_size_label()
         self.line_height_spin.setValue(self.sprite_font.line_height)
+        self._sync_import_cell_size()
         self._load_current_glyph_into_canvas()
         self._mark_dirty()
         self._refresh_preview()
