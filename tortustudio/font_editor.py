@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QFormLayout,
     QGridLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -139,6 +140,7 @@ class TextFontPreviewCanvas(QWidget):
 
 class TextFontEditorWidget(QWidget):
     saved = pyqtSignal(Path)
+    renamed = pyqtSignal(Path, Path)  # (old_path, new_path)
     new_font_requested = pyqtSignal()
     open_font_requested = pyqtSignal()
 
@@ -159,6 +161,8 @@ class TextFontEditorWidget(QWidget):
         self.btn_open.clicked.connect(self.open_font_requested.emit)
         self.btn_save = QPushButton("Save")
         self.btn_save.clicked.connect(self.save)
+        self.btn_rename = QPushButton("Rename…")
+        self.btn_rename.clicked.connect(self._rename_font)
         self.btn_rebuild = QPushButton("Rebuild glyphs")
         self.btn_rebuild.setToolTip("Rasterize charset from the source TTF")
         self.btn_rebuild.clicked.connect(self._rebuild_glyphs)
@@ -231,6 +235,7 @@ class TextFontEditorWidget(QWidget):
         file_row.addWidget(self.btn_new)
         file_row.addWidget(self.btn_open)
         file_row.addWidget(self.btn_save)
+        file_row.addWidget(self.btn_rename)
         file_row.addWidget(self.btn_rebuild)
         file_row.addWidget(self.status_label)
         file_row.addStretch()
@@ -364,6 +369,37 @@ class TextFontEditorWidget(QWidget):
         self._dirty = False
         self.status_label.setText(f"Saved {self.file_path.name}")
         self.saved.emit(self.file_path)
+
+    def _rename_font(self) -> None:
+        if not self.tortu_font or not self.file_path:
+            return
+        old_path = self.file_path
+        new_stem, ok = QInputDialog.getText(
+            self, "Rename Text Font", "New name:", text=old_path.stem
+        )
+        if not ok:
+            return
+        new_stem = new_stem.strip()
+        if not new_stem:
+            return
+        if not all(c.isalnum() or c in "_-" for c in new_stem):
+            QMessageBox.warning(
+                self, "Rename Text Font",
+                "Name may only contain letters, digits, underscores, and hyphens."
+            )
+            return
+        new_path = old_path.parent / f"{new_stem}.tortufont"
+        if new_path.exists():
+            QMessageBox.warning(self, "Rename Text Font", f"{new_path.name} already exists.")
+            return
+        for sidecar in sorted(old_path.parent.glob(f"{old_path.stem}.*")):
+            if sidecar == old_path:
+                continue
+            sidecar.rename(sidecar.parent / sidecar.name.replace(old_path.stem, new_stem, 1))
+        old_path.rename(new_path)
+        self.file_path = new_path
+        self.status_label.setText(new_path.name)
+        self.renamed.emit(old_path, new_path)
 
     def _apply_fields(self) -> None:
         if not self.tortu_font:
@@ -608,6 +644,7 @@ class FontEditorWidget(QWidget):
     """Font Editor tab with Text fonts and Sprite fonts subtabs."""
 
     saved = pyqtSignal(Path)
+    renamed = pyqtSignal(Path, Path)  # (old_path, new_path)
     new_font_requested = pyqtSignal()
     open_font_requested = pyqtSignal()
     new_sprite_font_requested = pyqtSignal()
@@ -617,11 +654,13 @@ class FontEditorWidget(QWidget):
         super().__init__(parent)
         self.text_editor = TextFontEditorWidget(project_root)
         self.text_editor.saved.connect(self.saved.emit)
+        self.text_editor.renamed.connect(self.renamed.emit)
         self.text_editor.new_font_requested.connect(self.new_font_requested.emit)
         self.text_editor.open_font_requested.connect(self.open_font_requested.emit)
 
         self.sprite_editor = SpriteFontEditorWidget(project_root)
         self.sprite_editor.saved.connect(self.saved.emit)
+        self.sprite_editor.renamed.connect(self.renamed.emit)
         self.sprite_editor.new_font_requested.connect(self.new_sprite_font_requested.emit)
         self.sprite_editor.open_font_requested.connect(self.open_sprite_font_requested.emit)
 

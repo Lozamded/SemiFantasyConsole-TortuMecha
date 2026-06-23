@@ -48,6 +48,9 @@ class Project:
     def backgrounds_dir(self) -> Path:
         return self.root / "assets" / "backgrounds"
 
+    def audio_dir(self) -> Path:
+        return self.root / "assets" / "audio"
+
     def start_scene_path(self) -> Path | None:
         """Resolved path to the configured start scene, if any."""
         rel = self.game.start_scene.strip()

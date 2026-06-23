@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QInputDialog,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -240,6 +241,7 @@ class BackgroundCanvas(QWidget):
 
 class BackgroundEditorWidget(QWidget):
     saved = pyqtSignal(Path)
+    renamed = pyqtSignal(Path, Path)  # (old_path, new_path)
     new_background_requested = pyqtSignal()
     open_background_requested = pyqtSignal()
 
@@ -257,6 +259,8 @@ class BackgroundEditorWidget(QWidget):
 
         self.btn_save = QPushButton("Save background")
         self.btn_save.clicked.connect(self.save)
+        self.btn_rename = QPushButton("Rename…")
+        self.btn_rename.clicked.connect(self._rename_background)
         self.btn_new = QPushButton("New Background…")
         self.btn_new.clicked.connect(self.new_background_requested.emit)
         self.btn_open = QPushButton("Open Background…")
@@ -333,6 +337,7 @@ class BackgroundEditorWidget(QWidget):
         file_row.addWidget(self.btn_new)
         file_row.addWidget(self.btn_open)
         file_row.addWidget(self.btn_save)
+        file_row.addWidget(self.btn_rename)
         file_row.addWidget(self.status_label)
         file_row.addStretch()
         outer.addLayout(file_row)
@@ -647,6 +652,37 @@ class BackgroundEditorWidget(QWidget):
         self._dirty = False
         self._update_status()
         self.saved.emit(self.file_path)
+
+    def _rename_background(self) -> None:
+        if not self.background or not self.file_path:
+            return
+        old_path = self.file_path
+        new_stem, ok = QInputDialog.getText(
+            self, "Rename Background", "New name:", text=old_path.stem
+        )
+        if not ok:
+            return
+        new_stem = new_stem.strip()
+        if not new_stem:
+            return
+        if not all(c.isalnum() or c in "_-" for c in new_stem):
+            QMessageBox.warning(
+                self, "Rename Background",
+                "Name may only contain letters, digits, underscores, and hyphens."
+            )
+            return
+        new_path = old_path.parent / f"{new_stem}.tortubackground"
+        if new_path.exists():
+            QMessageBox.warning(self, "Rename Background", f"{new_path.name} already exists.")
+            return
+        for sidecar in sorted(old_path.parent.glob(f"{old_path.stem}.*")):
+            if sidecar == old_path:
+                continue
+            sidecar.rename(sidecar.parent / sidecar.name.replace(old_path.stem, new_stem, 1))
+        old_path.rename(new_path)
+        self.file_path = new_path
+        self._update_status()
+        self.renamed.emit(old_path, new_path)
 
     def has_unsaved_changes(self) -> bool:
         return self._dirty

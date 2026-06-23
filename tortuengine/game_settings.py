@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from tortuengine.constants import DEFAULT_FPS
 
@@ -35,6 +35,7 @@ class GameSettings:
     start_scene: str = ""  # project-relative path, e.g. scenes/level_01.tortuscene
     author: str = ""
     description: str = ""
+    audio_channels: list[str] = field(default_factory=lambda: ["music", "sfx_1", "sfx_2", "sfx_3"])
 
     def validate(self) -> None:
         if not self.game_name.strip():
@@ -57,6 +58,11 @@ class GameSettings:
         cart_raw = str(data.get("cart_name", "")).strip()
         cart_name = cart_raw or slugify_cart_name(game_name)
         fps = int(data.get("fps", DEFAULT_FPS))
+        raw_channels = data.get("audio_channels")
+        if isinstance(raw_channels, list) and raw_channels:
+            audio_channels = [str(c) for c in raw_channels if str(c).strip()]
+        else:
+            audio_channels = ["music", "sfx_1", "sfx_2", "sfx_3"]
         return cls(
             game_name=game_name,
             cart_name=cart_name,
@@ -64,6 +70,7 @@ class GameSettings:
             start_scene=str(data.get("start_scene", "")).replace("\\", "/").strip(),
             author=str(data.get("author", "")).strip(),
             description=str(data.get("description", "")).strip(),
+            audio_channels=audio_channels,
         )
 
     def to_dict(self) -> dict:
@@ -79,4 +86,6 @@ class GameSettings:
             data["author"] = self.author
         if self.description:
             data["description"] = self.description
+        if self.audio_channels:
+            data["audio_channels"] = list(self.audio_channels)
         return data

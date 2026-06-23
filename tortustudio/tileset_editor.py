@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QInputDialog,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -830,6 +831,7 @@ class TilesetEditorWidget(QWidget):
     """Import sheet → edit buffer → save tiles to a growing stack."""
 
     saved = pyqtSignal(Path)
+    renamed = pyqtSignal(Path, Path)  # (old_path, new_path)
     new_tileset_requested = pyqtSignal()
     open_tileset_requested = pyqtSignal()
 
@@ -950,6 +952,8 @@ class TilesetEditorWidget(QWidget):
 
         self.btn_save = QPushButton("Save tileset")
         self.btn_save.clicked.connect(self.save)
+        self.btn_rename = QPushButton("Rename…")
+        self.btn_rename.clicked.connect(self._rename_tileset)
         self.btn_new = QPushButton("New Tileset…")
         self.btn_new.clicked.connect(self.new_tileset_requested.emit)
         self.btn_open = QPushButton("Open Tileset…")
@@ -993,6 +997,7 @@ class TilesetEditorWidget(QWidget):
         file_row.addWidget(self.btn_new)
         file_row.addWidget(self.btn_open)
         file_row.addWidget(self.btn_save)
+        file_row.addWidget(self.btn_rename)
         file_row.addStretch()
         outer.addLayout(file_row)
 
@@ -1625,6 +1630,36 @@ class TilesetEditorWidget(QWidget):
         self._save_stack_sidecar()
         self._dirty = False
         self.saved.emit(self.file_path)
+
+    def _rename_tileset(self) -> None:
+        if not self.tileset or not self.file_path:
+            return
+        old_path = self.file_path
+        new_stem, ok = QInputDialog.getText(
+            self, "Rename Tileset", "New name:", text=old_path.stem
+        )
+        if not ok:
+            return
+        new_stem = new_stem.strip()
+        if not new_stem:
+            return
+        if not all(c.isalnum() or c in "_-" for c in new_stem):
+            QMessageBox.warning(
+                self, "Rename Tileset",
+                "Name may only contain letters, digits, underscores, and hyphens."
+            )
+            return
+        new_path = old_path.parent / f"{new_stem}.tortutileset"
+        if new_path.exists():
+            QMessageBox.warning(self, "Rename Tileset", f"{new_path.name} already exists.")
+            return
+        for sidecar in sorted(old_path.parent.glob(f"{old_path.stem}.*")):
+            if sidecar == old_path:
+                continue
+            sidecar.rename(sidecar.parent / sidecar.name.replace(old_path.stem, new_stem, 1))
+        old_path.rename(new_path)
+        self.file_path = new_path
+        self.renamed.emit(old_path, new_path)
 
     def _try_load_stack_sidecar(self) -> None:
         if not self.file_path or not self.tileset:

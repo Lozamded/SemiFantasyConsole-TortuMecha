@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -174,6 +175,7 @@ class ObjectPreviewCanvas(QWidget):
 
 class ObjectEditorWidget(QWidget):
     saved = pyqtSignal(Path)
+    renamed = pyqtSignal(Path, Path)  # (old_path, new_path)
     new_object_requested = pyqtSignal()
     open_object_requested = pyqtSignal()
 
@@ -195,6 +197,8 @@ class ObjectEditorWidget(QWidget):
 
         self.btn_save = QPushButton("Save object")
         self.btn_save.clicked.connect(self.save)
+        self.btn_rename = QPushButton("Rename…")
+        self.btn_rename.clicked.connect(self._rename_object)
         self.btn_new = QPushButton("New Object…")
         self.btn_new.clicked.connect(self.new_object_requested.emit)
         self.btn_open = QPushButton("Open Object…")
@@ -284,6 +288,7 @@ class ObjectEditorWidget(QWidget):
         file_row.addWidget(self.btn_new)
         file_row.addWidget(self.btn_open)
         file_row.addWidget(self.btn_save)
+        file_row.addWidget(self.btn_rename)
         file_row.addWidget(self.status_label)
         file_row.addStretch()
         outer.addLayout(file_row)
@@ -812,6 +817,37 @@ class ObjectEditorWidget(QWidget):
         self._dirty = False
         self._update_status()
         self.saved.emit(self.file_path)
+
+    def _rename_object(self) -> None:
+        if not self.tortu_object or not self.file_path:
+            return
+        old_path = self.file_path
+        new_stem, ok = QInputDialog.getText(
+            self, "Rename Object", "New name:", text=old_path.stem
+        )
+        if not ok:
+            return
+        new_stem = new_stem.strip()
+        if not new_stem:
+            return
+        if not all(c.isalnum() or c in "_-" for c in new_stem):
+            QMessageBox.warning(
+                self, "Rename Object",
+                "Name may only contain letters, digits, underscores, and hyphens."
+            )
+            return
+        new_path = old_path.parent / f"{new_stem}.tortuobject"
+        if new_path.exists():
+            QMessageBox.warning(self, "Rename Object", f"{new_path.name} already exists.")
+            return
+        for sidecar in sorted(old_path.parent.glob(f"{old_path.stem}.*")):
+            if sidecar == old_path:
+                continue
+            sidecar.rename(sidecar.parent / sidecar.name.replace(old_path.stem, new_stem, 1))
+        old_path.rename(new_path)
+        self.file_path = new_path
+        self._update_status()
+        self.renamed.emit(old_path, new_path)
 
     def has_unsaved_changes(self) -> bool:
         return self._dirty

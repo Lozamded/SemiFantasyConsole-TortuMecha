@@ -52,6 +52,7 @@ from tortustudio.object_editor import ObjectEditorWidget
 from tortustudio.scene_assets import is_engine_asset, list_scene_paths
 from tortustudio.scene_editor import SceneEditorWidget
 from tortustudio.sprite_editor import SpriteEditorWidget
+from tortustudio.sound_editor import SoundEditorWidget
 from tortustudio.tileset_editor import TilesetEditorWidget
 from tortustudio.viewport import ViewportWidget
 from tortustudio.workspace_tabs import TabKind, TabRef, WorkspaceTabs
@@ -77,6 +78,7 @@ class MainWindow(QMainWindow):
     BACKGROUND_EDITOR = 4
     FONT_EDITOR = 5
     OBJECT_EDITOR = 6
+    SOUND_EDITOR = 7
 
     def __init__(self, project: Project | None = None) -> None:
         super().__init__()
@@ -154,6 +156,11 @@ class MainWindow(QMainWindow):
         object_tab_action.triggered.connect(self._activate_object_editor_tab)
         tabs_menu.addAction(object_tab_action)
 
+        sound_tab_action = QAction("&Sound", self)
+        sound_tab_action.setShortcut("Ctrl+8")
+        sound_tab_action.triggered.connect(self._activate_sound_editor_tab)
+        tabs_menu.addAction(sound_tab_action)
+
         build_menu = menu.addMenu("&Build")
         export_action = QAction("Export .tortucart…", self)
         export_action.triggered.connect(self._action_export_cart)
@@ -228,10 +235,12 @@ class MainWindow(QMainWindow):
         self.viewport = ViewportWidget()
         self.sprite_editor = SpriteEditorWidget(Path("."))
         self.sprite_editor.saved.connect(self._on_sprite_saved)
+        self.sprite_editor.renamed.connect(self._on_sprite_renamed)
         self.sprite_editor.new_sprite_requested.connect(self._action_new_sprite)
         self.sprite_editor.open_sprite_requested.connect(self._action_open_sprite)
         self.tileset_editor = TilesetEditorWidget(Path("."))
         self.tileset_editor.saved.connect(self._on_tileset_saved)
+        self.tileset_editor.renamed.connect(self._on_tileset_renamed)
         self.tileset_editor.new_tileset_requested.connect(self._action_new_tileset)
         self.tileset_editor.open_tileset_requested.connect(self._action_open_tileset)
         self.scene_editor = SceneEditorWidget(Path("."))
@@ -240,18 +249,23 @@ class MainWindow(QMainWindow):
         self.scene_editor.open_scene_requested.connect(self._action_open_scene)
         self.background_editor = BackgroundEditorWidget(Path("."))
         self.background_editor.saved.connect(self._on_background_saved)
+        self.background_editor.renamed.connect(self._on_background_renamed)
         self.background_editor.new_background_requested.connect(self._action_new_background)
         self.background_editor.open_background_requested.connect(self._action_open_background)
         self.font_editor = FontEditorWidget(Path("."))
         self.font_editor.saved.connect(self._on_font_saved)
+        self.font_editor.renamed.connect(self._on_font_renamed)
         self.font_editor.new_font_requested.connect(self._action_new_text_font)
         self.font_editor.open_font_requested.connect(self._action_open_text_font)
         self.font_editor.new_sprite_font_requested.connect(self._action_new_sprite_font)
         self.font_editor.open_sprite_font_requested.connect(self._action_open_sprite_font)
         self.object_editor = ObjectEditorWidget(Path("."))
         self.object_editor.saved.connect(self._on_object_saved)
+        self.object_editor.renamed.connect(self._on_object_renamed)
         self.object_editor.new_object_requested.connect(self._action_new_object)
         self.object_editor.open_object_requested.connect(self._action_open_object)
+        self.sound_editor = SoundEditorWidget(Path("."))
+        self.sound_editor.channels_changed.connect(self._on_channels_changed)
 
         self.center_stack.addWidget(self.viewport)
         self.center_stack.addWidget(self.scene_editor)
@@ -260,6 +274,7 @@ class MainWindow(QMainWindow):
         self.center_stack.addWidget(self.background_editor)
         self.center_stack.addWidget(self.font_editor)
         self.center_stack.addWidget(self.object_editor)
+        self.center_stack.addWidget(self.sound_editor)
         splitter.addWidget(self.center_stack)
 
         inspector = QWidget()
@@ -334,6 +349,8 @@ class MainWindow(QMainWindow):
         self.background_editor.project_root = project.root
         self.font_editor.set_project_root(project.root)
         self.object_editor.project_root = project.root
+        self.sound_editor.set_project_root(project.root)
+        self.sound_editor.channels_panel.set_channels(project.game.audio_channels)
         self._active_sprite_path = None
         self._active_tileset_path = None
         self._active_scene_path = None
@@ -417,6 +434,7 @@ class MainWindow(QMainWindow):
             ("Objects", self.project.objects_dir()),
             ("Fonts", self.project.fonts_dir()),
             ("Sprites", self.project.sprites_dir()),
+            ("Audio", self.project.audio_dir()),
             ("Assets", self.project.assets_dir()),
             ("Scripts", self.project.scripts_dir()),
         ):
@@ -631,6 +649,12 @@ class MainWindow(QMainWindow):
         self.viewport.set_fps(self.project.game.fps)
         self.log("Saved game settings.")
 
+    def _on_channels_changed(self, channels: list[str]) -> None:
+        if not self.project:
+            return
+        self.project.game.audio_channels = channels
+        save_project(self.project)
+
     def _action_validate_project(self) -> None:
         if not self.project:
             self.log("Validate: no project open.")
@@ -696,6 +720,14 @@ class MainWindow(QMainWindow):
         self.workspace_tabs.select_object_editor()
         self._switching_tabs = False
         self._show_object_editor()
+
+    def _activate_sound_editor_tab(self) -> None:
+        if not self._confirm_discard_editor_changes():
+            return
+        self._switching_tabs = True
+        self.workspace_tabs.select_sound_editor()
+        self._switching_tabs = False
+        self._show_sound_editor()
 
     def _activate_font_editor_tab(self) -> None:
         if not self._confirm_discard_editor_changes():
@@ -835,6 +867,11 @@ class MainWindow(QMainWindow):
         self.center_stack.setCurrentIndex(self.OBJECT_EDITOR)
         self.field_name.setText(path.name)
 
+    def _show_sound_editor(self) -> None:
+        self.center_stack.setCurrentIndex(self.SOUND_EDITOR)
+        self.sound_editor.refresh()
+        self.field_name.clear()
+
     def _show_font_editor(self) -> None:
         self.center_stack.setCurrentIndex(self.FONT_EDITOR)
         if self._active_font_path:
@@ -944,6 +981,15 @@ class MainWindow(QMainWindow):
                 self._show_object(self._active_object_path)
             else:
                 self._show_object_editor()
+            return
+
+        if ref.kind == TabKind.SOUND_EDITOR:
+            if not self._confirm_discard_editor_changes():
+                self._switching_tabs = True
+                self._restore_editor_tab()
+                self._switching_tabs = False
+                return
+            self._show_sound_editor()
 
     def _restore_editor_tab(self) -> None:
         index = self.center_stack.currentIndex()
@@ -959,6 +1005,8 @@ class MainWindow(QMainWindow):
             self.workspace_tabs.select_font_editor()
         elif index == self.OBJECT_EDITOR:
             self.workspace_tabs.select_object_editor()
+        elif index == self.SOUND_EDITOR:
+            self.workspace_tabs.select_sound_editor()
         else:
             self.workspace_tabs.select_preview()
 
@@ -1027,6 +1075,41 @@ class MainWindow(QMainWindow):
         self._populate_tree()
         if self.viewport.scene_preview_active:
             self.viewport.invalidate_baked_assets()
+
+    def _on_sprite_renamed(self, old_path: Path, new_path: Path) -> None:
+        self._active_sprite_path = new_path
+        self.field_name.setText(new_path.name)
+        self._populate_tree()
+        if self.project:
+            self.log(f"Renamed {old_path.name} → {new_path.name}")
+
+    def _on_tileset_renamed(self, old_path: Path, new_path: Path) -> None:
+        self._active_tileset_path = new_path
+        self.field_name.setText(new_path.name)
+        self._populate_tree()
+        if self.project:
+            self.log(f"Renamed {old_path.name} → {new_path.name}")
+
+    def _on_background_renamed(self, old_path: Path, new_path: Path) -> None:
+        self._active_background_path = new_path
+        self.field_name.setText(new_path.name)
+        self._populate_tree()
+        if self.project:
+            self.log(f"Renamed {old_path.name} → {new_path.name}")
+
+    def _on_object_renamed(self, old_path: Path, new_path: Path) -> None:
+        self._active_object_path = new_path
+        self.field_name.setText(new_path.name)
+        self._populate_tree()
+        if self.project:
+            self.log(f"Renamed {old_path.name} → {new_path.name}")
+
+    def _on_font_renamed(self, old_path: Path, new_path: Path) -> None:
+        self._active_font_path = new_path
+        self.field_name.setText(new_path.name)
+        self._populate_tree()
+        if self.project:
+            self.log(f"Renamed {old_path.name} → {new_path.name}")
 
     def _on_tileset_saved(self, path: Path) -> None:
         self.log(f"Saved {path.relative_to(self.project.root)}")

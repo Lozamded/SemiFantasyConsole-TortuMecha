@@ -14,6 +14,9 @@ ENGINE_ASSET_SUFFIXES = frozenset(
         ".tortufont",
         ".tortuspritefont",
         ".pal",
+        ".ogg",
+        ".midi",
+        ".mid",
     }
 )
 

@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QFormLayout,
     QGridLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -409,6 +410,7 @@ class GlyphCanvas(QWidget):
 
 class SpriteFontEditorWidget(QWidget):
     saved = pyqtSignal(Path)
+    renamed = pyqtSignal(Path, Path)  # (old_path, new_path)
     new_font_requested = pyqtSignal()
     open_font_requested = pyqtSignal()
 
@@ -432,6 +434,8 @@ class SpriteFontEditorWidget(QWidget):
         self.btn_open.clicked.connect(self.open_font_requested.emit)
         self.btn_save = QPushButton("Save")
         self.btn_save.clicked.connect(self.save)
+        self.btn_rename = QPushButton("Rename…")
+        self.btn_rename.clicked.connect(self._rename_font)
         self.status_label = QLabel("No sprite font open")
         self.glyph_count_label = QLabel("Glyphs: —")
 
@@ -546,6 +550,7 @@ class SpriteFontEditorWidget(QWidget):
         file_row.addWidget(self.btn_new)
         file_row.addWidget(self.btn_open)
         file_row.addWidget(self.btn_save)
+        file_row.addWidget(self.btn_rename)
         file_row.addWidget(self.status_label)
         file_row.addStretch()
         outer.addLayout(file_row)
@@ -700,6 +705,37 @@ class SpriteFontEditorWidget(QWidget):
         self._dirty = False
         self.status_label.setText(f"Saved {self.file_path.name}")
         self.saved.emit(self.file_path)
+
+    def _rename_font(self) -> None:
+        if not self.sprite_font or not self.file_path:
+            return
+        old_path = self.file_path
+        new_stem, ok = QInputDialog.getText(
+            self, "Rename Sprite Font", "New name:", text=old_path.stem
+        )
+        if not ok:
+            return
+        new_stem = new_stem.strip()
+        if not new_stem:
+            return
+        if not all(c.isalnum() or c in "_-" for c in new_stem):
+            QMessageBox.warning(
+                self, "Rename Sprite Font",
+                "Name may only contain letters, digits, underscores, and hyphens."
+            )
+            return
+        new_path = old_path.parent / f"{new_stem}.tortuspritefont"
+        if new_path.exists():
+            QMessageBox.warning(self, "Rename Sprite Font", f"{new_path.name} already exists.")
+            return
+        for sidecar in sorted(old_path.parent.glob(f"{old_path.stem}.*")):
+            if sidecar == old_path:
+                continue
+            sidecar.rename(sidecar.parent / sidecar.name.replace(old_path.stem, new_stem, 1))
+        old_path.rename(new_path)
+        self.file_path = new_path
+        self.status_label.setText(new_path.name)
+        self.renamed.emit(old_path, new_path)
 
     def _apply_fields(self) -> None:
         if not self.sprite_font:

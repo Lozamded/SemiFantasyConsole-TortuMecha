@@ -17,6 +17,7 @@ class TabKind(str, Enum):
     BACKGROUND_EDITOR = "background_editor"
     OBJECT_EDITOR = "object_editor"
     FONT_EDITOR = "font_editor"
+    SOUND_EDITOR = "sound_editor"
 
 
 @dataclass
@@ -36,6 +37,7 @@ class WorkspaceTabs(QWidget):
     BACKGROUND_EDITOR_LABEL = "Background Editor"
     OBJECT_EDITOR_LABEL = "Object Editor"
     FONT_EDITOR_LABEL = "Font Editor"
+    SOUND_EDITOR_LABEL = "Sound"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -58,6 +60,7 @@ class WorkspaceTabs(QWidget):
         self._add_background_editor_tab()
         self._add_font_editor_tab()
         self._add_object_editor_tab()
+        self._add_sound_editor_tab()
 
     @property
     def preview_index(self) -> int:
@@ -86,6 +89,10 @@ class WorkspaceTabs(QWidget):
     @property
     def object_editor_index(self) -> int:
         return 6
+
+    @property
+    def sound_editor_index(self) -> int:
+        return 7
 
     @property
     def current_ref(self) -> TabRef | None:
@@ -122,6 +129,10 @@ class WorkspaceTabs(QWidget):
         self.tab_bar.addTab(self.OBJECT_EDITOR_LABEL)
         self._refs.append(TabRef(kind=TabKind.OBJECT_EDITOR))
 
+    def _add_sound_editor_tab(self) -> None:
+        self.tab_bar.addTab(self.SOUND_EDITOR_LABEL)
+        self._refs.append(TabRef(kind=TabKind.SOUND_EDITOR))
+
     def reset(self) -> None:
         while self.tab_bar.count() > 0:
             self.tab_bar.removeTab(0)
@@ -133,6 +144,7 @@ class WorkspaceTabs(QWidget):
         self._add_background_editor_tab()
         self._add_font_editor_tab()
         self._add_object_editor_tab()
+        self._add_sound_editor_tab()
 
     def select_preview(self) -> None:
         self.tab_bar.setCurrentIndex(self.preview_index)
@@ -154,6 +166,9 @@ class WorkspaceTabs(QWidget):
 
     def select_object_editor(self) -> None:
         self.tab_bar.setCurrentIndex(self.object_editor_index)
+
+    def select_sound_editor(self) -> None:
+        self.tab_bar.setCurrentIndex(self.sound_editor_index)
 
     def _on_current_changed(self, index: int) -> None:
         if index < 0 or index >= len(self._refs):
