@@ -52,6 +52,7 @@ from tortustudio.object_editor import ObjectEditorWidget
 from tortustudio.scene_assets import is_engine_asset, list_scene_paths
 from tortustudio.scene_editor import SceneEditorWidget
 from tortustudio.sprite_editor import SpriteEditorWidget
+from tortustudio.palette_editor import PaletteEditorWidget
 from tortustudio.sound_editor import SoundEditorWidget
 from tortustudio.tileset_editor import TilesetEditorWidget
 from tortustudio.viewport import ViewportWidget
@@ -79,6 +80,7 @@ class MainWindow(QMainWindow):
     FONT_EDITOR = 5
     OBJECT_EDITOR = 6
     SOUND_EDITOR = 7
+    PALETTE_EDITOR = 8
 
     def __init__(self, project: Project | None = None) -> None:
         super().__init__()
@@ -93,6 +95,7 @@ class MainWindow(QMainWindow):
         self._active_background_path: Path | None = None
         self._active_object_path: Path | None = None
         self._active_font_path: Path | None = None
+        self._active_palette_path: Path | None = None
 
         self.setWindowTitle("TortuStudio")
         self.resize(1280, 720)
@@ -160,6 +163,11 @@ class MainWindow(QMainWindow):
         sound_tab_action.setShortcut("Ctrl+8")
         sound_tab_action.triggered.connect(self._activate_sound_editor_tab)
         tabs_menu.addAction(sound_tab_action)
+
+        palette_tab_action = QAction("&Palette Editor", self)
+        palette_tab_action.setShortcut("Ctrl+9")
+        palette_tab_action.triggered.connect(self._activate_palette_editor_tab)
+        tabs_menu.addAction(palette_tab_action)
 
         build_menu = menu.addMenu("&Build")
         export_action = QAction("Export .tortucart…", self)
@@ -266,6 +274,8 @@ class MainWindow(QMainWindow):
         self.object_editor.open_object_requested.connect(self._action_open_object)
         self.sound_editor = SoundEditorWidget(Path("."))
         self.sound_editor.channels_changed.connect(self._on_channels_changed)
+        self.palette_editor = PaletteEditorWidget(Path("."))
+        self.palette_editor.saved.connect(self._on_palette_saved)
 
         self.center_stack.addWidget(self.viewport)
         self.center_stack.addWidget(self.scene_editor)
@@ -275,6 +285,7 @@ class MainWindow(QMainWindow):
         self.center_stack.addWidget(self.font_editor)
         self.center_stack.addWidget(self.object_editor)
         self.center_stack.addWidget(self.sound_editor)
+        self.center_stack.addWidget(self.palette_editor)
         splitter.addWidget(self.center_stack)
 
         inspector = QWidget()
@@ -351,12 +362,14 @@ class MainWindow(QMainWindow):
         self.object_editor.project_root = project.root
         self.sound_editor.set_project_root(project.root)
         self.sound_editor.channels_panel.set_channels(project.game.audio_channels)
+        self.palette_editor.set_project_root(project.root)
         self._active_sprite_path = None
         self._active_tileset_path = None
         self._active_scene_path = None
         self._active_background_path = None
         self._active_object_path = None
         self._active_font_path = None
+        self._active_palette_path = None
         self.workspace_tabs.reset()
         self.setWindowTitle(f"TortuStudio — {project.name}")
         self._load_game_settings_form()
@@ -729,6 +742,14 @@ class MainWindow(QMainWindow):
         self._switching_tabs = False
         self._show_sound_editor()
 
+    def _activate_palette_editor_tab(self) -> None:
+        if not self._confirm_discard_editor_changes():
+            return
+        self._switching_tabs = True
+        self.workspace_tabs.select_palette_editor()
+        self._switching_tabs = False
+        self._show_palette_editor()
+
     def _activate_font_editor_tab(self) -> None:
         if not self._confirm_discard_editor_changes():
             return
@@ -792,6 +813,20 @@ class MainWindow(QMainWindow):
         self.workspace_tabs.select_font_editor()
         self._switching_tabs = False
         self._show_sprite_font(path)
+
+    def _open_palette(self, path: Path) -> None:
+        if not self._confirm_discard_editor_changes():
+            return
+        self._switching_tabs = True
+        self.workspace_tabs.select_palette_editor()
+        self._switching_tabs = False
+        palette_name = path.stem
+        idx = self.palette_editor.combo_palette.findText(palette_name)
+        if idx >= 0:
+            self.palette_editor.combo_palette.setCurrentIndex(idx)
+        self._active_palette_path = path.resolve()
+        self.center_stack.setCurrentIndex(self.PALETTE_EDITOR)
+        self.field_name.setText(path.name)
 
     def _show_preview(self) -> None:
         self.viewport.stop_playback()
@@ -870,6 +905,11 @@ class MainWindow(QMainWindow):
     def _show_sound_editor(self) -> None:
         self.center_stack.setCurrentIndex(self.SOUND_EDITOR)
         self.sound_editor.refresh()
+        self.field_name.clear()
+
+    def _show_palette_editor(self) -> None:
+        self.center_stack.setCurrentIndex(self.PALETTE_EDITOR)
+        self.palette_editor.refresh()
         self.field_name.clear()
 
     def _show_font_editor(self) -> None:
@@ -991,6 +1031,14 @@ class MainWindow(QMainWindow):
                 return
             self._show_sound_editor()
 
+        if ref.kind == TabKind.PALETTE_EDITOR:
+            if not self._confirm_discard_editor_changes():
+                self._switching_tabs = True
+                self._restore_editor_tab()
+                self._switching_tabs = False
+                return
+            self._show_palette_editor()
+
     def _restore_editor_tab(self) -> None:
         index = self.center_stack.currentIndex()
         if index == self.SCENE_EDITOR:
@@ -1007,6 +1055,8 @@ class MainWindow(QMainWindow):
             self.workspace_tabs.select_object_editor()
         elif index == self.SOUND_EDITOR:
             self.workspace_tabs.select_sound_editor()
+        elif index == self.PALETTE_EDITOR:
+            self.workspace_tabs.select_palette_editor()
         else:
             self.workspace_tabs.select_preview()
 
@@ -1066,9 +1116,7 @@ class MainWindow(QMainWindow):
         elif path.suffix == ".tortuspritefont":
             self._open_sprite_font(path)
         elif path.suffix == ".pal":
-            self.log(f"Edit palette in external editor: {path}")
-            cmd = self.project.editor_command.format(file=path, line=1)
-            subprocess.Popen(cmd, shell=True)
+            self._open_palette(path)
 
     def _on_sprite_saved(self, path: Path) -> None:
         self.log(f"Saved {path.relative_to(self.project.root)}")
@@ -1135,6 +1183,12 @@ class MainWindow(QMainWindow):
         self._populate_tree()
 
     def _on_object_saved(self, path: Path) -> None:
+        self.log(f"Saved {path.relative_to(self.project.root)}")
+        self._populate_tree()
+        if self.viewport.scene_preview_active:
+            self.viewport.invalidate_baked_assets()
+
+    def _on_palette_saved(self, path: Path) -> None:
         self.log(f"Saved {path.relative_to(self.project.root)}")
         self._populate_tree()
         if self.viewport.scene_preview_active:

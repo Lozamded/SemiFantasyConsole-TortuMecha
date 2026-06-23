@@ -18,6 +18,7 @@ class TabKind(str, Enum):
     OBJECT_EDITOR = "object_editor"
     FONT_EDITOR = "font_editor"
     SOUND_EDITOR = "sound_editor"
+    PALETTE_EDITOR = "palette_editor"
 
 
 @dataclass
@@ -38,6 +39,7 @@ class WorkspaceTabs(QWidget):
     OBJECT_EDITOR_LABEL = "Object Editor"
     FONT_EDITOR_LABEL = "Font Editor"
     SOUND_EDITOR_LABEL = "Sound"
+    PALETTE_EDITOR_LABEL = "Palette Editor"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -61,6 +63,7 @@ class WorkspaceTabs(QWidget):
         self._add_font_editor_tab()
         self._add_object_editor_tab()
         self._add_sound_editor_tab()
+        self._add_palette_editor_tab()
 
     @property
     def preview_index(self) -> int:
@@ -93,6 +96,10 @@ class WorkspaceTabs(QWidget):
     @property
     def sound_editor_index(self) -> int:
         return 7
+
+    @property
+    def palette_editor_index(self) -> int:
+        return 8
 
     @property
     def current_ref(self) -> TabRef | None:
@@ -133,6 +140,10 @@ class WorkspaceTabs(QWidget):
         self.tab_bar.addTab(self.SOUND_EDITOR_LABEL)
         self._refs.append(TabRef(kind=TabKind.SOUND_EDITOR))
 
+    def _add_palette_editor_tab(self) -> None:
+        self.tab_bar.addTab(self.PALETTE_EDITOR_LABEL)
+        self._refs.append(TabRef(kind=TabKind.PALETTE_EDITOR))
+
     def reset(self) -> None:
         while self.tab_bar.count() > 0:
             self.tab_bar.removeTab(0)
@@ -145,6 +156,7 @@ class WorkspaceTabs(QWidget):
         self._add_font_editor_tab()
         self._add_object_editor_tab()
         self._add_sound_editor_tab()
+        self._add_palette_editor_tab()
 
     def select_preview(self) -> None:
         self.tab_bar.setCurrentIndex(self.preview_index)
@@ -169,6 +181,9 @@ class WorkspaceTabs(QWidget):
 
     def select_sound_editor(self) -> None:
         self.tab_bar.setCurrentIndex(self.sound_editor_index)
+
+    def select_palette_editor(self) -> None:
+        self.tab_bar.setCurrentIndex(self.palette_editor_index)
 
     def _on_current_changed(self, index: int) -> None:
         if index < 0 or index >= len(self._refs):
