@@ -874,7 +874,7 @@
         -1,
         -1,
         -1,
-        7,
+        -1,
         16,
         17,
         17,
@@ -4781,14 +4781,9 @@
   ],
   "objects": [
     {
-      "object": "assets/objects/robot.tortuobject",
-      "x": 38,
+      "object": "assets/objects/mechaturtle.tortuobject",
+      "x": 34,
       "y": 191
-    },
-    {
-      "object": "assets/objects/cyberturtle.tortuobject",
-      "x": 64,
-      "y": 188
     }
   ]
 }

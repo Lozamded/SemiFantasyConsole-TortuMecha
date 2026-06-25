@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
@@ -257,8 +258,12 @@ class PaletteEditorWidget(QWidget):
         self.swatch.setFixedSize(52, 52)
         self.swatch.setFrameShape(QLabel.Shape.Box)
         swatch_row.addWidget(self.swatch)
-        self.lbl_hex = QLabel("#000000")
+        self.lbl_hex = QLineEdit("#000000")
+        self.lbl_hex.setFixedWidth(90)
+        self.lbl_hex.setMaxLength(7)
         self.lbl_hex.setStyleSheet("font-family: monospace; font-size: 14px;")
+        self.lbl_hex.setPlaceholderText("#rrggbb")
+        self.lbl_hex.editingFinished.connect(self._on_hex_edited)
         swatch_row.addWidget(self.lbl_hex)
         swatch_row.addStretch()
         slot_form.addRow(swatch_row)
@@ -367,7 +372,9 @@ class PaletteEditorWidget(QWidget):
         pix = QPixmap(52, 52)
         pix.fill(QColor(r, g, b))
         self.swatch.setPixmap(pix)
+        self.lbl_hex.blockSignals(True)
         self.lbl_hex.setText(f"#{r:02x}{g:02x}{b:02x}")
+        self.lbl_hex.blockSignals(False)
 
     def _set_rgb_spinboxes(self, r: int, g: int, b: int) -> None:
         for spin, val in ((self.spin_r, r), (self.spin_g, g), (self.spin_b, b)):
@@ -393,6 +400,18 @@ class PaletteEditorWidget(QWidget):
         self._set_rgb_spinboxes(r, g, b)
 
     def _on_rgb_spinbox_changed(self) -> None:
+        self._refresh_swatch()
+
+    def _on_hex_edited(self) -> None:
+        text = self.lbl_hex.text().strip().lstrip("#")
+        if len(text) == 6:
+            try:
+                r = int(text[0:2], 16)
+                g = int(text[2:4], 16)
+                b = int(text[4:6], 16)
+                self._set_rgb_spinboxes(r, g, b)
+            except ValueError:
+                pass
         self._refresh_swatch()
 
     def _on_image_color_clicked(self, item: QListWidgetItem) -> None:

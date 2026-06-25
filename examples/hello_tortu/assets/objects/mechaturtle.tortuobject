@@ -1,0 +1,21 @@
+{
+  "name": "mechaturtle",
+  "default_animation": "idle",
+  "animations": [
+    {
+      "name": "idle",
+      "sprite": "assets/sprites/mechaturtle_idle.tortusprite"
+    }
+  ],
+  "solid": false,
+  "origin": {
+    "x": 30,
+    "y": 47
+  },
+  "hitbox": {
+    "x": 15,
+    "y": 7,
+    "w": 28,
+    "h": 41
+  }
+}
