@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -411,11 +412,12 @@ class MainWindow(QMainWindow):
             return rel.name
         return rel.as_posix()
 
-    def _add_tree_file_item(self, parent: QTreeWidgetItem, rel: Path) -> None:
+    def _add_tree_file_item(self, parent: QTreeWidgetItem, rel: Path) -> QTreeWidgetItem:
         rel_str = rel.as_posix()
         item = QTreeWidgetItem(parent, [self._tree_item_label(rel)])
         item.setData(0, Qt.ItemDataRole.UserRole, rel_str)
         item.setToolTip(0, rel_str)
+        return item
 
     def _tree_item_path(self, item: QTreeWidgetItem) -> str | None:
         rel = item.data(0, Qt.ItemDataRole.UserRole)
@@ -444,7 +446,6 @@ class MainWindow(QMainWindow):
             ("Tiles", self.project.tiles_dir()),
             ("Backgrounds", self.project.backgrounds_dir()),
             ("Scenes", self.project.scenes_dir()),
-            ("Objects", self.project.objects_dir()),
             ("Fonts", self.project.fonts_dir()),
             ("Sprites", self.project.sprites_dir()),
             ("Audio", self.project.audio_dir()),
@@ -459,12 +460,48 @@ class MainWindow(QMainWindow):
                         rel = child.relative_to(self.project.root)
                         self._add_tree_file_item(folder, rel)
 
+        objects_folder = QTreeWidgetItem(["Objects"])
+        root_item.addChild(objects_folder)
+        objects_path = self.project.objects_dir()
+        if objects_path.is_dir():
+            for child in sorted(objects_path.rglob("*")):
+                if child.is_file() and self._tree_include_file(child):
+                    rel = child.relative_to(self.project.root)
+                    obj_item = self._add_tree_file_item(objects_folder, rel)
+                    if child.suffix == ".tortuobject":
+                        script = self._read_object_script(child)
+                        if script:
+                            script_item = QTreeWidgetItem(obj_item, [f"↪ {script}"])
+                            script_item.setData(0, Qt.ItemDataRole.UserRole, script)
+                            script_item.setData(0, Qt.ItemDataRole.UserRole + 1, "script")
+                            script_item.setToolTip(0, f"Script: {script} — double-click to open")
+
         root_item.setExpanded(True)
 
     def _tree_include_file(self, path: Path) -> bool:
         if self.tree_engine_only.isChecked():
             return is_engine_asset(path)
         return True
+
+    def _read_object_script(self, path: Path) -> str:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return str(data.get("script", "")).strip()
+        except (OSError, ValueError):
+            return ""
+
+    def _open_script_from_tree(self, rel: str) -> None:
+        if not self.project:
+            return
+        path = (self.project.root / rel).resolve()
+        if not path.is_file():
+            QMessageBox.warning(self, "Open Script", f"Script not found:\n{path}")
+            return
+        cmd = self.project.editor_command.format(file=path, line=1)
+        try:
+            subprocess.Popen(cmd, shell=True)
+        except OSError as exc:
+            self.log(f"Editor launch failed: {exc}")
 
     def _start_watcher(self) -> None:
         self._stop_watcher()
@@ -1096,6 +1133,11 @@ class MainWindow(QMainWindow):
 
     def _on_tree_double_click(self, item: QTreeWidgetItem, _column: int) -> None:
         if not self.project:
+            return
+        if item.data(0, Qt.ItemDataRole.UserRole + 1) == "script":
+            rel = item.data(0, Qt.ItemDataRole.UserRole)
+            if rel:
+                self._open_script_from_tree(rel)
             return
         rel = self._tree_item_path(item)
         if not rel:

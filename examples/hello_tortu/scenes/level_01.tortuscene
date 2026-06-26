@@ -14,8 +14,7 @@
         {
           "y0": 0,
           "y1": 19,
-          "parallax_x": 0.3,
-          "fixed": true
+          "parallax_x": 0.3
         },
         {
           "y0": 20,
