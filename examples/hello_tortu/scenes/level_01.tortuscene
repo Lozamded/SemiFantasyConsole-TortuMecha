@@ -3,6 +3,7 @@
   "width": 1200,
   "height": 198,
   "collision_tile_layer": 0,
+  "script": "scripts/level_01.py",
   "bg_layers": [
     {
       "name": "scene_bg_0",

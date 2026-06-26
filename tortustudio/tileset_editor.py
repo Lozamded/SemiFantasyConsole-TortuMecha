@@ -278,6 +278,9 @@ class SingleTileCanvas(QWidget):
     PIXEL_GRID_COLOR = (72, 72, 92)
 
     changed = pyqtSignal()
+    tool_cycled = pyqtSignal(object)
+
+    _TOOL_CYCLE = [Tool.PENCIL, Tool.ERASER, Tool.EYEDROPPER]
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -419,6 +422,9 @@ class SingleTileCanvas(QWidget):
             if pos:
                 self._drawing = True
                 self._apply_tool(*pos)
+        elif event.button() == Qt.MouseButton.RightButton:
+            idx = self._TOOL_CYCLE.index(self.tool)
+            self.tool_cycled.emit(self._TOOL_CYCLE[(idx + 1) % len(self._TOOL_CYCLE)])
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if self._drawing and event.buttons() & Qt.MouseButton.LeftButton:
@@ -854,6 +860,7 @@ class TilesetEditorWidget(QWidget):
 
         self.edit_canvas = SingleTileCanvas()
         self.edit_canvas.changed.connect(self._on_edit_canvas_changed)
+        self.edit_canvas.tool_cycled.connect(self._set_tool)
 
         self.collision_canvas = CollisionShapeCanvas()
         self.collision_canvas.changed.connect(self._on_collision_canvas_changed)

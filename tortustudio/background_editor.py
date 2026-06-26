@@ -55,6 +55,9 @@ class BackgroundCanvas(QWidget):
     MAP_BG = (30, 30, 40)
 
     changed = pyqtSignal()
+    tool_cycled = pyqtSignal(object)
+
+    _TOOL_CYCLE = [Tool.PENCIL, Tool.ERASER, Tool.EYEDROPPER]
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -218,6 +221,9 @@ class BackgroundCanvas(QWidget):
                 self._drawing = True
                 self._apply_tool(*pos)
                 self.changed.emit()
+        elif event.button() == Qt.MouseButton.RightButton:
+            idx = self._TOOL_CYCLE.index(self.tool)
+            self.tool_cycled.emit(self._TOOL_CYCLE[(idx + 1) % len(self._TOOL_CYCLE)])
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if self._drawing and event.buttons() & Qt.MouseButton.LeftButton:
@@ -256,6 +262,7 @@ class BackgroundEditorWidget(QWidget):
 
         self.canvas = BackgroundCanvas()
         self.canvas.changed.connect(self._on_canvas_changed)
+        self.canvas.tool_cycled.connect(self._set_tool)
 
         self.btn_save = QPushButton("Save background")
         self.btn_save.clicked.connect(self.save)

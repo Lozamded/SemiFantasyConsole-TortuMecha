@@ -215,6 +215,9 @@ class GlyphCanvas(QWidget):
     BLOCK_GRID_WIDTH = 2
 
     changed = pyqtSignal()
+    tool_cycled = pyqtSignal(object)
+
+    _TOOL_CYCLE = [Tool.PENCIL, Tool.ERASER, Tool.EYEDROPPER]
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -387,6 +390,9 @@ class GlyphCanvas(QWidget):
             if pos:
                 self._drawing = True
                 self._apply_tool(*pos)
+        elif event.button() == Qt.MouseButton.RightButton:
+            idx = self._TOOL_CYCLE.index(self.tool)
+            self.tool_cycled.emit(self._TOOL_CYCLE[(idx + 1) % len(self._TOOL_CYCLE)])
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if self._drawing and event.buttons() & Qt.MouseButton.LeftButton:
@@ -520,6 +526,7 @@ class SpriteFontEditorWidget(QWidget):
 
         self.canvas = GlyphCanvas()
         self.canvas.changed.connect(self._mark_dirty)
+        self.canvas.tool_cycled.connect(self._set_tool)
 
         self.show_1x1_grid = QCheckBox("Show 1×1 Grid")
         self.show_1x1_grid.toggled.connect(self.canvas.set_show_pixel_grid)

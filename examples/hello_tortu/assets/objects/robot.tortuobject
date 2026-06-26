@@ -24,6 +24,7 @@
     }
   ],
   "solid": true,
+  "script": "scripts/robot.py",
   "origin": {
     "x": 10,
     "y": 19

@@ -81,6 +81,15 @@ def list_sprite_font_paths(project_root: Path) -> list[str]:
     )
 
 
+def list_palette_paths(project_root: Path) -> list[str]:
+    palettes_dir = project_root / "palettes"
+    if not palettes_dir.is_dir():
+        return []
+    return sorted(
+        p.relative_to(project_root).as_posix() for p in palettes_dir.glob("*.pal")
+    )
+
+
 def list_scene_paths(project_root: Path) -> list[str]:
     scenes_dir = project_root / "scenes"
     if not scenes_dir.is_dir():

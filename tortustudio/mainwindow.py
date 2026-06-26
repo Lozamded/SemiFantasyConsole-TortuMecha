@@ -41,6 +41,7 @@ from tortuengine.project import Project, create_project, load_project, save_proj
 from tortuengine.scene import save_scene
 from tortuengine.sprite import save_sprite
 from tortuengine.tileset import save_tileset
+from tortustudio.asset_browser import AssetBrowserPanel
 from tortustudio.asset_drag import DraggableProjectTree
 from tortustudio.background_editor import BackgroundEditorWidget
 from tortustudio.font_editor import FontEditorWidget
@@ -50,7 +51,17 @@ from tortustudio.new_scene_dialog import NewSceneDialog
 from tortustudio.new_sprite_dialog import NewSpriteDialog
 from tortustudio.new_tileset_dialog import NewTilesetDialog
 from tortustudio.object_editor import ObjectEditorWidget
-from tortustudio.scene_assets import is_engine_asset, list_scene_paths
+from tortustudio.scene_assets import (
+    is_engine_asset,
+    list_background_paths,
+    list_object_paths,
+    list_palette_paths,
+    list_scene_paths,
+    list_sprite_font_paths,
+    list_sprite_paths,
+    list_text_font_paths,
+    list_tileset_paths,
+)
 from tortustudio.scene_editor import SceneEditorWidget
 from tortustudio.sprite_editor import SpriteEditorWidget
 from tortustudio.palette_editor import PaletteEditorWidget
@@ -239,6 +250,10 @@ class MainWindow(QMainWindow):
         self.project_tree.itemDoubleClicked.connect(self._on_tree_double_click)
         tree_layout.addWidget(self.project_tree, stretch=1)
 
+        self.asset_browser = AssetBrowserPanel()
+        self.asset_browser.asset_activated.connect(self._on_asset_browser_activated)
+        tree_layout.addWidget(self.asset_browser, stretch=1)
+
         splitter.addWidget(tree_panel)
 
         self.center_stack = QStackedWidget()
@@ -288,6 +303,7 @@ class MainWindow(QMainWindow):
         self.center_stack.addWidget(self.object_editor)
         self.center_stack.addWidget(self.sound_editor)
         self.center_stack.addWidget(self.palette_editor)
+        self.center_stack.currentChanged.connect(self._on_center_stack_changed)
         splitter.addWidget(self.center_stack)
 
         inspector = QWidget()
@@ -383,6 +399,7 @@ class MainWindow(QMainWindow):
         self.workspace_tabs.select_preview()
         self._switching_tabs = False
         self._show_preview()
+        self.asset_browser.clear()
 
     def _on_tree_show_paths_toggled(self, checked: bool) -> None:
         if checked:
@@ -1083,6 +1100,39 @@ class MainWindow(QMainWindow):
         else:
             self.workspace_tabs.select_preview()
 
+    def _on_center_stack_changed(self, index: int) -> None:
+        if not self.project:
+            self.asset_browser.clear()
+            return
+        root = self.project.root
+        if index == self.SCENE_EDITOR:
+            self.asset_browser.populate("Scenes", list_scene_paths(root))
+        elif index == self.SPRITE_EDITOR:
+            self.asset_browser.populate("Sprites", list_sprite_paths(root))
+        elif index == self.TILESET_EDITOR:
+            self.asset_browser.populate("Tilesets", list_tileset_paths(root))
+        elif index == self.BACKGROUND_EDITOR:
+            self.asset_browser.populate("Backgrounds", list_background_paths(root))
+        elif index == self.OBJECT_EDITOR:
+            self.asset_browser.populate("Objects", list_object_paths(root))
+        elif index == self.FONT_EDITOR:
+            self.asset_browser.populate(
+                "Fonts",
+                list_text_font_paths(root) + list_sprite_font_paths(root),
+            )
+        elif index == self.PALETTE_EDITOR:
+            self.asset_browser.populate("Palettes", list_palette_paths(root))
+        else:
+            self.asset_browser.clear()
+
+    def _on_asset_browser_activated(self, rel_path: str) -> None:
+        if not self.project:
+            return
+        path = self.project.root / rel_path
+        if not path.is_file():
+            return
+        self._on_tree_double_click_path(path)
+
     def _confirm_discard_editor_changes(self) -> bool:
         index = self.center_stack.currentIndex()
         if index == self.SCENE_EDITOR and self.scene_editor.has_unsaved_changes():
@@ -1117,18 +1167,7 @@ class MainWindow(QMainWindow):
     def _confirm_discard_sprite_changes(self) -> bool:
         return self._confirm_discard_editor_changes()
 
-    def _on_tree_double_click(self, item: QTreeWidgetItem, _column: int) -> None:
-        if not self.project:
-            return
-        if item.data(0, Qt.ItemDataRole.UserRole + 1) == "script":
-            rel = item.data(0, Qt.ItemDataRole.UserRole)
-            if rel:
-                self._open_script_from_tree(rel)
-            return
-        rel = self._tree_item_path(item)
-        if not rel:
-            return
-        path = self.project.root / rel
+    def _on_tree_double_click_path(self, path: Path) -> None:
         if path.suffix == ".tortuscene":
             self._open_scene(path)
         elif path.suffix == ".tortusprite":
@@ -1145,6 +1184,19 @@ class MainWindow(QMainWindow):
             self._open_sprite_font(path)
         elif path.suffix == ".pal":
             self._open_palette(path)
+
+    def _on_tree_double_click(self, item: QTreeWidgetItem, _column: int) -> None:
+        if not self.project:
+            return
+        if item.data(0, Qt.ItemDataRole.UserRole + 1) == "script":
+            rel = item.data(0, Qt.ItemDataRole.UserRole)
+            if rel:
+                self._open_script_from_tree(rel)
+            return
+        rel = self._tree_item_path(item)
+        if not rel:
+            return
+        self._on_tree_double_click_path(self.project.root / rel)
 
     def _on_sprite_saved(self, path: Path) -> None:
         self.log(f"Saved {path.relative_to(self.project.root)}")
