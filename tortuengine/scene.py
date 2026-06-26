@@ -170,6 +170,7 @@ class Scene:
     scene_bg_layers: list[SceneBgLayer] = field(default_factory=list)
     objects: list[SceneObject] = field(default_factory=list)
     collision_tile_layer: int = 0
+    script: str = ""
 
     @property
     def tile_layer_count(self) -> int:
@@ -609,8 +610,9 @@ def load_scene(path: Path, *, project_root: Path | None = None) -> Scene:
     scene_bg_layers = _normalize_scene_bg_layers(data.get("bg_layers", []))
     objects = _normalize_scene_objects(data.get("objects", []), path)
 
+    script = _normalize_asset_path(str(data.get("script", "")))
     scene = Scene(
-        palette, width, height, tile_layers, scene_bg_layers, objects, collision_tile_layer
+        palette, width, height, tile_layers, scene_bg_layers, objects, collision_tile_layer, script
     )
     scene.ensure_all_tile_layer_grids(project_root)
     return scene
@@ -627,6 +629,7 @@ def save_scene(scene: Scene, path: Path, *, project_root: Path | None = None) ->
         "width": scene.width,
         "height": scene.height,
         "collision_tile_layer": scene.collision_tile_layer,
+        **({"script": _normalize_asset_path(scene.script)} if scene.script.strip() else {}),
         "bg_layers": [
             {
                 "name": scene_bg_layer.name,

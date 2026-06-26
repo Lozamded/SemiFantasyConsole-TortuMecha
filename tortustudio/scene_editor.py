@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from enum import Enum
 from pathlib import Path
 
@@ -12,10 +13,12 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
+    QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -27,6 +30,7 @@ from PyQt6.QtWidgets import (
 )
 
 from tortustudio.collapsible import CollapsibleSection
+from tortuengine.project import load_project
 
 from tortuengine.background import Background, load_background
 from tortuengine.constants import SCREEN_HEIGHT, SCREEN_WIDTH, TILE_BLOCK
@@ -868,6 +872,32 @@ class SceneEditorWidget(QWidget):
         self.zoom_spin.setValue(2)
         self.zoom_spin.valueChanged.connect(self.map_canvas.set_zoom)
 
+        self.script_edit = QLineEdit()
+        self.script_edit.setPlaceholderText("scripts/my_scene.py")
+        self.script_edit.textChanged.connect(self._on_script_changed)
+        self.script_edit.textChanged.connect(self._refresh_script_row)
+
+        self.btn_browse_script = QPushButton("Browse…")
+        self.btn_browse_script.clicked.connect(self._browse_script)
+        self.btn_open_script = QPushButton("Open script")
+        self.btn_open_script.clicked.connect(self._open_script_in_editor)
+
+        self.btn_create_script = QPushButton("Create Script")
+        self.btn_create_script.clicked.connect(self._create_script)
+
+        self._script_container = QWidget()
+        _script_vbox = QVBoxLayout(self._script_container)
+        _script_vbox.setContentsMargins(0, 0, 0, 0)
+        _script_vbox.setSpacing(2)
+        _script_vbox.addWidget(self.btn_create_script)
+        self._script_edit_row = QWidget()
+        _script_edit_inner = QHBoxLayout(self._script_edit_row)
+        _script_edit_inner.setContentsMargins(0, 0, 0, 0)
+        _script_edit_inner.addWidget(self.script_edit, stretch=1)
+        _script_edit_inner.addWidget(self.btn_browse_script)
+        _script_edit_inner.addWidget(self.btn_open_script)
+        _script_vbox.addWidget(self._script_edit_row)
+
         self.btn_paint = QPushButton("Paint")
         self.btn_erase = QPushButton("Erase")
         self.btn_dropper = QPushButton("Eyedropper")
@@ -980,6 +1010,12 @@ class SceneEditorWidget(QWidget):
         map_form.addRow(self.show_grid)
         map_section.content_layout().addLayout(map_form)
         side.addWidget(map_section)
+
+        script_section = CollapsibleSection("Script", expanded=False)
+        script_form = QFormLayout()
+        script_form.addRow("Scene script:", self._script_container)
+        script_section.content_layout().addLayout(script_form)
+        side.addWidget(script_section)
 
         side.addStretch()
 
@@ -1417,6 +1453,10 @@ class SceneEditorWidget(QWidget):
         self.map_height.setValue(self.scene.height)
         self.map_width.blockSignals(False)
         self.map_height.blockSignals(False)
+        self.script_edit.blockSignals(True)
+        self.script_edit.setText(self.scene.script)
+        self.script_edit.blockSignals(False)
+        self._refresh_script_row()
         self._update_map_size_label()
         self._sync_tile_layer_controls()
         self._sync_tile_layer_tileset_combo()
@@ -1833,10 +1873,79 @@ class SceneEditorWidget(QWidget):
     def save(self) -> None:
         if not self.scene or not self.file_path:
             return
+        self.scene.script = self.script_edit.text().strip()
         save_scene(self.scene, self.file_path, project_root=self.project_root)
         self._dirty = False
         self._update_status()
         self.saved.emit(self.file_path)
+
+    def _on_script_changed(self) -> None:
+        if self.scene is not None:
+            self.scene.script = self.script_edit.text().strip()
+            self._mark_dirty()
+
+    def _refresh_script_row(self) -> None:
+        has_script = bool(self.script_edit.text().strip())
+        self.btn_create_script.setVisible(not has_script)
+        self._script_edit_row.setVisible(has_script)
+
+    def _create_script(self) -> None:
+        if not self.file_path:
+            return
+        scripts_dir = self.project_root / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        script_path = scripts_dir / f"{self.file_path.stem}.py"
+        if script_path.exists():
+            reply = QMessageBox.question(
+                self,
+                "Create Script",
+                f"Script already exists:\n{script_path}\n\nLink and open it?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+        else:
+            stem = self.file_path.stem
+            template = (
+                f'"""Script for scene {stem}."""\n\n\n'
+                "def init(engine):\n    pass\n\n\n"
+                "def update(dt):\n    pass\n\n\n"
+                "def draw(engine):\n    pass\n"
+            )
+            script_path.write_text(template, encoding="utf-8")
+        rel = script_path.resolve().relative_to(self.project_root.resolve()).as_posix()
+        self.script_edit.setText(rel)
+        self._open_script_in_editor()
+
+    def _browse_script(self) -> None:
+        scripts_dir = self.project_root / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Choose Script",
+            str(scripts_dir),
+            "Python Scripts (*.py)",
+        )
+        if not path:
+            return
+        rel = Path(path).resolve().relative_to(self.project_root.resolve()).as_posix()
+        self.script_edit.setText(rel)
+
+    def _open_script_in_editor(self) -> None:
+        script = self.script_edit.text().strip()
+        if not script:
+            QMessageBox.information(self, "Open Script", "Set a script path first.")
+            return
+        path = (self.project_root / script).resolve()
+        if not path.is_file():
+            QMessageBox.warning(self, "Open Script", f"Script not found: {path}")
+            return
+        try:
+            project = load_project(self.project_root)
+            cmd = project.editor_command.format(file=path, line=1)
+            subprocess.Popen(cmd, shell=True)
+        except OSError as exc:
+            QMessageBox.warning(self, "Open Script", str(exc))
 
     def has_unsaved_changes(self) -> bool:
         return self._dirty

@@ -230,11 +230,28 @@ class ObjectEditorWidget(QWidget):
         self.script_edit = QLineEdit()
         self.script_edit.setPlaceholderText("scripts/my_object.py")
         self.script_edit.textChanged.connect(self._on_fields_changed)
+        self.script_edit.textChanged.connect(self._refresh_script_row)
 
         self.btn_browse_script = QPushButton("Browse…")
         self.btn_browse_script.clicked.connect(self._browse_script)
         self.btn_open_script = QPushButton("Open script")
         self.btn_open_script.clicked.connect(self._open_script_in_editor)
+
+        self.btn_create_script = QPushButton("Create Script")
+        self.btn_create_script.clicked.connect(self._create_script)
+
+        self._script_container = QWidget()
+        _script_vbox = QVBoxLayout(self._script_container)
+        _script_vbox.setContentsMargins(0, 0, 0, 0)
+        _script_vbox.setSpacing(2)
+        _script_vbox.addWidget(self.btn_create_script)
+        self._script_edit_row = QWidget()
+        _script_edit_inner = QHBoxLayout(self._script_edit_row)
+        _script_edit_inner.setContentsMargins(0, 0, 0, 0)
+        _script_edit_inner.addWidget(self.script_edit, stretch=1)
+        _script_edit_inner.addWidget(self.btn_browse_script)
+        _script_edit_inner.addWidget(self.btn_open_script)
+        _script_vbox.addWidget(self._script_edit_row)
 
         self.solid = QCheckBox("Solid (collides with tiles)")
         self.solid.toggled.connect(self._on_fields_changed)
@@ -306,11 +323,7 @@ class ObjectEditorWidget(QWidget):
 
         form = QFormLayout()
         form.addRow("Display name:", self.name_edit)
-        script_row = QHBoxLayout()
-        script_row.addWidget(self.script_edit, stretch=1)
-        script_row.addWidget(self.btn_browse_script)
-        script_row.addWidget(self.btn_open_script)
-        form.addRow("Script:", script_row)
+        form.addRow("Script:", self._script_container)
         form.addRow(QLabel("<b>Animations</b>"))
         form.addRow("Active animation:", self.animation_combo)
         form.addRow("Animation name:", self.anim_name_edit)
@@ -565,6 +578,7 @@ class ObjectEditorWidget(QWidget):
         self.name_edit.blockSignals(False)
         self.script_edit.blockSignals(False)
         self.solid.blockSignals(False)
+        self._refresh_script_row()
         self._sync_animation_controls()
         if self._load_sprite_asset():
             self._refresh_hitbox_controls()
@@ -747,6 +761,40 @@ class ObjectEditorWidget(QWidget):
         self.preview_frame.setValue(self._preview_frame)
         self.preview_frame.blockSignals(False)
         self._refresh_preview()
+
+    def _refresh_script_row(self) -> None:
+        has_script = bool(self.script_edit.text().strip())
+        self.btn_create_script.setVisible(not has_script)
+        self._script_edit_row.setVisible(has_script)
+
+    def _create_script(self) -> None:
+        if not self.tortu_object or not self.file_path:
+            return
+        scripts_dir = self.project_root / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        script_path = scripts_dir / f"{self.file_path.stem}.py"
+        if script_path.exists():
+            reply = QMessageBox.question(
+                self,
+                "Create Script",
+                f"Script already exists:\n{script_path}\n\nLink and open it?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+        else:
+            name = self.tortu_object.name
+            template = (
+                f'"""Script for {name}."""\n\n\n'
+                "def init(engine):\n    pass\n\n\n"
+                "def update(dt):\n    pass\n\n\n"
+                "def draw(engine):\n    pass\n"
+            )
+            script_path.write_text(template, encoding="utf-8")
+        rel = script_path.resolve().relative_to(self.project_root.resolve()).as_posix()
+        self.script_edit.setText(rel)
+        self._on_fields_changed()
+        self._open_script_in_editor()
 
     def _browse_script(self) -> None:
         scripts_dir = self.project_root / "scripts"
