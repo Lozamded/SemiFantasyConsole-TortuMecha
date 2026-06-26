@@ -25,10 +25,14 @@
     {
       "name": "damge",
       "sprite": "assets/sprites/mechaturtle_damage.tortusprite"
+    },
+    {
+      "name": "air_attack",
+      "sprite": "assets/sprites/mechaturtle_air_attack.tortusprite"
     }
   ],
-  "script": "scripts/mechaturtle_player.py",
   "solid": false,
+  "script": "scripts/mechaturtle_player.py",
   "origin": {
     "x": 18,
     "y": 31

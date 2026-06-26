@@ -87,6 +87,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.project = project
         self._game_module = None
+        self._player_proc: subprocess.Popen | None = None
         self._observer: Observer | None = None
         self._pending_reload = False
         self._switching_tabs = False
@@ -572,42 +573,27 @@ class MainWindow(QMainWindow):
         return self.field_start_scene.currentText().strip().replace("\\", "/")
 
     def _action_play(self) -> None:
-        self._activate_preview_tab()
         if not self.project:
             QMessageBox.information(self, "Play", "Open a project first.")
             return
 
-        start_rel = self._start_scene_rel_path() or self.project.game.start_scene.strip()
-        scene_path = (self.project.root / start_rel).resolve() if start_rel else None
+        # Kill any previous player process
+        if self._player_proc and self._player_proc.poll() is None:
+            self._player_proc.terminate()
+            self._player_proc = None
 
-        if scene_path and scene_path.is_file():
-            self.viewport.set_scene_preview(self.project.root, scene_path)
-            self.viewport.set_fps(self.project.game.fps)
-            if not self.viewport.playing:
-                self.viewport.start_playback()
-            self.log(f"Playing scene {start_rel}")
+        cmd = [sys.executable, "-m", "tortuplayer", str(self.project.root)]
+        try:
+            self._player_proc = subprocess.Popen(cmd)
+        except OSError as exc:
+            self.log(f"Failed to launch player: {exc}")
             return
-
-        if self._pending_reload:
-            self._pending_reload = False
-            self._reload_scripts()
-
-        if start_rel:
-            self.log(f"Start scene not found: {start_rel}")
-            QMessageBox.warning(
-                self,
-                "Play",
-                f"Start scene not found:\n{start_rel}\n\nPick a scene in Game Settings and save.",
-            )
-            return
-
-        self.viewport.set_game(self._game_module)
-        self.viewport.set_fps(self.project.game.fps)
-        if not self.viewport.playing:
-            self.viewport.start_playback()
-        self.log("Play (entry script)")
+        self.log(f"Launched game: {self.project.root}")
 
     def _action_stop(self) -> None:
+        if self._player_proc and self._player_proc.poll() is None:
+            self._player_proc.terminate()
+            self._player_proc = None
         self.viewport.stop_playback()
         self.log("Stop")
 

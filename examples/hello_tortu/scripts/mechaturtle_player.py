@@ -50,9 +50,9 @@ _prev_jump = False
 _prev_attack = False
 _was_on_ground = False
 
-_ANIM_FPS: dict[str, int] = {"idle": 8, "walk": 8, "jump": 6, "fall": 0, "attack": 0}
-_ANIM_NOLOOP: frozenset[str] = frozenset({"jump", "attack"})
-_ANIMS = ("idle", "walk", "jump", "fall", "attack")
+_ANIM_FPS: dict[str, int] = {"idle": 8, "walk": 8, "jump": 6, "fall": 0, "attack": 0, "air_attack": 0}
+_ANIM_NOLOOP: frozenset[str] = frozenset({"jump", "attack", "air_attack"})
+_ANIMS = ("idle", "walk", "jump", "fall", "attack", "air_attack")
 
 
 # ---------------------------------------------------------------------------
@@ -236,7 +236,7 @@ def update(dt: float) -> None:
     # Determine animation state
     new_state: str
     if attacking:
-        new_state = "attack"
+        new_state = "attack" if _on_ground else "air_attack"
     elif not _on_ground:
         new_state = "fall" if _vy >= 0 else "jump"
     elif _vx != 0:

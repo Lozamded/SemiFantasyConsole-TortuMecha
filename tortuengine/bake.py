@@ -199,8 +199,8 @@ def blit_parallax(
     if bw < 1 or bh < 1:
         return
 
-    offset_x = 0 if fixed else int(camera_x * parallax_x)
-    offset_y = 0 if fixed else int(camera_y * parallax_y)
+    offset_x = -int(camera_x) if fixed else int(camera_x * parallax_x)
+    offset_y = -int(camera_y) if fixed else int(camera_y * parallax_y)
 
     if not repeat_x and not repeat_y:
         _blit_clipped(target, baked, pygame.Rect(offset_x, offset_y, tw, th), (0, 0))
@@ -266,7 +266,7 @@ def blit_parallax_bands(
 
         local_y = sy_draw - band.y0
         row = strip.subsurface((0, local_y, strip.get_width(), 1))
-        offset_x = 0 if band.fixed else int(camera_x * band.parallax_x)
+        offset_x = -int(camera_x) if band.fixed else int(camera_x * band.parallax_x)
         if band.repeat_x:
             _blit_row_tiled_x(target, row, dest_y=vy, offset_x=offset_x, dest_width=tw)
         else:
