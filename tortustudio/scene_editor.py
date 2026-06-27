@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -33,7 +34,7 @@ from tortustudio.collapsible import CollapsibleSection
 from tortuengine.project import load_project
 
 from tortuengine.background import Background, load_background
-from tortuengine.constants import SCREEN_HEIGHT, SCREEN_WIDTH, TILE_BLOCK
+from tortuengine.constants import SCREEN_HEIGHT, SCREEN_WIDTH, SPRITE_BLOCK, TILE_BLOCK
 from tortuengine.palette import TRANSPARENT_INDEX, load_palette, palette_path
 from tortuengine.object import TortuObject, load_object
 from tortuengine.scene import (
@@ -109,6 +110,7 @@ class SceneMapCanvas(QWidget):
         self.selected_object_prefab = ""
         self.edit_objects = False
         self.show_objects = True
+        self.selected_object_index = -1
         self.tool = Tool.PAINT
         self.show_grid = True
         self.zoom = 2
@@ -139,6 +141,7 @@ class SceneMapCanvas(QWidget):
         edit_objects: bool = False,
         selected_object_prefab: str = "",
         show_objects: bool = True,
+        selected_object_index: int = -1,
     ) -> None:
         self.scene = scene
         self.project_root = project_root
@@ -159,6 +162,7 @@ class SceneMapCanvas(QWidget):
         self.edit_objects = edit_objects
         self.selected_object_prefab = selected_object_prefab
         self.show_objects = show_objects
+        self.selected_object_index = selected_object_index
         self._refresh()
 
     def set_tool(self, tool: Tool) -> None:
@@ -570,6 +574,33 @@ class SceneMapCanvas(QWidget):
                 painter.drawLine(int(lx - 4), int(ly), int(lx + 4), int(ly))
                 painter.drawLine(int(lx), int(ly - 4), int(lx), int(ly + 4))
 
+        if self.show_objects and self.scene and self.selected_object_index >= 0:
+            objects = self.scene.objects
+            if self.selected_object_index < len(objects):
+                inst = objects[self.selected_object_index]
+                tortu_object = self.tortu_objects.get(inst.prefab)
+                sprite = None
+                if tortu_object:
+                    anim = inst.animation or tortu_object.default_animation
+                    sprite_path = tortu_object.sprite_for(anim) or tortu_object.default_sprite
+                    sprite = self.object_sprites.get(sprite_path or "")
+                pen = QPen(QColor(255, 220, 0, 230))
+                pen.setWidth(2)
+                pen.setCosmetic(True)
+                painter.setPen(pen)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                if sprite and tortu_object:
+                    rx = ox + (inst.x - tortu_object.origin.x) * self.zoom
+                    ry = oy + (inst.y - tortu_object.origin.y) * self.zoom
+                    rw = sprite.pixel_width * self.zoom
+                    rh = sprite.pixel_height * self.zoom
+                    painter.drawRect(int(rx), int(ry), int(rw), int(rh))
+                else:
+                    lx = ox + inst.x * self.zoom
+                    ly = oy + inst.y * self.zoom
+                    painter.drawLine(int(lx - 8), int(ly), int(lx + 8), int(ly))
+                    painter.drawLine(int(lx), int(ly - 8), int(lx), int(ly + 8))
+
         painter.end()
 
     def _event_to_map_pixel(self, event: QMouseEvent) -> tuple[int, int] | None:
@@ -908,6 +939,20 @@ class SceneEditorWidget(QWidget):
         self.btn_erase.clicked.connect(lambda: self._set_tool(Tool.ERASE))
         self.btn_dropper.clicked.connect(lambda: self._set_tool(Tool.EYEDROPPER))
 
+        self.objects_search = QLineEdit()
+        self.objects_search.setPlaceholderText("Filter objects…")
+        self.objects_search.textChanged.connect(self._refresh_objects_list)
+
+        self.objects_list = QListWidget()
+        self.objects_list.setMaximumHeight(160)
+        self.objects_list.currentRowChanged.connect(self._on_objects_list_selection_changed)
+        self._selected_object_index = -1
+        self._objects_list_indices: list[int] = []
+
+        self.btn_remove_selected_object = QPushButton("Remove selected")
+        self.btn_remove_selected_object.setEnabled(False)
+        self.btn_remove_selected_object.clicked.connect(self._remove_selected_object)
+
         self._build_layout()
 
     def _build_layout(self) -> None:
@@ -1017,6 +1062,12 @@ class SceneEditorWidget(QWidget):
         script_section.content_layout().addLayout(script_form)
         side.addWidget(script_section)
 
+        objects_section = CollapsibleSection("Objects in Scene", expanded=True)
+        objects_section.content_layout().addWidget(self.objects_search)
+        objects_section.content_layout().addWidget(self.objects_list)
+        objects_section.content_layout().addWidget(self.btn_remove_selected_object)
+        side.addWidget(objects_section)
+
         side.addStretch()
 
         side_scroll = QScrollArea()
@@ -1112,6 +1163,7 @@ class SceneEditorWidget(QWidget):
             self.strip_canvas.set_selected_index(self._selected_tile)
         self._mark_dirty()
         self._refresh_map()
+        self._refresh_objects_list()
 
     def _on_strip_tile_clicked(self, index: int) -> None:
         self._selected_tile = index
@@ -1431,7 +1483,52 @@ class SceneEditorWidget(QWidget):
             edit_objects=self.bottom_tabs.currentIndex() == 1,
             selected_object_prefab=self.object_strip.selected_prefab(),
             show_objects=self.show_objects.isChecked(),
+            selected_object_index=self._selected_object_index,
         )
+
+    def _refresh_objects_list(self) -> None:
+        self.objects_list.blockSignals(True)
+        self.objects_list.clear()
+        self._objects_list_indices = []
+        if not self.scene:
+            self._selected_object_index = -1
+            self.objects_list.blockSignals(False)
+            return
+        if self._selected_object_index >= len(self.scene.objects):
+            self._selected_object_index = -1
+        query = self.objects_search.text().strip().lower()
+        for i, inst in enumerate(self.scene.objects):
+            name = Path(inst.prefab).stem
+            label = f"#{i}  {name}  @ ({inst.x}, {inst.y})"
+            if query and query not in label.lower():
+                continue
+            self.objects_list.addItem(label)
+            self._objects_list_indices.append(i)
+        if self._selected_object_index >= 0:
+            try:
+                row = self._objects_list_indices.index(self._selected_object_index)
+                self.objects_list.setCurrentRow(row)
+            except ValueError:
+                self._selected_object_index = -1
+        self.btn_remove_selected_object.setEnabled(self._selected_object_index >= 0)
+        self.objects_list.blockSignals(False)
+
+    def _on_objects_list_selection_changed(self, row: int) -> None:
+        if row < 0 or row >= len(self._objects_list_indices):
+            self._selected_object_index = -1
+        else:
+            self._selected_object_index = self._objects_list_indices[row]
+        self.btn_remove_selected_object.setEnabled(self._selected_object_index >= 0)
+        self._refresh_map()
+
+    def _remove_selected_object(self) -> None:
+        if not self.scene or self._selected_object_index < 0:
+            return
+        self.scene.remove_object(self._selected_object_index)
+        self._selected_object_index = -1
+        self._mark_dirty()
+        self._refresh_objects_list()
+        self._refresh_map()
 
     def _refresh_object_strip(self) -> None:
         paths = list_object_paths(self.project_root)
@@ -1468,6 +1565,7 @@ class SceneEditorWidget(QWidget):
         self._refresh_map()
         self._refresh_strip()
         self._refresh_object_strip()
+        self._refresh_objects_list()
 
     def _on_scene_bg_layer_changed(self, index: int) -> None:
         if not self.scene or index < 0:
@@ -1822,6 +1920,7 @@ class SceneEditorWidget(QWidget):
         self._backgrounds_cache.clear()
         self._bg_palettes_cache.clear()
         self._active_tileset = None
+        self._selected_object_index = -1
         try:
             self.scene = Scene.create(palette)
         except ValueError as exc:
@@ -1839,6 +1938,7 @@ class SceneEditorWidget(QWidget):
         self._backgrounds_cache.clear()
         self._bg_palettes_cache.clear()
         self._active_tileset = None
+        self._selected_object_index = -1
         try:
             self.scene = load_scene(self.file_path, project_root=self.project_root)
         except (FileNotFoundError, ValueError, OSError) as exc:
