@@ -11,6 +11,16 @@ from tortuengine.palette import load_palette, palette_path
 from tortuengine.scene import load_scene
 from tortuengine.scene_renderer import SceneRenderer
 from tortuengine.sprite import load_sprite
+from tortuengine.tileset import (
+    COLLISION_NONE,
+    COLLISION_SOLID,
+    ONE_WAY_DOWN,
+    ONE_WAY_LEFT,
+    ONE_WAY_NONE,
+    ONE_WAY_RIGHT,
+    ONE_WAY_UP,
+    load_tileset,
+)
 
 ROOT = Path(__file__).parent.parent
 
@@ -30,6 +40,7 @@ HB_L, HB_R = -9, 10    # left/right pixel offsets (right is exclusive)
 HB_T, HB_B = -26, 1    # top/bottom pixel offsets (bottom is exclusive)
 
 _scene = None
+_collision_tileset = None
 _renderer: SceneRenderer | None = None
 # _frames[anim] = (normal_list, flipped_list), pre-baked at init
 _frames: dict[str, tuple[list[pygame.Surface], list[pygame.Surface]]] = {}
@@ -59,7 +70,13 @@ _ANIMS = ("idle", "walk", "jump", "fall", "attack", "air_attack")
 # Tile collision
 # ---------------------------------------------------------------------------
 
-def _tile_solid(col: int, row: int) -> bool:
+def _tile_solid_at(col: int, row: int, local_x: int, local_y: int) -> bool:
+    """True if tile (col, row) blocks at local pixel (local_x, local_y).
+
+    SOLID  → always True (whole tile blocks).
+    NONE   → always False.
+    POLYGON → samples the per-pixel mask at the exact contact point.
+    """
     if _scene is None:
         return False
     layer = _scene.tile_layers[_scene.collision_tile_layer]
@@ -69,29 +86,117 @@ def _tile_solid(col: int, row: int) -> bool:
     idx = row * cols + col
     if idx >= len(layer.tiles):
         return False
-    return layer.tiles[idx] >= 0
+    tile_index = layer.tiles[idx]
+    if tile_index < 0:
+        return False
+    if _collision_tileset is None:
+        return True
+    # One-way tiles are handled exclusively by the one-way scan — never by solid scan.
+    if _collision_tileset.get_one_way(tile_index) != ONE_WAY_NONE:
+        return False
+    collision = _collision_tileset.get_collision(tile_index)
+    if collision == COLLISION_NONE:
+        return False
+    if collision == COLLISION_SOLID:
+        return True
+    # POLYGON: sample the mask at the clamped contact pixel
+    ts = _collision_tileset.tile_size
+    lx = max(0, min(local_x, ts - 1))
+    ly = max(0, min(local_y, ts - 1))
+    return bool(_collision_tileset.collision_shapes[tile_index][ly * ts + lx])
+
+
+def _tile_one_way(col: int, row: int) -> str:
+    """Return the one-way passable direction of tile (col, row), or ONE_WAY_NONE."""
+    if _scene is None or _collision_tileset is None:
+        return ONE_WAY_NONE
+    layer = _scene.tile_layers[_scene.collision_tile_layer]
+    cols = _scene.width // TILE_SIZE
+    if col < 0 or col >= cols or row < 0:
+        return ONE_WAY_NONE
+    idx = row * cols + col
+    if idx >= len(layer.tiles):
+        return ONE_WAY_NONE
+    tile_index = layer.tiles[idx]
+    if tile_index < 0:
+        return ONE_WAY_NONE
+    return _collision_tileset.get_one_way(tile_index)
+
+
+def _scan_h_one_way(col: int, t_row: int, b_row: int, direction: str) -> bool:
+    """True if any tile in the column has a one-way arrow matching direction."""
+    return any(_tile_one_way(col, r) == direction for r in range(t_row, b_row + 1))
+
+
+def _scan_v_one_way(row: int, l_col: int, r_col: int, direction: str) -> bool:
+    """True if any tile in the row has a one-way arrow matching direction."""
+    return any(_tile_one_way(c, row) == direction for c in range(l_col, r_col + 1))
+
+
+def _scan_h(col: int, t_row: int, b_row: int, edge_wx: float, mid_wy: float) -> bool:
+    """Check if any tile in the vertical column (col, t_row..b_row) blocks a horizontal edge.
+
+    edge_wx  — world x of the hitbox edge being pushed.
+    mid_wy   — current player world y (used to derive the y-overlap per row).
+    """
+    local_x = int(edge_wx) % TILE_SIZE
+    for r in range(t_row, b_row + 1):
+        y_lo = max(int(mid_wy + HB_T), r * TILE_SIZE)
+        y_hi = min(int(mid_wy + HB_B - 1), (r + 1) * TILE_SIZE - 1)
+        for wy in range(y_lo, y_hi + 1):
+            if _tile_solid_at(col, r, local_x, wy % TILE_SIZE):
+                return True
+    return False
+
+
+def _scan_v(row: int, l_col: int, r_col: int, mid_wx: float, edge_wy: float) -> bool:
+    """Check if any tile in the horizontal row (l_col..r_col, row) blocks a vertical edge.
+
+    edge_wy  — world y of the hitbox edge being pushed.
+    mid_wx   — current player world x (used to derive the x-overlap per column).
+    """
+    local_y = int(edge_wy) % TILE_SIZE
+    for c in range(l_col, r_col + 1):
+        x_lo = max(int(mid_wx + HB_L), c * TILE_SIZE)
+        x_hi = min(int(mid_wx + HB_R - 1), (c + 1) * TILE_SIZE - 1)
+        for wx in range(x_lo, x_hi + 1):
+            if _tile_solid_at(c, row, wx % TILE_SIZE, local_y):
+                return True
+    return False
 
 
 def _physics(dt: float) -> None:
     global _px, _py, _vx, _vy, _on_ground
 
-    # Apply gravity (capped at terminal velocity)
     _vy = min(_vy + GRAVITY * dt, 400.0)
 
     # --- Horizontal movement ---
+    # Capture pre-frame edges for one-way entry-direction checks.
+    prev_right = _px + HB_R - 1
+    prev_left  = _px + HB_L
     new_px = _px + _vx * dt
     t_row = max(0, int((_py + HB_T) / TILE_SIZE))
     b_row = max(0, int((_py + HB_B - 1) / TILE_SIZE))
 
     if _vx > 0:
         col = int((new_px + HB_R - 1) / TILE_SIZE)
-        if any(_tile_solid(col, r) for r in range(t_row, b_row + 1)):
-            new_px = col * TILE_SIZE - HB_R
+        tile_left = col * TILE_SIZE
+        blocked = _scan_h(col, t_row, b_row, new_px + HB_R - 1, _py)
+        # ONE_WAY_LEFT arrow = passable going left → blocks rightward entry.
+        if not blocked and prev_right < tile_left:
+            blocked = _scan_h_one_way(col, t_row, b_row, ONE_WAY_LEFT)
+        if blocked:
+            new_px = tile_left - HB_R
             _vx = 0.0
     elif _vx < 0:
         col = int((new_px + HB_L) / TILE_SIZE)
-        if any(_tile_solid(col, r) for r in range(t_row, b_row + 1)):
-            new_px = (col + 1) * TILE_SIZE - HB_L
+        tile_right = (col + 1) * TILE_SIZE
+        blocked = _scan_h(col, t_row, b_row, new_px + HB_L, _py)
+        # ONE_WAY_RIGHT arrow = passable going right → blocks leftward entry.
+        if not blocked and prev_left >= tile_right:
+            blocked = _scan_h_one_way(col, t_row, b_row, ONE_WAY_RIGHT)
+        if blocked:
+            new_px = tile_right - HB_L
             _vx = 0.0
 
     if _scene:
@@ -99,26 +204,41 @@ def _physics(dt: float) -> None:
     _px = new_px
 
     # --- Vertical movement ---
+    prev_bottom = _py + HB_B
+    prev_top    = _py + HB_T
     new_py = _py + _vy * dt
     l_col = max(0, int((_px + HB_L) / TILE_SIZE))
     r_col = int((_px + HB_R - 1) / TILE_SIZE)
 
     if _vy >= 0:  # falling or neutral
         row = int((new_py + HB_B) / TILE_SIZE)
-        if any(_tile_solid(c, row) for c in range(l_col, r_col + 1)):
-            new_py = row * TILE_SIZE - HB_B
+        tile_top = row * TILE_SIZE
+        blocked = _scan_v(row, l_col, r_col, _px, new_py + HB_B)
+        # ONE_WAY_UP arrow = passable going up → blocks downward entry.
+        if not blocked and prev_bottom <= tile_top:
+            blocked = _scan_v_one_way(row, l_col, r_col, ONE_WAY_UP)
+        if blocked:
+            new_py = tile_top - HB_B
             _vy = 0.0
     else:  # rising — ceiling check
         row = max(0, int((new_py + HB_T) / TILE_SIZE))
-        if any(_tile_solid(c, row) for c in range(l_col, r_col + 1)):
-            new_py = (row + 1) * TILE_SIZE - HB_T
+        tile_bottom = (row + 1) * TILE_SIZE
+        blocked = _scan_v(row, l_col, r_col, _px, new_py + HB_T)
+        # ONE_WAY_DOWN arrow = passable going down → blocks upward entry.
+        if not blocked and prev_top >= tile_bottom:
+            blocked = _scan_v_one_way(row, l_col, r_col, ONE_WAY_DOWN)
+        if blocked:
+            new_py = tile_bottom - HB_T
             _vy = 0.0
 
     _py = new_py
 
-    # Ground check: solid tile directly below hitbox?
+    # Ground check: solid pixel or one-way-up tile directly below?
     gnd_row = int((_py + HB_B) / TILE_SIZE)
-    _on_ground = any(_tile_solid(c, gnd_row) for c in range(l_col, r_col + 1))
+    _on_ground = (
+        _scan_v(gnd_row, l_col, r_col, _px, _py + HB_B)
+        or _scan_v_one_way(gnd_row, l_col, r_col, ONE_WAY_UP)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -126,7 +246,7 @@ def _physics(dt: float) -> None:
 # ---------------------------------------------------------------------------
 
 def init(engine) -> None:
-    global _scene, _renderer, _frames
+    global _scene, _collision_tileset, _renderer, _frames
     global _px, _py, _vx, _vy, _facing, _on_ground
     global _state, _prev_state, _anim_frame, _anim_elapsed
     global _attack_timer, _cam_x, _prev_jump, _prev_attack
@@ -145,6 +265,13 @@ def init(engine) -> None:
     _scene = load_scene(scene_path, project_root=ROOT)
     # Clear scene objects: we draw the player manually to support sprite flipping
     _scene.objects.clear()
+
+    collision_layer = _scene.tile_layers[_scene.collision_tile_layer]
+    if collision_layer.tileset:
+        _collision_tileset = load_tileset(ROOT / collision_layer.tileset)
+    else:
+        _collision_tileset = None
+
     _renderer = SceneRenderer(ROOT)
 
     # Load palette from the idle sprite
