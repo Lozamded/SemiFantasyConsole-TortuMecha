@@ -967,8 +967,8 @@ class SceneEditorWidget(QWidget):
         _script_edit_inner.addWidget(self.btn_open_script)
         _script_vbox.addWidget(self._script_edit_row)
 
-        self.btn_draw_mode = QPushButton("Draw")
         self.btn_edit_mode = QPushButton("Edit")
+        self.btn_draw_mode = QPushButton("Draw")
         for btn in (self.btn_draw_mode, self.btn_edit_mode):
             btn.setCheckable(True)
         self.btn_draw_mode.setChecked(True)
@@ -1000,6 +1000,7 @@ class SceneEditorWidget(QWidget):
         self.btn_remove_selected_object.clicked.connect(self._remove_selected_object)
 
         self._build_layout()
+        self._set_editor_mode(True)
 
     def _build_layout(self) -> None:
         outer = QVBoxLayout(self)
@@ -1028,17 +1029,6 @@ class SceneEditorWidget(QWidget):
         side = QVBoxLayout(side_widget)
         side.setContentsMargins(0, 0, 0, 0)
         side.setSpacing(6)
-
-        mode_row = QHBoxLayout()
-        mode_row.addWidget(self.btn_draw_mode)
-        mode_row.addWidget(self.btn_edit_mode)
-        side.addLayout(mode_row)
-
-        tools = QHBoxLayout()
-        tools.addWidget(self.btn_paint)
-        tools.addWidget(self.btn_erase)
-        tools.addWidget(self.btn_dropper)
-        side.addLayout(tools)
 
         tile_section = CollapsibleSection("Tile layers", expanded=True)
         tile_form = QFormLayout()
@@ -1149,6 +1139,16 @@ class SceneEditorWidget(QWidget):
         object_tab_layout.addWidget(object_strip_scroll)
         self.bottom_tabs.addTab(object_tab, "Objects")
         self.bottom_tabs.currentChanged.connect(self._on_bottom_tab_changed)
+
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(self.btn_draw_mode)
+        mode_row.addWidget(self.btn_edit_mode)
+        mode_row.addSpacing(12)
+        mode_row.addWidget(self.btn_paint)
+        mode_row.addWidget(self.btn_erase)
+        mode_row.addWidget(self.btn_dropper)
+        mode_row.addStretch()
+        outer.addLayout(mode_row)
 
         outer.addWidget(self.bottom_tabs)
 
