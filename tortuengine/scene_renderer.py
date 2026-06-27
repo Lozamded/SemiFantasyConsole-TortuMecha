@@ -17,6 +17,7 @@ from tortuengine.bake import (
     bake_tile,
     blit_parallax,
     blit_parallax_bands,
+    build_tiled_surface,
 )
 from tortuengine.cart_manifest import CartManifest, tileset_manifest_key
 from tortuengine.constants import SCREEN_HEIGHT, SCREEN_WIDTH
@@ -76,6 +77,7 @@ class SceneRenderer:
         self._sprite_frame_cache: _LRUCache = _LRUCache(256)
         self._tile_cache: _LRUCache = _LRUCache(256)
         self._bg_cache: _LRUCache = _LRUCache(8)   # full bgs are ~418KB each
+        self._bg_tiled_cache: _LRUCache = _LRUCache(16)
         self._bg_band_cache: _LRUCache = _LRUCache(32)
         self._png_cache: _LRUCache = _LRUCache(128)
 
@@ -103,6 +105,7 @@ class SceneRenderer:
         self._sprite_frame_cache.clear()
         self._tile_cache.clear()
         self._bg_cache.clear()
+        self._bg_tiled_cache.clear()
         self._bg_band_cache.clear()
         self._png_cache.clear()
 
@@ -389,6 +392,31 @@ class SceneRenderer:
         self._bg_cache[bg_path] = baked
         return baked
 
+    def _tiled_background(
+        self,
+        bg_path: str,
+        baked: pygame.Surface,
+        *,
+        repeat_x: bool,
+        repeat_y: bool,
+        target_w: int,
+        target_h: int,
+    ) -> pygame.Surface:
+        """Return a pre-tiled surface for *baked*, building and caching it on first use."""
+        cache_key = (bg_path, repeat_x, repeat_y, target_w, target_h)
+        cached = self._bg_tiled_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        tiled = build_tiled_surface(
+            baked,
+            repeat_x=repeat_x,
+            repeat_y=repeat_y,
+            target_w=target_w,
+            target_h=target_h,
+        )
+        self._bg_tiled_cache[cache_key] = tiled
+        return tiled
+
     def _baked_background_bands(
         self,
         bg_path: str,
@@ -479,6 +507,16 @@ class SceneRenderer:
                 )
             else:
                 baked_bg = self._baked_background(scene_bg.background, bg, bg_palette)
+                tiled_bg = None
+                if scene_bg.repeat_x or scene_bg.repeat_y:
+                    tiled_bg = self._tiled_background(
+                        scene_bg.background,
+                        baked_bg,
+                        repeat_x=scene_bg.repeat_x,
+                        repeat_y=scene_bg.repeat_y,
+                        target_w=map_w,
+                        target_h=map_h,
+                    )
                 blit_parallax(
                     composite,
                     baked_bg,
@@ -489,6 +527,7 @@ class SceneRenderer:
                     fixed=scene_bg.fixed,
                     repeat_x=scene_bg.repeat_x,
                     repeat_y=scene_bg.repeat_y,
+                    _tiled=tiled_bg,
                 )
 
         tile_palette = self._tile_palette(scene)

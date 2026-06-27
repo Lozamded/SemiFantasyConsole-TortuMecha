@@ -181,6 +181,27 @@ def _blit_row_clipped_x(
         target.blit(row_source, (dest_x, dest_y), pygame.Rect(src_x, 0, width, 1))
 
 
+def build_tiled_surface(
+    baked: pygame.Surface,
+    *,
+    repeat_x: bool,
+    repeat_y: bool,
+    target_w: int,
+    target_h: int,
+) -> pygame.Surface:
+    """Pre-tile *baked* so repeat blits reduce to a single Surface.blit call."""
+    bw, bh = baked.get_width(), baked.get_height()
+    if bw < 1 or bh < 1:
+        return baked
+    tile_cols = (target_w // bw + 2) if repeat_x else 1
+    tile_rows = (target_h // bh + 2) if repeat_y else 1
+    tiled = pygame.Surface((bw * tile_cols, bh * tile_rows), pygame.SRCALPHA)
+    for row in range(tile_rows):
+        for col in range(tile_cols):
+            tiled.blit(baked, (col * bw, row * bh))
+    return tiled
+
+
 def blit_parallax(
     target: pygame.Surface,
     baked: pygame.Surface,
@@ -192,8 +213,13 @@ def blit_parallax(
     fixed: bool = False,
     repeat_x: bool = False,
     repeat_y: bool = False,
+    _tiled: pygame.Surface | None = None,
 ) -> None:
-    """Draw a baked background onto *target* using scene parallax factors."""
+    """Draw a baked background onto *target* using scene parallax factors.
+
+    Pass *_tiled* (from build_tiled_surface) to enable the single-blit fast path
+    for repeat modes instead of the per-row Python loop.
+    """
     tw, th = target.get_width(), target.get_height()
     bw, bh = baked.get_width(), baked.get_height()
     if bw < 1 or bh < 1:
@@ -206,6 +232,15 @@ def blit_parallax(
         _blit_clipped(target, baked, pygame.Rect(offset_x, offset_y, tw, th), (0, 0))
         return
 
+    if _tiled is not None:
+        # Fast path: offset into pre-tiled surface, single blit.
+        # Python % always returns non-negative for positive divisor, so sx/sy >= 0.
+        sx = (offset_x % bw) if repeat_x else offset_x
+        sy = (offset_y % bh) if repeat_y else offset_y
+        _blit_clipped(target, _tiled, pygame.Rect(sx, sy, tw, th), (0, 0))
+        return
+
+    # Fallback: per-row blit when no pre-tiled surface is available.
     for vy in range(th):
         sy = vy + offset_y
         if repeat_y:
