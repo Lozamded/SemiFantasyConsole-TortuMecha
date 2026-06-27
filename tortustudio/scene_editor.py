@@ -114,6 +114,7 @@ class SceneMapCanvas(QWidget):
         self.show_objects = True
         self.selected_object_index = -1
         self.edit_mode = False
+        self.click_origin_to_move = False
         self._dragging_object_index = -1
         self.tool = Tool.PAINT
         self.show_grid = True
@@ -673,6 +674,31 @@ class SceneMapCanvas(QWidget):
                 pass
         self._refresh()
 
+    def _find_object_at_pixel(self, px: int, py: int) -> int | None:
+        if not self.scene:
+            return None
+        best_index: int | None = None
+        best_dist = float("inf")
+        for index, inst in enumerate(self.scene.objects):
+            tortu_object = self._get_tortu_object(inst.prefab)
+            if tortu_object is None:
+                continue
+            anim = inst.animation or tortu_object.default_animation
+            sprite_path = tortu_object.sprite_for(anim) or tortu_object.default_sprite
+            sprite = self._get_object_sprite(sprite_path)
+            if sprite is None:
+                continue
+            x0 = inst.x - tortu_object.origin.x
+            y0 = inst.y - tortu_object.origin.y
+            x1 = x0 + sprite.pixel_width
+            y1 = y0 + sprite.pixel_height
+            if x0 <= px < x1 and y0 <= py < y1:
+                dist = (inst.x - px) ** 2 + (inst.y - py) ** 2
+                if dist < best_dist:
+                    best_dist = dist
+                    best_index = index
+        return best_index
+
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.RightButton:
             if not self.edit_mode:
@@ -685,7 +711,10 @@ class SceneMapCanvas(QWidget):
         if self.edit_mode:
             pos = self._event_to_map_pixel(event)
             if pos and self.scene:
-                index = self.scene.find_object_near(*pos)
+                if self.click_origin_to_move:
+                    index = self.scene.find_object_near(*pos)
+                else:
+                    index = self._find_object_at_pixel(*pos)
                 self._dragging_object_index = index if index is not None else -1
                 self.object_selected.emit(self._dragging_object_index)
             return
@@ -999,6 +1028,14 @@ class SceneEditorWidget(QWidget):
         self.btn_remove_selected_object.setEnabled(False)
         self.btn_remove_selected_object.clicked.connect(self._remove_selected_object)
 
+        self.chk_click_origin = QCheckBox("Click origin of object to move")
+        self.chk_click_origin.setChecked(False)
+        self.chk_click_origin.stateChanged.connect(
+            lambda: setattr(
+                self.map_canvas, "click_origin_to_move", self.chk_click_origin.isChecked()
+            )
+        )
+
         self._build_layout()
         self._set_editor_mode(True)
 
@@ -1107,6 +1144,7 @@ class SceneEditorWidget(QWidget):
         objects_section.content_layout().addWidget(self.objects_search)
         objects_section.content_layout().addWidget(self.objects_list)
         objects_section.content_layout().addWidget(self.btn_remove_selected_object)
+        objects_section.content_layout().addWidget(self.chk_click_origin)
         side.addWidget(objects_section)
 
         side.addStretch()

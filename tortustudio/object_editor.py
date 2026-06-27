@@ -47,6 +47,7 @@ class ObjectPreviewCanvas(QWidget):
     ORIGIN_COLOR = (255, 100, 100, 220)
 
     origin_clicked = pyqtSignal(int, int)
+    hitbox_moved = pyqtSignal(int, int)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -59,10 +60,16 @@ class ObjectPreviewCanvas(QWidget):
         self._origin = (0, 0)
         self._show_hitbox = True
         self._show_origin = True
+        self._dragging_origin = False
+        self._show_hitbox_move_icon = False
+        self._dragging_hitbox = False
+        self._drag_start_screen: tuple[float, float] | None = None
+        self._drag_start_hitbox_pos: tuple[int, int] | None = None
         self.zoom = 4
         self.setMinimumSize(120, 120)
+        self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setToolTip("Click to set origin (placement anchor)")
+        self.setToolTip("Drag the origin marker to move it")
 
     def set_show_hitbox(self, visible: bool) -> None:
         self._show_hitbox = visible
@@ -118,12 +125,103 @@ class ObjectPreviewCanvas(QWidget):
             return None
         return int(px), int(py)
 
+    def _is_near_origin(self, event: QMouseEvent, threshold: int = 8) -> bool:
+        if not self._show_origin or self._frame is None:
+            return False
+        ox, oy, _sw, _sh = self._sprite_offset()
+        origin_x, origin_y = self._origin
+        cx = ox + origin_x * self.zoom
+        cy = oy + origin_y * self.zoom
+        dx = event.position().x() - cx
+        dy = event.position().y() - cy
+        return dx * dx + dy * dy <= threshold * threshold
+
+    def _is_near_hitbox_border(self, mx: float, my: float, threshold: int = 8) -> bool:
+        if not self._show_hitbox or self._hitbox is None or self._frame is None:
+            return False
+        ox, oy, _sw, _sh = self._sprite_offset()
+        hx, hy, hw, hh = self._hitbox
+        sx0 = ox + hx * self.zoom
+        sy0 = oy + hy * self.zoom
+        sx1 = sx0 + hw * self.zoom
+        sy1 = sy0 + hh * self.zoom
+        in_outer = sx0 - threshold <= mx <= sx1 + threshold and sy0 - threshold <= my <= sy1 + threshold
+        in_inner = sx0 + threshold < mx < sx1 - threshold and sy0 + threshold < my < sy1 - threshold
+        return in_outer and not in_inner
+
+    def _hitbox_center_screen(self) -> tuple[int, int] | None:
+        if self._hitbox is None:
+            return None
+        ox, oy, _sw, _sh = self._sprite_offset()
+        hx, hy, hw, hh = self._hitbox
+        return int(ox + (hx + hw / 2) * self.zoom), int(oy + (hy + hh / 2) * self.zoom)
+
+    def _draw_move_icon(self, painter: QPainter, cx: int, cy: int) -> None:
+        arm, tip = 10, 5
+        for color, width in [(QColor(0, 0, 0, 200), 3), (QColor(255, 255, 255, 230), 2)]:
+            pen = QPen(color)
+            pen.setWidth(width)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            painter.drawLine(cx - arm, cy, cx + arm, cy)
+            painter.drawLine(cx, cy - arm, cx, cy + arm)
+            for ax, ay, bx, by, ex, ey in [
+                (cx, cy - arm - tip, cx - tip, cy - arm, cx + tip, cy - arm),
+                (cx, cy + arm + tip, cx - tip, cy + arm, cx + tip, cy + arm),
+                (cx - arm - tip, cy, cx - arm, cy - tip, cx - arm, cy + tip),
+                (cx + arm + tip, cy, cx + arm, cy - tip, cx + arm, cy + tip),
+            ]:
+                painter.drawLine(ax, ay, bx, by)
+                painter.drawLine(ax, ay, ex, ey)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(255, 255, 255, 230))
+        painter.drawEllipse(cx - 3, cy - 3, 6, 6)
+
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() != Qt.MouseButton.LeftButton:
             return
-        pixel = self._event_to_sprite_pixel(event)
-        if pixel is not None:
-            self.origin_clicked.emit(pixel[0], pixel[1])
+        if self._show_hitbox_move_icon and self._hitbox is not None:
+            self._dragging_hitbox = True
+            self._drag_start_screen = (event.position().x(), event.position().y())
+            self._drag_start_hitbox_pos = (self._hitbox[0], self._hitbox[1])
+            return
+        if self._is_near_origin(event):
+            self._dragging_origin = True
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if self._dragging_origin and event.buttons() & Qt.MouseButton.LeftButton:
+            pixel = self._event_to_sprite_pixel(event)
+            if pixel is not None:
+                self._origin = pixel
+                self.origin_clicked.emit(pixel[0], pixel[1])
+                self.update()
+            return
+        if self._dragging_hitbox and event.buttons() & Qt.MouseButton.LeftButton:
+            if self._drag_start_screen and self._drag_start_hitbox_pos and self._hitbox:
+                dx = int((event.position().x() - self._drag_start_screen[0]) / self.zoom)
+                dy = int((event.position().y() - self._drag_start_screen[1]) / self.zoom)
+                new_x = self._drag_start_hitbox_pos[0] + dx
+                new_y = self._drag_start_hitbox_pos[1] + dy
+                hw, hh = self._hitbox[2], self._hitbox[3]
+                new_x = max(0, min(self._sprite_w - hw, new_x))
+                new_y = max(0, min(self._sprite_h - hh, new_y))
+                self._hitbox = (new_x, new_y, hw, hh)
+                self.hitbox_moved.emit(new_x, new_y)
+                self.update()
+            return
+        mx, my = event.position().x(), event.position().y()
+        near = self._is_near_hitbox_border(mx, my)
+        if near != self._show_hitbox_move_icon:
+            self._show_hitbox_move_icon = near
+            self.setCursor(Qt.CursorShape.SizeAllCursor if near else Qt.CursorShape.ArrowCursor)
+            self.update()
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._dragging_origin = False
+            self._dragging_hitbox = False
+            self._drag_start_screen = None
+            self._drag_start_hitbox_pos = None
 
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
@@ -169,6 +267,10 @@ class ObjectPreviewCanvas(QWidget):
                 hw * self.zoom,
                 hh * self.zoom,
             )
+            if self._show_hitbox_move_icon or self._dragging_hitbox:
+                center = self._hitbox_center_screen()
+                if center is not None:
+                    self._draw_move_icon(painter, *center)
 
         painter.end()
 
@@ -194,6 +296,7 @@ class ObjectEditorWidget(QWidget):
 
         self.preview = ObjectPreviewCanvas()
         self.preview.origin_clicked.connect(self._on_preview_origin_clicked)
+        self.preview.hitbox_moved.connect(self._on_preview_hitbox_moved)
 
         self.btn_save = QPushButton("Save object")
         self.btn_save.clicked.connect(self.save)
@@ -717,6 +820,20 @@ class ObjectEditorWidget(QWidget):
         self.origin_x.blockSignals(False)
         self.origin_y.blockSignals(False)
         self._refresh_preview()
+        self._mark_dirty()
+
+    def _on_preview_hitbox_moved(self, x: int, y: int) -> None:
+        if not self.tortu_object or not self._sprite:
+            return
+        if self.hitbox_full_sprite.isChecked():
+            self.hitbox_full_sprite.blockSignals(True)
+            self.hitbox_full_sprite.setChecked(False)
+            self.hitbox_full_sprite.blockSignals(False)
+            self.tortu_object.hitbox.w = self._sprite.pixel_width
+            self.tortu_object.hitbox.h = self._sprite.pixel_height
+        self.tortu_object.hitbox.x = x
+        self.tortu_object.hitbox.y = y
+        self._refresh_hitbox_controls()
         self._mark_dirty()
 
     def _on_hitbox_full_toggled(self, full: bool) -> None:
