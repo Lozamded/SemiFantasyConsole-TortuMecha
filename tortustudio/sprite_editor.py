@@ -81,6 +81,7 @@ class SpriteCanvas(QWidget):
         self.show_block_grid = True
         self._drawing = False
         self._frame: QImage | None = None
+        self._hover_pixel: tuple[int, int] | None = None
 
         self.setMinimumSize(200, 200)
         self.setMouseTracking(True)
@@ -110,6 +111,7 @@ class SpriteCanvas(QWidget):
 
     def set_tool(self, tool: Tool) -> None:
         self.tool = tool
+        self.update()
 
     def set_color_index(self, index: int) -> None:
         if index in PAINTABLE_INDICES:
@@ -124,7 +126,7 @@ class SpriteCanvas(QWidget):
         if not self.sprite:
             return
         w, h = self.sprite.pixel_width, self.sprite.pixel_height
-        self.setMinimumSize(w * self.zoom, h * self.zoom)
+        self.setMinimumSize(w * self.zoom, h * self.zoom + 20)
 
     def _refresh(self) -> None:
         if not self.sprite:
@@ -172,6 +174,7 @@ class SpriteCanvas(QWidget):
         painter.drawImage(x, y, scaled)
         if self.sprite and (self.show_pixel_grid or self.show_block_grid):
             self._draw_grid_overlay(painter, x, y)
+        self._draw_cursor_indicator(painter, x, y)
         painter.end()
 
     def _draw_grid_overlay(self, painter: QPainter, ox: int, oy: int) -> None:
@@ -206,6 +209,47 @@ class SpriteCanvas(QWidget):
             for py in range(SPRITE_BLOCK, ph, SPRITE_BLOCK):
                 ly = oy + py * self.zoom
                 painter.drawLine(ox, ly, ox + sw, ly)
+
+    def _draw_cursor_indicator(self, painter: QPainter, ox: int, oy: int) -> None:
+        if self._frame is None:
+            return
+        if self.tool == Tool.PENCIL:
+            r, g, b = self.palette[self.current_index] if self.palette else (255, 255, 255)
+            fill = QColor(r, g, b, 80)
+            outline = QColor(255, 255, 255, 220)
+        elif self.tool == Tool.ERASER:
+            fill = QColor(220, 60, 60, 60)
+            outline = QColor(220, 60, 60, 220)
+        else:
+            fill = QColor(80, 200, 255, 60)
+            outline = QColor(80, 200, 255, 220)
+
+        if self._hover_pixel:
+            hx, hy = self._hover_pixel
+            pen = QPen(outline)
+            pen.setWidth(2)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            painter.setBrush(fill)
+            painter.drawRect(ox + hx * self.zoom, oy + hy * self.zoom, self.zoom - 1, self.zoom - 1)
+
+        label = self.tool.value.title()
+        painter.save()
+        font = painter.font()
+        font.setPixelSize(10)
+        painter.setFont(font)
+        fm = painter.fontMetrics()
+        text_w = fm.horizontalAdvance(label)
+        text_h = fm.height()
+        img_bottom = oy + self._frame.height() * self.zoom
+        lx = ox + 4
+        ly = img_bottom + 4
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 160))
+        painter.drawRect(lx - 2, ly - 1, text_w + 4, text_h + 2)
+        painter.setPen(outline)
+        painter.drawText(lx, ly + fm.ascent(), label)
+        painter.restore()
 
     def _event_to_pixel(self, event: QMouseEvent) -> tuple[int, int] | None:
         if not self.sprite or self._frame is None:
@@ -246,11 +290,16 @@ class SpriteCanvas(QWidget):
             self.tool_cycled.emit(self._TOOL_CYCLE[(idx + 1) % len(self._TOOL_CYCLE)])
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        if self._drawing and event.buttons() & Qt.MouseButton.LeftButton:
-            pos = self._event_to_pixel(event)
-            if pos:
-                self._apply_tool(*pos)
-                self.changed.emit()
+        pos = self._event_to_pixel(event)
+        self._hover_pixel = pos
+        self.update()
+        if self._drawing and event.buttons() & Qt.MouseButton.LeftButton and pos:
+            self._apply_tool(*pos)
+            self.changed.emit()
+
+    def leaveEvent(self, event) -> None:  # noqa: N802
+        self._hover_pixel = None
+        self.update()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton and self._drawing:
@@ -415,7 +464,15 @@ class SpriteEditorWidget(QWidget):
         root = QHBoxLayout()
         outer.addLayout(root, stretch=1)
 
-        root.addWidget(self.canvas, stretch=1)
+        canvas_col = QVBoxLayout()
+        canvas_col.addWidget(self.canvas, stretch=1)
+        tools = QHBoxLayout()
+        tools.addWidget(self.btn_pencil)
+        tools.addWidget(self.btn_eraser)
+        tools.addWidget(self.btn_dropper)
+        tools.addStretch()
+        canvas_col.addLayout(tools)
+        root.addLayout(canvas_col, stretch=1)
 
         side = QVBoxLayout()
         title = QLabel("<b>Sprite Editor</b>")
@@ -432,12 +489,6 @@ class SpriteEditorWidget(QWidget):
 
         self.blocks_w.valueChanged.connect(self._apply_resize)
         self.blocks_h.valueChanged.connect(self._apply_resize)
-
-        tools = QHBoxLayout()
-        tools.addWidget(self.btn_pencil)
-        tools.addWidget(self.btn_eraser)
-        tools.addWidget(self.btn_dropper)
-        side.addLayout(tools)
 
         side.addWidget(self.btn_load_ref)
         side.addWidget(self.color_key)

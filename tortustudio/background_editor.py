@@ -75,7 +75,9 @@ class BackgroundCanvas(QWidget):
         self.zoom = 2
         self._drawing = False
         self._frame: QImage | None = None
+        self._hover_pixel: tuple[int, int] | None = None
         self.setMinimumSize(200, 200)
+        self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     def set_context(
@@ -96,6 +98,7 @@ class BackgroundCanvas(QWidget):
 
     def set_tool(self, tool: Tool) -> None:
         self.tool = tool
+        self.update()
 
     def set_show_pixel_grid(self, visible: bool) -> None:
         self.show_pixel_grid = visible
@@ -110,7 +113,7 @@ class BackgroundCanvas(QWidget):
         if self.background:
             self.setMinimumSize(
                 self.background.width * self.zoom,
-                self.background.height * self.zoom,
+                self.background.height * self.zoom + 20,
             )
         self.update()
 
@@ -131,7 +134,7 @@ class BackgroundCanvas(QWidget):
 
         data = pygame.image.tobytes(composite, "RGBA")
         self._frame = QImage(data, map_w, map_h, map_w * 4, QImage.Format.Format_RGBA8888)
-        self.setMinimumSize(map_w * self.zoom, map_h * self.zoom)
+        self.setMinimumSize(map_w * self.zoom, map_h * self.zoom + 20)
         self.update()
 
     def paintEvent(self, event) -> None:  # noqa: N802
@@ -185,7 +188,49 @@ class BackgroundCanvas(QWidget):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(ox + cam_x * self.zoom, oy, screen_w, screen_h)
 
+        self._draw_cursor_indicator(painter, ox, oy)
         painter.end()
+
+    def _draw_cursor_indicator(self, painter: QPainter, ox: int, oy: int) -> None:
+        if self._frame is None:
+            return
+        if self.tool == Tool.PENCIL:
+            r, g, b = self.palette[self.current_index] if self.palette else (255, 255, 255)
+            fill = QColor(r, g, b, 80)
+            outline = QColor(255, 255, 255, 220)
+        elif self.tool == Tool.ERASER:
+            fill = QColor(220, 60, 60, 60)
+            outline = QColor(220, 60, 60, 220)
+        else:
+            fill = QColor(80, 200, 255, 60)
+            outline = QColor(80, 200, 255, 220)
+
+        if self._hover_pixel:
+            hx, hy = self._hover_pixel
+            pen = QPen(outline)
+            pen.setWidth(2)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            painter.setBrush(fill)
+            painter.drawRect(ox + hx * self.zoom, oy + hy * self.zoom, self.zoom - 1, self.zoom - 1)
+
+        label = self.tool.value.title()
+        painter.save()
+        font = painter.font()
+        font.setPixelSize(10)
+        painter.setFont(font)
+        fm = painter.fontMetrics()
+        text_w = fm.horizontalAdvance(label)
+        text_h = fm.height()
+        img_bottom = oy + self._frame.height() * self.zoom
+        lx = ox + 4
+        ly = img_bottom + 4
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 160))
+        painter.drawRect(lx - 2, ly - 1, text_w + 4, text_h + 2)
+        painter.setPen(outline)
+        painter.drawText(lx, ly + fm.ascent(), label)
+        painter.restore()
 
     def _event_to_pixel(self, event: QMouseEvent) -> tuple[int, int] | None:
         if self._frame is None or not self.background:
@@ -226,11 +271,16 @@ class BackgroundCanvas(QWidget):
             self.tool_cycled.emit(self._TOOL_CYCLE[(idx + 1) % len(self._TOOL_CYCLE)])
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        if self._drawing and event.buttons() & Qt.MouseButton.LeftButton:
-            pos = self._event_to_pixel(event)
-            if pos:
-                self._apply_tool(*pos)
-                self.changed.emit()
+        pos = self._event_to_pixel(event)
+        self._hover_pixel = pos
+        self.update()
+        if self._drawing and event.buttons() & Qt.MouseButton.LeftButton and pos:
+            self._apply_tool(*pos)
+            self.changed.emit()
+
+    def leaveEvent(self, event) -> None:  # noqa: N802
+        self._hover_pixel = None
+        self.update()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton and self._drawing:
@@ -358,6 +408,12 @@ class BackgroundEditorWidget(QWidget):
         canvas_scroll.setWidgetResizable(True)
         canvas_scroll.setWidget(self.canvas)
         canvas_layout.addWidget(canvas_scroll)
+        tools = QHBoxLayout()
+        tools.addWidget(self.btn_pencil)
+        tools.addWidget(self.btn_eraser)
+        tools.addWidget(self.btn_dropper)
+        tools.addStretch()
+        canvas_layout.addLayout(tools)
         body.addWidget(canvas_group, stretch=1)
 
         side = QVBoxLayout()
@@ -380,12 +436,6 @@ class BackgroundEditorWidget(QWidget):
         form.addRow(self.show_pixel_grid)
         form.addRow(self.show_segment_grid)
         side.addLayout(form)
-
-        tools = QHBoxLayout()
-        tools.addWidget(self.btn_pencil)
-        tools.addWidget(self.btn_eraser)
-        tools.addWidget(self.btn_dropper)
-        side.addLayout(tools)
 
         side.addWidget(QLabel("Palette colors (0–62):"))
         side.addWidget(self.swatches_area)

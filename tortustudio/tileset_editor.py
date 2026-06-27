@@ -296,6 +296,7 @@ class SingleTileCanvas(QWidget):
         self._drawing = False
         self._frame: QImage | None = None
         self._tile_size = 8
+        self._hover_pixel: tuple[int, int] | None = None
 
         self.setMinimumSize(128, 128)
         self.setMouseTracking(True)
@@ -315,6 +316,7 @@ class SingleTileCanvas(QWidget):
 
     def set_tool(self, tool: Tool) -> None:
         self.tool = tool
+        self.update()
 
     def set_color_index(self, index: int) -> None:
         if index in PAINTABLE_INDICES:
@@ -326,7 +328,7 @@ class SingleTileCanvas(QWidget):
 
     def set_zoom(self, zoom: int) -> None:
         self.zoom = max(4, min(48, zoom))
-        self.setMinimumSize(self._tile_size * self.zoom, self._tile_size * self.zoom)
+        self.setMinimumSize(self._tile_size * self.zoom, self._tile_size * self.zoom + 20)
         self.update()
 
     def _pixel_at(self, x: int, y: int) -> int:
@@ -356,7 +358,7 @@ class SingleTileCanvas(QWidget):
 
         data = pygame.image.tobytes(composite, "RGBA")
         self._frame = QImage(data, size, size, size * 4, QImage.Format.Format_RGBA8888)
-        self.setMinimumSize(size * self.zoom, size * self.zoom)
+        self.setMinimumSize(size * self.zoom, size * self.zoom + 20)
         self.update()
 
     def paintEvent(self, event) -> None:  # noqa: N802
@@ -389,7 +391,49 @@ class SingleTileCanvas(QWidget):
             for py in range(1, self._tile_size):
                 ly = oy + py * self.zoom
                 painter.drawLine(ox, ly, ox + sw, ly)
+        self._draw_cursor_indicator(painter, ox, oy)
         painter.end()
+
+    def _draw_cursor_indicator(self, painter: QPainter, ox: int, oy: int) -> None:
+        if self._frame is None:
+            return
+        if self.tool == Tool.PENCIL:
+            r, g, b = self.palette[self.current_index] if self.palette else (255, 255, 255)
+            fill = QColor(r, g, b, 80)
+            outline = QColor(255, 255, 255, 220)
+        elif self.tool == Tool.ERASER:
+            fill = QColor(220, 60, 60, 60)
+            outline = QColor(220, 60, 60, 220)
+        else:
+            fill = QColor(80, 200, 255, 60)
+            outline = QColor(80, 200, 255, 220)
+
+        if self._hover_pixel:
+            hx, hy = self._hover_pixel
+            pen = QPen(outline)
+            pen.setWidth(2)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            painter.setBrush(fill)
+            painter.drawRect(ox + hx * self.zoom, oy + hy * self.zoom, self.zoom - 1, self.zoom - 1)
+
+        label = self.tool.value.title()
+        painter.save()
+        font = painter.font()
+        font.setPixelSize(10)
+        painter.setFont(font)
+        fm = painter.fontMetrics()
+        text_w = fm.horizontalAdvance(label)
+        text_h = fm.height()
+        img_bottom = oy + self._tile_size * self.zoom
+        lx = ox + 4
+        ly = img_bottom + 4
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 160))
+        painter.drawRect(lx - 2, ly - 1, text_w + 4, text_h + 2)
+        painter.setPen(outline)
+        painter.drawText(lx, ly + fm.ascent(), label)
+        painter.restore()
 
     def _event_to_pixel(self, event: QMouseEvent) -> tuple[int, int] | None:
         if self._frame is None:
@@ -427,11 +471,16 @@ class SingleTileCanvas(QWidget):
             self.tool_cycled.emit(self._TOOL_CYCLE[(idx + 1) % len(self._TOOL_CYCLE)])
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        if self._drawing and event.buttons() & Qt.MouseButton.LeftButton:
-            pos = self._event_to_pixel(event)
-            if pos:
-                self._apply_tool(*pos)
-                self.changed.emit()
+        pos = self._event_to_pixel(event)
+        self._hover_pixel = pos
+        self.update()
+        if self._drawing and event.buttons() & Qt.MouseButton.LeftButton and pos:
+            self._apply_tool(*pos)
+            self.changed.emit()
+
+    def leaveEvent(self, event) -> None:  # noqa: N802
+        self._hover_pixel = None
+        self.update()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton and self._drawing:
@@ -1025,11 +1074,31 @@ class TilesetEditorWidget(QWidget):
         edit_group = QGroupBox("Edit tile")
         edit_layout = QVBoxLayout(edit_group)
         edit_layout.addWidget(self.edit_tabs)
+
+        self.pencil_tools_widget = QWidget()
+        pencil_row = QHBoxLayout(self.pencil_tools_widget)
+        pencil_row.setContentsMargins(0, 0, 0, 0)
+        pencil_row.addWidget(self.btn_pencil)
+        pencil_row.addWidget(self.btn_eraser)
+        pencil_row.addWidget(self.btn_dropper)
+        pencil_row.addStretch()
+        edit_layout.addWidget(self.pencil_tools_widget)
+
+        self.collision_tools_widget = QWidget()
+        collision_row = QHBoxLayout(self.collision_tools_widget)
+        collision_row.setContentsMargins(0, 0, 0, 0)
+        collision_row.addWidget(self.btn_collision_paint)
+        collision_row.addWidget(self.btn_collision_erase)
+        collision_row.addStretch()
+        edit_layout.addWidget(self.collision_tools_widget)
+        self.collision_tools_widget.setVisible(False)
+
         edit_row = QHBoxLayout()
         edit_row.addWidget(self.btn_load_to_editor)
         edit_row.addWidget(self.btn_save_to_stack)
         edit_row.addWidget(self.btn_clear_editor)
         edit_layout.addLayout(edit_row)
+
         canvases.addWidget(edit_group, stretch=1)
 
         side = QVBoxLayout()
@@ -1045,7 +1114,7 @@ class TilesetEditorWidget(QWidget):
         stack_row.addWidget(self.stack_index)
         stack_row.addWidget(self.btn_stack_prev)
         stack_row.addWidget(self.btn_stack_next)
-        
+
         form.addRow("Tile slot:", stack_row)
         form.addRow("Editing:", self.editor_status_label)
 
@@ -1059,18 +1128,6 @@ class TilesetEditorWidget(QWidget):
         side.addLayout(form)
 
         self.tile_size.valueChanged.connect(self._on_tile_size_changed)
-
-        self.pencil_tools = QHBoxLayout()
-        self.pencil_tools.addWidget(self.btn_pencil)
-        self.pencil_tools.addWidget(self.btn_eraser)
-        self.pencil_tools.addWidget(self.btn_dropper)
-        side.addLayout(self.pencil_tools)
-
-        self.collision_tools = QHBoxLayout()
-        self.collision_tools.addWidget(self.btn_collision_paint)
-        self.collision_tools.addWidget(self.btn_collision_erase)
-        side.addLayout(self.collision_tools)
-        self._set_collision_tool_row_visible(False)
 
         side.addWidget(QLabel("Palette colors (0–62):"))
         side.addWidget(self.swatches_area)
@@ -1131,16 +1188,10 @@ class TilesetEditorWidget(QWidget):
         self.strip_canvas.set_columns_per_row(self.strip_columns_per_row.value())
 
     def _set_collision_tool_row_visible(self, visible: bool) -> None:
-        for i in range(self.collision_tools.count()):
-            item = self.collision_tools.itemAt(i)
-            if item and item.widget():
-                item.widget().setVisible(visible)
+        self.collision_tools_widget.setVisible(visible)
 
     def _set_pencil_tool_row_visible(self, visible: bool) -> None:
-        for i in range(self.pencil_tools.count()):
-            item = self.pencil_tools.itemAt(i)
-            if item and item.widget():
-                item.widget().setVisible(visible)
+        self.pencil_tools_widget.setVisible(visible)
         self.swatches_area.setVisible(visible)
 
     def _on_edit_tab_changed(self, index: int) -> None:
