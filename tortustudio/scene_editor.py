@@ -85,6 +85,8 @@ class SceneMapCanvas(QWidget):
     CAMERA_FRAME_COLOR = (0, 220, 255)
 
     changed = pyqtSignal()
+    object_selected = pyqtSignal(int)
+    tool_cycled = pyqtSignal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -111,6 +113,8 @@ class SceneMapCanvas(QWidget):
         self.edit_objects = False
         self.show_objects = True
         self.selected_object_index = -1
+        self.edit_mode = False
+        self._dragging_object_index = -1
         self.tool = Tool.PAINT
         self.show_grid = True
         self.zoom = 2
@@ -142,6 +146,7 @@ class SceneMapCanvas(QWidget):
         selected_object_prefab: str = "",
         show_objects: bool = True,
         selected_object_index: int = -1,
+        edit_mode: bool = False,
     ) -> None:
         self.scene = scene
         self.project_root = project_root
@@ -163,6 +168,7 @@ class SceneMapCanvas(QWidget):
         self.selected_object_prefab = selected_object_prefab
         self.show_objects = show_objects
         self.selected_object_index = selected_object_index
+        self.edit_mode = edit_mode
         self._refresh()
 
     def set_tool(self, tool: Tool) -> None:
@@ -668,21 +674,44 @@ class SceneMapCanvas(QWidget):
         self._refresh()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        if event.button() == Qt.MouseButton.LeftButton:
-            if self.edit_objects:
-                pos = self._event_to_map_pixel(event)
-                if pos:
-                    self._drawing = True
-                    self._apply_object_tool(*pos)
-                    self.changed.emit()
-                return
-            pos = self._event_to_tile(event)
+        if event.button() == Qt.MouseButton.RightButton:
+            if not self.edit_mode:
+                _cycle = [Tool.PAINT, Tool.ERASE, Tool.EYEDROPPER]
+                next_tool = _cycle[(_cycle.index(self.tool) + 1) % len(_cycle)]
+                self.tool_cycled.emit(next_tool)
+            return
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        if self.edit_mode:
+            pos = self._event_to_map_pixel(event)
+            if pos and self.scene:
+                index = self.scene.find_object_near(*pos)
+                self._dragging_object_index = index if index is not None else -1
+                self.object_selected.emit(self._dragging_object_index)
+            return
+        if self.edit_objects:
+            pos = self._event_to_map_pixel(event)
             if pos:
                 self._drawing = True
-                self._apply_tool(*pos)
+                self._apply_object_tool(*pos)
                 self.changed.emit()
+            return
+        pos = self._event_to_tile(event)
+        if pos:
+            self._drawing = True
+            self._apply_tool(*pos)
+            self.changed.emit()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if self.edit_mode:
+            if self._dragging_object_index >= 0 and event.buttons() & Qt.MouseButton.LeftButton:
+                pos = self._event_to_map_pixel(event)
+                if pos and self.scene and self._dragging_object_index < len(self.scene.objects):
+                    inst = self.scene.objects[self._dragging_object_index]
+                    inst.x, inst.y = pos
+                    self._refresh()
+                    self.changed.emit()
+            return
         if self._drawing and event.buttons() & Qt.MouseButton.LeftButton:
             if self.edit_objects:
                 if self.tool == Tool.ERASE:
@@ -697,7 +726,12 @@ class SceneMapCanvas(QWidget):
                 self.changed.emit()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        if event.button() == Qt.MouseButton.LeftButton and self._drawing:
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        if self.edit_mode:
+            self._dragging_object_index = -1
+            return
+        if self._drawing:
             self._drawing = False
             self.changed.emit()
 
@@ -727,8 +761,12 @@ class SceneEditorWidget(QWidget):
         self._dirty = False
         self._selected_tile = 0
 
+        self._edit_mode = False
+
         self.map_canvas = SceneMapCanvas()
         self.map_canvas.changed.connect(self._on_map_changed)
+        self.map_canvas.object_selected.connect(self._on_canvas_object_selected)
+        self.map_canvas.tool_cycled.connect(self._set_tool)
 
         self.strip_canvas = TilesetStripCanvas()
         self.strip_canvas.tile_clicked.connect(self._on_strip_tile_clicked)
@@ -929,6 +967,14 @@ class SceneEditorWidget(QWidget):
         _script_edit_inner.addWidget(self.btn_open_script)
         _script_vbox.addWidget(self._script_edit_row)
 
+        self.btn_draw_mode = QPushButton("Draw")
+        self.btn_edit_mode = QPushButton("Edit")
+        for btn in (self.btn_draw_mode, self.btn_edit_mode):
+            btn.setCheckable(True)
+        self.btn_draw_mode.setChecked(True)
+        self.btn_draw_mode.clicked.connect(lambda: self._set_editor_mode(False))
+        self.btn_edit_mode.clicked.connect(lambda: self._set_editor_mode(True))
+
         self.btn_paint = QPushButton("Paint")
         self.btn_erase = QPushButton("Erase")
         self.btn_dropper = QPushButton("Eyedropper")
@@ -970,18 +1016,23 @@ class SceneEditorWidget(QWidget):
         body = QHBoxLayout()
         outer.addLayout(body, stretch=1)
 
-        map_group = QGroupBox("Map")
-        map_layout = QVBoxLayout(map_group)
+        self.map_group = QGroupBox("Map — DRAW MODE  ·  Paint")
+        map_layout = QVBoxLayout(self.map_group)
         map_scroll = QScrollArea()
         map_scroll.setWidgetResizable(False)
         map_scroll.setWidget(self.map_canvas)
         map_layout.addWidget(map_scroll)
-        body.addWidget(map_group, stretch=1)
+        body.addWidget(self.map_group, stretch=1)
 
         side_widget = QWidget()
         side = QVBoxLayout(side_widget)
         side.setContentsMargins(0, 0, 0, 0)
         side.setSpacing(6)
+
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(self.btn_draw_mode)
+        mode_row.addWidget(self.btn_edit_mode)
+        side.addLayout(mode_row)
 
         tools = QHBoxLayout()
         tools.addWidget(self.btn_paint)
@@ -1148,11 +1199,18 @@ class SceneEditorWidget(QWidget):
         tile_layer = self.scene.tile_layers[self._active_tile_layer_index()]
         self._active_tileset = self._get_tileset(tile_layer.tileset)
 
+    def _map_group_title(self) -> str:
+        if self._edit_mode:
+            return "Map — EDIT MODE"
+        names = {Tool.PAINT: "Paint", Tool.ERASE: "Erase", Tool.EYEDROPPER: "Eyedropper"}
+        return f"Map — DRAW MODE  ·  {names.get(self.map_canvas.tool, '')}"
+
     def _set_tool(self, tool: Tool) -> None:
         self.btn_paint.setChecked(tool == Tool.PAINT)
         self.btn_erase.setChecked(tool == Tool.ERASE)
         self.btn_dropper.setChecked(tool == Tool.EYEDROPPER)
         self.map_canvas.set_tool(tool)
+        self.map_group.setTitle(self._map_group_title())
 
     def _on_map_changed(self) -> None:
         if (
@@ -1484,6 +1542,7 @@ class SceneEditorWidget(QWidget):
             selected_object_prefab=self.object_strip.selected_prefab(),
             show_objects=self.show_objects.isChecked(),
             selected_object_index=self._selected_object_index,
+            edit_mode=self._edit_mode,
         )
 
     def _refresh_objects_list(self) -> None:
@@ -1512,6 +1571,21 @@ class SceneEditorWidget(QWidget):
                 self._selected_object_index = -1
         self.btn_remove_selected_object.setEnabled(self._selected_object_index >= 0)
         self.objects_list.blockSignals(False)
+
+    def _set_editor_mode(self, edit: bool) -> None:
+        self._edit_mode = edit
+        self.btn_draw_mode.setChecked(not edit)
+        self.btn_edit_mode.setChecked(edit)
+        for btn in (self.btn_paint, self.btn_erase, self.btn_dropper):
+            btn.setEnabled(not edit)
+        self.map_group.setTitle(self._map_group_title())
+        self._refresh_map()
+
+    def _on_canvas_object_selected(self, index: int) -> None:
+        self._selected_object_index = index
+        self.map_canvas.selected_object_index = index
+        self.map_canvas.update()
+        self._refresh_objects_list()
 
     def _on_objects_list_selection_changed(self, row: int) -> None:
         if row < 0 or row >= len(self._objects_list_indices):
