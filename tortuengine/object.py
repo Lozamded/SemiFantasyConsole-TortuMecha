@@ -7,19 +7,22 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 MAX_OBJECT_ANIMATIONS = 16
+MAX_OBJECT_COLLIDERS = 8
 
 
 @dataclass
-class ObjectHitbox:
-    """Axis-aligned hitbox in sprite pixel space. w/h of 0 means use full sprite size."""
+class ObjectCollider:
+    """Named axis-aligned collider in sprite pixel space. w/h of 0 means full sprite size."""
 
+    name: str
     x: int = 0
     y: int = 0
     w: int = 0
     h: int = 0
+    active: bool = True  # default state at spawn
 
-    def copy(self) -> ObjectHitbox:
-        return ObjectHitbox(self.x, self.y, self.w, self.h)
+    def copy(self) -> ObjectCollider:
+        return ObjectCollider(self.name, self.x, self.y, self.w, self.h, self.active)
 
     def resolved(self, sprite_w: int, sprite_h: int) -> tuple[int, int, int, int]:
         w = self.w if self.w > 0 else sprite_w
@@ -55,7 +58,7 @@ class TortuObject:
     script: str = ""
     solid: bool = False
     origin: ObjectOrigin = field(default_factory=ObjectOrigin)
-    hitbox: ObjectHitbox = field(default_factory=ObjectHitbox)
+    colliders: list[ObjectCollider] = field(default_factory=lambda: [ObjectCollider("main")])
 
     @property
     def default_sprite(self) -> str:
@@ -89,7 +92,7 @@ class TortuObject:
             self.script,
             self.solid,
             self.origin.copy(),
-            self.hitbox.copy(),
+            [c.copy() for c in self.colliders],
         )
 
 
@@ -99,15 +102,21 @@ def _load_origin(raw: dict | None) -> ObjectOrigin:
     return ObjectOrigin(int(raw.get("x", 0)), int(raw.get("y", 0)))
 
 
-def _load_hitbox(raw: dict | None) -> ObjectHitbox:
-    if not raw:
-        return ObjectHitbox()
-    return ObjectHitbox(
-        int(raw.get("x", 0)),
-        int(raw.get("y", 0)),
-        int(raw.get("w", 0)),
-        int(raw.get("h", 0)),
-    )
+def _normalize_colliders(raw: list) -> list[ObjectCollider]:
+    colliders: list[ObjectCollider] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("name", "")).strip() or "collider"
+        colliders.append(ObjectCollider(
+            name=name,
+            x=int(entry.get("x", 0)),
+            y=int(entry.get("y", 0)),
+            w=int(entry.get("w", 0)),
+            h=int(entry.get("h", 0)),
+            active=bool(entry.get("active", True)),
+        ))
+    return colliders
 
 
 def _normalize_animations(raw: list) -> list[ObjectAnimation]:
@@ -134,6 +143,23 @@ def load_object(path: Path) -> TortuObject:
     default_animation = str(data.get("default_animation", "")).strip()
     if not default_animation or not any(a.name == default_animation for a in animations):
         default_animation = animations[0].name
+
+    colliders_raw = data.get("colliders")
+    if colliders_raw and isinstance(colliders_raw, list):
+        colliders = _normalize_colliders(colliders_raw)
+    else:
+        legacy = data.get("hitbox", {})
+        colliders = [ObjectCollider(
+            name="main",
+            x=int(legacy.get("x", 0)),
+            y=int(legacy.get("y", 0)),
+            w=int(legacy.get("w", 0)),
+            h=int(legacy.get("h", 0)),
+            active=True,
+        )]
+    if not colliders:
+        colliders = [ObjectCollider("main")]
+
     return TortuObject(
         name=name,
         animations=animations,
@@ -141,7 +167,7 @@ def load_object(path: Path) -> TortuObject:
         script=str(data.get("script", "")),
         solid=bool(data.get("solid", False)),
         origin=_load_origin(data.get("origin")),
-        hitbox=_load_hitbox(data.get("hitbox")),
+        colliders=colliders,
     )
 
 
@@ -162,12 +188,8 @@ def save_object(obj: TortuObject, path: Path) -> None:
         data["script"] = obj.script
     if obj.origin.x or obj.origin.y:
         data["origin"] = {"x": obj.origin.x, "y": obj.origin.y}
-    hitbox = obj.hitbox
-    if hitbox.x or hitbox.y or hitbox.w or hitbox.h:
-        data["hitbox"] = {
-            "x": hitbox.x,
-            "y": hitbox.y,
-            "w": hitbox.w,
-            "h": hitbox.h,
-        }
+    data["colliders"] = [
+        {"name": c.name, "x": c.x, "y": c.y, "w": c.w, "h": c.h, "active": c.active}
+        for c in obj.colliders
+    ]
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")

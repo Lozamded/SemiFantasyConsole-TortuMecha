@@ -29,6 +29,10 @@
     {
       "name": "air_attack",
       "sprite": "assets/sprites/mechaturtle_air_attack.tortusprite"
+    },
+    {
+      "name": "crouch",
+      "sprite": "assets/sprites/mechaturtle_crouch.tortusprite"
     }
   ],
   "solid": false,
@@ -37,10 +41,22 @@
     "x": 18,
     "y": 31
   },
-  "hitbox": {
-    "x": 11,
-    "y": 5,
-    "w": 16,
-    "h": 27
-  }
+  "colliders": [
+    {
+      "name": "body",
+      "x": 11,
+      "y": 18,
+      "w": 15,
+      "h": 14,
+      "active": true
+    },
+    {
+      "name": "head",
+      "x": 13,
+      "y": 5,
+      "w": 14,
+      "h": 12,
+      "active": true
+    }
+  ]
 }

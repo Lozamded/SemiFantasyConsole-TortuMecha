@@ -227,12 +227,10 @@ def _export_object(project: Project, object_rel: str, manifest_objects: dict[str
         "animations": {anim.name: anim.sprite for anim in tortu_object.animations},
         "solid": tortu_object.solid,
         "origin": {"x": tortu_object.origin.x, "y": tortu_object.origin.y},
-        "hitbox": {
-            "x": tortu_object.hitbox.x,
-            "y": tortu_object.hitbox.y,
-            "w": tortu_object.hitbox.w,
-            "h": tortu_object.hitbox.h,
-        },
+        "colliders": [
+            {"name": c.name, "x": c.x, "y": c.y, "w": c.w, "h": c.h, "active": c.active}
+            for c in tortu_object.colliders
+        ],
         "script": tortu_object.script,
     }
 

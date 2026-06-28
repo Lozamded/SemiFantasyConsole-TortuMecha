@@ -250,14 +250,39 @@ class SceneRenderer:
             raw = manifest.objects.get(prefab_path)
             if raw is None:
                 return None
-            from tortuengine.object import ObjectAnimation, ObjectHitbox, ObjectOrigin
+            from tortuengine.object import ObjectAnimation, ObjectCollider, ObjectOrigin
 
             animations = [
                 ObjectAnimation(name, sprite)
                 for name, sprite in raw.get("animations", {}).items()
             ]
             origin = raw.get("origin", {})
-            hitbox = raw.get("hitbox", {})
+            colliders_raw = raw.get("colliders")
+            if colliders_raw and isinstance(colliders_raw, list):
+                colliders = [
+                    ObjectCollider(
+                        name=str(c.get("name", "main")),
+                        x=int(c.get("x", 0)),
+                        y=int(c.get("y", 0)),
+                        w=int(c.get("w", 0)),
+                        h=int(c.get("h", 0)),
+                        active=bool(c.get("active", True)),
+                    )
+                    for c in colliders_raw
+                    if isinstance(c, dict)
+                ]
+            else:
+                legacy = raw.get("hitbox", {})
+                colliders = [ObjectCollider(
+                    "main",
+                    int(legacy.get("x", 0)),
+                    int(legacy.get("y", 0)),
+                    int(legacy.get("w", 0)),
+                    int(legacy.get("h", 0)),
+                    True,
+                )]
+            if not colliders:
+                colliders = [ObjectCollider("main")]
             return TortuObject(
                 name=str(raw.get("name", Path(prefab_path).stem)),
                 animations=animations,
@@ -265,12 +290,7 @@ class SceneRenderer:
                 script=str(raw.get("script", "")),
                 solid=bool(raw.get("solid", False)),
                 origin=ObjectOrigin(int(origin.get("x", 0)), int(origin.get("y", 0))),
-                hitbox=ObjectHitbox(
-                    int(hitbox.get("x", 0)),
-                    int(hitbox.get("y", 0)),
-                    int(hitbox.get("w", 0)),
-                    int(hitbox.get("h", 0)),
-                ),
+                colliders=colliders,
             )
         if prefab_path in self._objects:
             return self._objects[prefab_path]

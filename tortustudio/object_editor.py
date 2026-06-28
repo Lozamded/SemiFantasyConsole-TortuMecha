@@ -1,4 +1,4 @@
-"""Object editor — define prefabs (sprite, script, hitbox) for scene placement."""
+"""Object editor — define prefabs (sprite, script, colliders) for scene placement."""
 
 from __future__ import annotations
 
@@ -29,7 +29,9 @@ from PyQt6.QtWidgets import (
 from tortuengine.project import load_project
 from tortuengine.object import (
     MAX_OBJECT_ANIMATIONS,
+    MAX_OBJECT_COLLIDERS,
     ObjectAnimation,
+    ObjectCollider,
     TortuObject,
     load_object,
     save_object,
@@ -39,16 +41,21 @@ from tortuengine.sprite import Sprite, load_sprite
 from tortustudio.asset_drag import SpriteDropCombo
 from tortustudio.scene_assets import list_sprite_paths
 
+# (x, y, w, h, active) — resolved pixel sizes (no 0-means-full convention)
+_ColliderTuple = tuple[int, int, int, int, bool]
+
 
 class ObjectPreviewCanvas(QWidget):
-    """Sprite preview with origin and optional hitbox overlay."""
+    """Sprite preview with origin and collider overlays."""
 
-    HITBOX_COLOR = (255, 220, 80, 180)
+    HITBOX_SELECTED_COLOR = (255, 220, 80, 210)   # current collider: yellow
+    HITBOX_ACTIVE_COLOR = (80, 180, 220, 130)     # other active: blue-teal
+    HITBOX_INACTIVE_COLOR = (200, 80, 60, 110)    # inactive: dim red
     ORIGIN_COLOR = (255, 100, 100, 220)
 
     origin_clicked = pyqtSignal(int, int)
-    hitbox_moved = pyqtSignal(int, int)
-    hitbox_resized = pyqtSignal(int, int, int, int)  # x, y, w, h
+    collider_moved = pyqtSignal(int, int)         # x, y of selected collider
+    collider_resized = pyqtSignal(int, int, int, int)  # x, y, w, h of selected collider
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -57,9 +64,11 @@ class ObjectPreviewCanvas(QWidget):
         self._frame: QImage | None = None
         self._sprite_w = 0
         self._sprite_h = 0
-        self._hitbox: tuple[int, int, int, int] | None = None
+        self._colliders: list[_ColliderTuple] = []
+        self._selected_collider_idx: int = 0
         self._origin = (0, 0)
-        self._show_hitbox = True
+        self._show_colliders = True
+        self._show_all_colliders = True
         self._show_origin = True
         self._dragging_origin = False
         self._hitbox_selected = False
@@ -72,10 +81,14 @@ class ObjectPreviewCanvas(QWidget):
         self.setMinimumSize(120, 120)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setToolTip("Drag the origin marker to move it")
+        self.setToolTip("Click collider border to select; drag move icon to move; drag arrows to resize")
 
-    def set_show_hitbox(self, visible: bool) -> None:
-        self._show_hitbox = visible
+    def set_show_colliders(self, visible: bool) -> None:
+        self._show_colliders = visible
+        self.update()
+
+    def set_show_all_colliders(self, visible: bool) -> None:
+        self._show_all_colliders = visible
         self.update()
 
     def set_show_origin(self, visible: bool) -> None:
@@ -90,14 +103,16 @@ class ObjectPreviewCanvas(QWidget):
         self,
         surface: pygame.Surface | None,
         *,
-        hitbox: tuple[int, int, int, int] | None = None,
+        colliders: list[_ColliderTuple] | None = None,
+        selected_collider: int = 0,
         origin: tuple[int, int] = (0, 0),
     ) -> None:
         if surface is None:
             self._frame = None
             self._sprite_w = 0
             self._sprite_h = 0
-            self._hitbox = None
+            self._colliders = []
+            self._selected_collider_idx = 0
             self._origin = (0, 0)
             self.update()
             return
@@ -106,10 +121,13 @@ class ObjectPreviewCanvas(QWidget):
         self._frame = QImage(data, w, h, w * 4, QImage.Format.Format_RGBA8888)
         self._sprite_w = w
         self._sprite_h = h
-        self._hitbox = hitbox
+        self._colliders = colliders if colliders is not None else []
+        self._selected_collider_idx = selected_collider
         self._origin = origin
         self.setMinimumSize(w * self.zoom + 32, h * self.zoom + 32)
         self.update()
+
+    # ── geometry helpers ──────────────────────────────────────────────────────
 
     def _sprite_offset(self) -> tuple[int, int, int, int]:
         sw = self._sprite_w * self.zoom
@@ -128,6 +146,11 @@ class ObjectPreviewCanvas(QWidget):
             return None
         return int(px), int(py)
 
+    def _selected_collider_tuple(self) -> _ColliderTuple | None:
+        if not self._colliders or self._selected_collider_idx >= len(self._colliders):
+            return None
+        return self._colliders[self._selected_collider_idx]
+
     def _is_near_origin(self, event: QMouseEvent, threshold: int = 8) -> bool:
         if not self._show_origin or self._frame is None:
             return False
@@ -140,10 +163,13 @@ class ObjectPreviewCanvas(QWidget):
         return dx * dx + dy * dy <= threshold * threshold
 
     def _is_near_hitbox_border(self, mx: float, my: float, threshold: int = 8) -> bool:
-        if not self._show_hitbox or self._hitbox is None or self._frame is None:
+        if not self._show_colliders or self._frame is None:
+            return False
+        c = self._selected_collider_tuple()
+        if c is None:
             return False
         ox, oy, _sw, _sh = self._sprite_offset()
-        hx, hy, hw, hh = self._hitbox
+        hx, hy, hw, hh = c[0], c[1], c[2], c[3]
         sx0 = ox + hx * self.zoom
         sy0 = oy + hy * self.zoom
         sx1 = sx0 + hw * self.zoom
@@ -153,18 +179,19 @@ class ObjectPreviewCanvas(QWidget):
         return in_outer and not in_inner
 
     def _hitbox_center_screen(self) -> tuple[int, int] | None:
-        if self._hitbox is None:
+        c = self._selected_collider_tuple()
+        if c is None:
             return None
         ox, oy, _sw, _sh = self._sprite_offset()
-        hx, hy, hw, hh = self._hitbox
+        hx, hy, hw, hh = c[0], c[1], c[2], c[3]
         return int(ox + (hx + hw / 2) * self.zoom), int(oy + (hy + hh / 2) * self.zoom)
 
     def _get_arrow_positions(self) -> dict[str, tuple[float, float]]:
-        """Center screen positions of the 4 resize arrows on each side."""
-        if self._hitbox is None or self._frame is None:
+        c = self._selected_collider_tuple()
+        if c is None or self._frame is None:
             return {}
         ox, oy, _sw, _sh = self._sprite_offset()
-        hx, hy, hw, hh = self._hitbox
+        hx, hy, hw, hh = c[0], c[1], c[2], c[3]
         sx0 = ox + hx * self.zoom
         sy0 = oy + hy * self.zoom
         sx1 = sx0 + hw * self.zoom
@@ -179,13 +206,14 @@ class ObjectPreviewCanvas(QWidget):
         }
 
     def _get_arrow_hit(self, mx: float, my: float, radius: int = 12) -> str | None:
-        """Return which resize arrow is at (mx, my), or None."""
         if not self._hitbox_selected:
             return None
         for edge, (ax, ay) in self._get_arrow_positions().items():
             if (mx - ax) ** 2 + (my - ay) ** 2 <= radius * radius:
                 return edge
         return None
+
+    # ── drawing helpers ───────────────────────────────────────────────────────
 
     def _draw_move_icon(self, painter: QPainter, cx: int, cy: int) -> None:
         arm, tip = 10, 5
@@ -226,17 +254,21 @@ class ObjectPreviewCanvas(QWidget):
         painter.setBrush(QColor(255, 255, 255, 220))
         painter.drawPolygon(poly)
 
+    # ── mouse events ──────────────────────────────────────────────────────────
+
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() != Qt.MouseButton.LeftButton:
             return
         mx, my = event.position().x(), event.position().y()
 
-        if self._hitbox_selected and self._hitbox is not None:
+        if self._hitbox_selected and self._selected_collider_tuple() is not None:
             arrow = self._get_arrow_hit(mx, my)
             if arrow is not None:
                 self._dragging_resize = arrow
                 self._drag_start_screen = (mx, my)
-                self._drag_start_hitbox = tuple(self._hitbox)  # type: ignore[assignment]
+                c = self._selected_collider_tuple()
+                assert c is not None
+                self._drag_start_hitbox = (c[0], c[1], c[2], c[3])
                 return
             center = self._hitbox_center_screen()
             if center is not None:
@@ -244,7 +276,9 @@ class ObjectPreviewCanvas(QWidget):
                 if cdx * cdx + cdy * cdy <= 14 * 14:
                     self._dragging_hitbox = True
                     self._drag_start_screen = (mx, my)
-                    self._drag_start_hitbox_pos = (self._hitbox[0], self._hitbox[1])
+                    c = self._selected_collider_tuple()
+                    assert c is not None
+                    self._drag_start_hitbox_pos = (c[0], c[1])
                     return
 
         if self._is_near_hitbox_border(mx, my):
@@ -272,41 +306,43 @@ class ObjectPreviewCanvas(QWidget):
             return
 
         if self._dragging_resize is not None and event.buttons() & Qt.MouseButton.LeftButton:
-            if self._drag_start_screen and self._drag_start_hitbox and self._hitbox:
-                dx_px = int((event.position().x() - self._drag_start_screen[0]) / self.zoom)
-                dy_px = int((event.position().y() - self._drag_start_screen[1]) / self.zoom)
-                ox, oy, ow, oh = self._drag_start_hitbox
-                if self._dragging_resize == 'top':
-                    dy = max(-oy, min(oh - 1, dy_px))
-                    self._hitbox = (ox, oy + dy, ow, oh - dy)
-                    self.hitbox_resized.emit(ox, oy + dy, ow, oh - dy)
-                elif self._dragging_resize == 'bottom':
-                    dy = max(1 - oh, min(self._sprite_h - oy - oh, dy_px))
-                    self._hitbox = (ox, oy, ow, oh + dy)
-                    self.hitbox_resized.emit(ox, oy, ow, oh + dy)
-                elif self._dragging_resize == 'left':
-                    dx = max(-ox, min(ow - 1, dx_px))
-                    self._hitbox = (ox + dx, oy, ow - dx, oh)
-                    self.hitbox_resized.emit(ox + dx, oy, ow - dx, oh)
-                elif self._dragging_resize == 'right':
-                    dx = max(1 - ow, min(self._sprite_w - ox - ow, dx_px))
-                    self._hitbox = (ox, oy, ow + dx, oh)
-                    self.hitbox_resized.emit(ox, oy, ow + dx, oh)
-                self.update()
+            if self._drag_start_screen and self._drag_start_hitbox:
+                c = self._selected_collider_tuple()
+                if c is not None:
+                    dx_px = int((event.position().x() - self._drag_start_screen[0]) / self.zoom)
+                    dy_px = int((event.position().y() - self._drag_start_screen[1]) / self.zoom)
+                    ox, oy, ow, oh = self._drag_start_hitbox
+                    active = c[4]
+                    if self._dragging_resize == 'top':
+                        dy = max(-oy, min(oh - 1, dy_px))
+                        self._update_selected_collider(ox, oy + dy, ow, oh - dy, active)
+                        self.collider_resized.emit(ox, oy + dy, ow, oh - dy)
+                    elif self._dragging_resize == 'bottom':
+                        dy = max(1 - oh, min(self._sprite_h - oy - oh, dy_px))
+                        self._update_selected_collider(ox, oy, ow, oh + dy, active)
+                        self.collider_resized.emit(ox, oy, ow, oh + dy)
+                    elif self._dragging_resize == 'left':
+                        dx = max(-ox, min(ow - 1, dx_px))
+                        self._update_selected_collider(ox + dx, oy, ow - dx, oh, active)
+                        self.collider_resized.emit(ox + dx, oy, ow - dx, oh)
+                    elif self._dragging_resize == 'right':
+                        dx = max(1 - ow, min(self._sprite_w - ox - ow, dx_px))
+                        self._update_selected_collider(ox, oy, ow + dx, oh, active)
+                        self.collider_resized.emit(ox, oy, ow + dx, oh)
+                    self.update()
             return
 
         if self._dragging_hitbox and event.buttons() & Qt.MouseButton.LeftButton:
-            if self._drag_start_screen and self._drag_start_hitbox_pos and self._hitbox:
-                dx = int((event.position().x() - self._drag_start_screen[0]) / self.zoom)
-                dy = int((event.position().y() - self._drag_start_screen[1]) / self.zoom)
-                new_x = self._drag_start_hitbox_pos[0] + dx
-                new_y = self._drag_start_hitbox_pos[1] + dy
-                hw, hh = self._hitbox[2], self._hitbox[3]
-                new_x = max(0, min(self._sprite_w - hw, new_x))
-                new_y = max(0, min(self._sprite_h - hh, new_y))
-                self._hitbox = (new_x, new_y, hw, hh)
-                self.hitbox_moved.emit(new_x, new_y)
-                self.update()
+            if self._drag_start_screen and self._drag_start_hitbox_pos:
+                c = self._selected_collider_tuple()
+                if c is not None:
+                    dx = int((event.position().x() - self._drag_start_screen[0]) / self.zoom)
+                    dy = int((event.position().y() - self._drag_start_screen[1]) / self.zoom)
+                    new_x = max(0, min(self._sprite_w - c[2], self._drag_start_hitbox_pos[0] + dx))
+                    new_y = max(0, min(self._sprite_h - c[3], self._drag_start_hitbox_pos[1] + dy))
+                    self._update_selected_collider(new_x, new_y, c[2], c[3], c[4])
+                    self.collider_moved.emit(new_x, new_y)
+                    self.update()
             return
 
         mx, my = event.position().x(), event.position().y()
@@ -335,6 +371,14 @@ class ObjectPreviewCanvas(QWidget):
             self._drag_start_hitbox_pos = None
             self._drag_start_hitbox = None
 
+    def _update_selected_collider(self, x: int, y: int, w: int, h: int, active: bool) -> None:
+        if 0 <= self._selected_collider_idx < len(self._colliders):
+            lst = list(self._colliders)
+            lst[self._selected_collider_idx] = (x, y, w, h, active)
+            self._colliders = lst
+
+    # ── paint ─────────────────────────────────────────────────────────────────
+
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.fillRect(self.rect(), Qt.GlobalColor.darkGray)
@@ -342,13 +386,9 @@ class ObjectPreviewCanvas(QWidget):
             painter.end()
             return
 
-        sw = self._sprite_w * self.zoom
-        sh = self._sprite_h * self.zoom
         ox, oy, sw, sh = self._sprite_offset()
-
         scaled = self._frame.scaled(
-            sw,
-            sh,
+            sw, sh,
             Qt.AspectRatioMode.IgnoreAspectRatio,
             Qt.TransformationMode.FastTransformation,
         )
@@ -366,19 +406,29 @@ class ObjectPreviewCanvas(QWidget):
             painter.drawLine(int(cx), int(cy - 6), int(cx), int(cy + 6))
             painter.drawEllipse(int(cx - 3), int(cy - 3), 6, 6)
 
-        if self._show_hitbox and self._hitbox is not None:
-            hx, hy, hw, hh = self._hitbox
-            pen = QPen(QColor(*self.HITBOX_COLOR))
-            pen.setWidth(2)
-            pen.setCosmetic(True)
-            painter.setPen(pen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRect(
-                ox + hx * self.zoom,
-                oy + hy * self.zoom,
-                hw * self.zoom,
-                hh * self.zoom,
-            )
+        if self._show_colliders:
+            for i, (hx, hy, hw, hh, active) in enumerate(self._colliders):
+                is_selected = (i == self._selected_collider_idx)
+                if not is_selected and not self._show_all_colliders:
+                    continue
+                if is_selected:
+                    color = QColor(*self.HITBOX_SELECTED_COLOR)
+                elif active:
+                    color = QColor(*self.HITBOX_ACTIVE_COLOR)
+                else:
+                    color = QColor(*self.HITBOX_INACTIVE_COLOR)
+                pen = QPen(color)
+                pen.setWidth(2 if is_selected else 1)
+                pen.setCosmetic(True)
+                painter.setPen(pen)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRect(
+                    ox + hx * self.zoom,
+                    oy + hy * self.zoom,
+                    hw * self.zoom,
+                    hh * self.zoom,
+                )
+
             if self._hitbox_selected or self._dragging_hitbox or self._dragging_resize:
                 center = self._hitbox_center_screen()
                 if center is not None:
@@ -410,8 +460,8 @@ class ObjectEditorWidget(QWidget):
 
         self.preview = ObjectPreviewCanvas()
         self.preview.origin_clicked.connect(self._on_preview_origin_clicked)
-        self.preview.hitbox_moved.connect(self._on_preview_hitbox_moved)
-        self.preview.hitbox_resized.connect(self._on_preview_hitbox_resized)
+        self.preview.collider_moved.connect(self._on_preview_collider_moved)
+        self.preview.collider_resized.connect(self._on_preview_collider_resized)
 
         self.btn_save = QPushButton("Save object")
         self.btn_save.clicked.connect(self.save)
@@ -485,21 +535,40 @@ class ObjectEditorWidget(QWidget):
         self.show_origin.setChecked(True)
         self.show_origin.toggled.connect(self.preview.set_show_origin)
 
+
+        self.show_all_colliders = QCheckBox("Show all colliders")
+        self.show_all_colliders.setChecked(True)
+        self.show_all_colliders.toggled.connect(self.preview.set_show_all_colliders)
+
+        # Collider list
+        self.collider_combo = QComboBox()
+        self.collider_combo.currentIndexChanged.connect(self._on_collider_selection_changed)
+        self.btn_add_collider = QPushButton("Add")
+        self.btn_add_collider.clicked.connect(self._add_collider)
+        self.btn_remove_collider = QPushButton("Remove")
+        self.btn_remove_collider.clicked.connect(self._remove_collider)
+
+        self.collider_name_edit = QLineEdit()
+        self.collider_name_edit.textChanged.connect(self._on_collider_name_changed)
+
+        self.collider_active = QCheckBox("Active by default")
+        self.collider_active.toggled.connect(self._on_collider_active_changed)
+
         self.hitbox_x = QSpinBox()
         self.hitbox_y = QSpinBox()
         self.hitbox_w = QSpinBox()
         self.hitbox_h = QSpinBox()
         for spin in (self.hitbox_x, self.hitbox_y, self.hitbox_w, self.hitbox_h):
             spin.setRange(0, 512)
-            spin.valueChanged.connect(self._on_hitbox_changed)
+            spin.valueChanged.connect(self._on_collider_dims_changed)
 
-        self.hitbox_full_sprite = QCheckBox("Full sprite hitbox")
+        self.hitbox_full_sprite = QCheckBox("Full sprite")
         self.hitbox_full_sprite.setChecked(True)
-        self.hitbox_full_sprite.toggled.connect(self._on_hitbox_full_toggled)
+        self.hitbox_full_sprite.toggled.connect(self._on_collider_full_toggled)
 
-        self.show_hitbox = QCheckBox("Show hitbox on preview")
-        self.show_hitbox.setChecked(True)
-        self.show_hitbox.toggled.connect(self.preview.set_show_hitbox)
+        self.show_colliders = QCheckBox("Show colliders on preview")
+        self.show_colliders.setChecked(True)
+        self.show_colliders.toggled.connect(self.preview.set_show_colliders)
 
         self.preview_frame = QSpinBox()
         self.preview_frame.setRange(0, 0)
@@ -539,6 +608,12 @@ class ObjectEditorWidget(QWidget):
         preview_layout.addWidget(preview_scroll)
         body.addWidget(preview_group, stretch=1)
 
+        # Collider selector row
+        collider_row = QHBoxLayout()
+        collider_row.addWidget(self.collider_combo, stretch=1)
+        collider_row.addWidget(self.btn_add_collider)
+        collider_row.addWidget(self.btn_remove_collider)
+
         form = QFormLayout()
         form.addRow("Display name:", self.name_edit)
         form.addRow("Script:", self._script_container)
@@ -556,13 +631,17 @@ class ObjectEditorWidget(QWidget):
         form.addRow("X:", self.origin_x)
         form.addRow("Y:", self.origin_y)
         form.addRow("", self.show_origin)
-        form.addRow(QLabel("<b>Hitbox</b> (sprite pixels)"))
+        form.addRow(QLabel("<b>Colliders</b>"))
+        form.addRow("", self.show_all_colliders)
+        form.addRow("Collider:", collider_row)
+        form.addRow("Name:", self.collider_name_edit)
+        form.addRow("", self.collider_active)
         form.addRow("", self.hitbox_full_sprite)
         form.addRow("X:", self.hitbox_x)
         form.addRow("Y:", self.hitbox_y)
         form.addRow("Width:", self.hitbox_w)
         form.addRow("Height:", self.hitbox_h)
-        form.addRow("", self.show_hitbox)
+        form.addRow("", self.show_colliders)
         form.addRow("Preview frame:", self.preview_frame)
         form.addRow("", self.preview_animate)
         form.addRow("Zoom:", self.zoom_spin)
@@ -572,6 +651,8 @@ class ObjectEditorWidget(QWidget):
         side_layout.addLayout(form)
         side_layout.addStretch()
         body.addWidget(side)
+
+    # ── state helpers ─────────────────────────────────────────────────────────
 
     def _mark_dirty(self) -> None:
         self._dirty = True
@@ -588,6 +669,19 @@ class ObjectEditorWidget(QWidget):
         if self.animation_combo.count() == 0:
             return -1
         return self.animation_combo.currentIndex()
+
+    def _active_collider_index(self) -> int:
+        if self.collider_combo.count() == 0:
+            return -1
+        return self.collider_combo.currentIndex()
+
+    def _active_collider(self) -> ObjectCollider | None:
+        if not self.tortu_object:
+            return None
+        idx = self._active_collider_index()
+        if 0 <= idx < len(self.tortu_object.colliders):
+            return self.tortu_object.colliders[idx]
+        return None
 
     def _set_combo_sprite(self, combo: QComboBox, rel_path: str) -> None:
         if not rel_path:
@@ -615,6 +709,8 @@ class ObjectEditorWidget(QWidget):
             return
         self._set_combo_sprite(self.anim_sprite_combo, rel_path)
         self._on_animation_sprite_changed(self.anim_sprite_combo.currentIndex())
+
+    # ── animation controls ────────────────────────────────────────────────────
 
     def _sync_animation_controls(self) -> None:
         if not self.tortu_object:
@@ -667,6 +763,74 @@ class ObjectEditorWidget(QWidget):
         if rel:
             anim.sprite = str(rel)
 
+    # ── collider controls ─────────────────────────────────────────────────────
+
+    def _sync_collider_controls(self) -> None:
+        if not self.tortu_object:
+            self.collider_combo.blockSignals(True)
+            self.collider_combo.clear()
+            self.collider_combo.blockSignals(False)
+            self.btn_add_collider.setEnabled(False)
+            self.btn_remove_collider.setEnabled(False)
+            return
+
+        active_idx = self._active_collider_index()
+        self.collider_combo.blockSignals(True)
+        self.collider_combo.clear()
+        for i, c in enumerate(self.tortu_object.colliders):
+            label = f"{i}: {c.name}" + ("" if c.active else " (inactive)")
+            self.collider_combo.addItem(label, i)
+        pick = min(max(active_idx, 0), len(self.tortu_object.colliders) - 1)
+        self.collider_combo.setCurrentIndex(pick)
+        self.collider_combo.blockSignals(False)
+
+        self.btn_add_collider.setEnabled(len(self.tortu_object.colliders) < MAX_OBJECT_COLLIDERS)
+        self.btn_remove_collider.setEnabled(len(self.tortu_object.colliders) > 1)
+
+        c = self._active_collider()
+        if c is not None:
+            self._load_collider_fields(c)
+
+    def _load_collider_fields(self, c: ObjectCollider) -> None:
+        self.collider_name_edit.blockSignals(True)
+        self.collider_active.blockSignals(True)
+        self.hitbox_full_sprite.blockSignals(True)
+        self.hitbox_x.blockSignals(True)
+        self.hitbox_y.blockSignals(True)
+        self.hitbox_w.blockSignals(True)
+        self.hitbox_h.blockSignals(True)
+
+        self.collider_name_edit.setText(c.name)
+        self.collider_active.setChecked(c.active)
+        full = (c.w == 0 and c.h == 0 and c.x == 0 and c.y == 0)
+        self.hitbox_full_sprite.setChecked(full)
+
+        enabled = not full
+        for spin in (self.hitbox_x, self.hitbox_y, self.hitbox_w, self.hitbox_h):
+            spin.setEnabled(enabled)
+
+        if self._sprite:
+            sw, sh = self._sprite.pixel_width, self._sprite.pixel_height
+            rx, ry, rw, rh = c.resolved(sw, sh)
+            self.hitbox_x.setMaximum(max(0, sw - 1))
+            self.hitbox_y.setMaximum(max(0, sh - 1))
+            self.hitbox_w.setMaximum(sw)
+            self.hitbox_h.setMaximum(sh)
+            self.hitbox_x.setValue(c.x if not full else 0)
+            self.hitbox_y.setValue(c.y if not full else 0)
+            self.hitbox_w.setValue(rw if not full else sw)
+            self.hitbox_h.setValue(rh if not full else sh)
+
+        self.collider_name_edit.blockSignals(False)
+        self.collider_active.blockSignals(False)
+        self.hitbox_full_sprite.blockSignals(False)
+        self.hitbox_x.blockSignals(False)
+        self.hitbox_y.blockSignals(False)
+        self.hitbox_w.blockSignals(False)
+        self.hitbox_h.blockSignals(False)
+
+    # ── preview helpers ───────────────────────────────────────────────────────
+
     def _preview_sprite_path(self) -> str:
         if not self.tortu_object or not self.tortu_object.animations:
             return ""
@@ -696,17 +860,15 @@ class ObjectEditorWidget(QWidget):
             return False
         return True
 
-    def _sync_sprite_combo(self) -> None:
-        """Legacy hook — animation controls own sprite pickers now."""
-        self._sync_animation_controls()
-
-    def _resolved_hitbox(self) -> tuple[int, int, int, int] | None:
-        if not self._sprite:
-            return None
-        obj = self.tortu_object
-        if obj is None:
-            return None
-        return obj.hitbox.resolved(self._sprite.pixel_width, self._sprite.pixel_height)
+    def _resolved_colliders(self) -> list[_ColliderTuple]:
+        if not self.tortu_object or not self._sprite:
+            return []
+        sw, sh = self._sprite.pixel_width, self._sprite.pixel_height
+        result = []
+        for c in self.tortu_object.colliders:
+            rx, ry, rw, rh = c.resolved(sw, sh)
+            result.append((rx, ry, rw, rh, c.active))
+        return result
 
     def _refresh_preview(self) -> None:
         if not self._sprite or not self._palette_colors:
@@ -719,7 +881,8 @@ class ObjectEditorWidget(QWidget):
             origin = (self.tortu_object.origin.x, self.tortu_object.origin.y)
         self.preview.set_preview(
             surface,
-            hitbox=self._resolved_hitbox(),
+            colliders=self._resolved_colliders(),
+            selected_collider=max(0, self._active_collider_index()),
             origin=origin,
         )
 
@@ -738,50 +901,15 @@ class ObjectEditorWidget(QWidget):
         self.origin_x.blockSignals(False)
         self.origin_y.blockSignals(False)
 
-    def _refresh_hitbox_controls(self) -> None:
-        if not self.tortu_object or not self._sprite:
-            return
+    def _refresh_collider_controls(self) -> None:
         self._refresh_origin_controls()
-        full = (
-            self.tortu_object.hitbox.w == 0
-            and self.tortu_object.hitbox.h == 0
-            and self.tortu_object.hitbox.x == 0
-            and self.tortu_object.hitbox.y == 0
-        )
-        self.hitbox_full_sprite.blockSignals(True)
-        self.hitbox_full_sprite.setChecked(full)
-        self.hitbox_full_sprite.blockSignals(False)
+        self._sync_collider_controls()
 
-        enabled = not full
-        for spin in (self.hitbox_x, self.hitbox_y, self.hitbox_w, self.hitbox_h):
-            spin.setEnabled(enabled)
-
-        max_w = self._sprite.pixel_width
-        max_h = self._sprite.pixel_height
-        hb = self.tortu_object.hitbox
-        rx, ry, rw, rh = hb.resolved(max_w, max_h)
-
-        self.hitbox_x.blockSignals(True)
-        self.hitbox_y.blockSignals(True)
-        self.hitbox_w.blockSignals(True)
-        self.hitbox_h.blockSignals(True)
-        self.hitbox_x.setMaximum(max(0, max_w - 1))
-        self.hitbox_y.setMaximum(max(0, max_h - 1))
-        self.hitbox_w.setMaximum(max_w)
-        self.hitbox_h.setMaximum(max_h)
-        self.hitbox_x.setValue(hb.x if not full else 0)
-        self.hitbox_y.setValue(hb.y if not full else 0)
-        self.hitbox_w.setValue(rw if not full else max_w)
-        self.hitbox_h.setValue(rh if not full else max_h)
-        self.hitbox_x.blockSignals(False)
-        self.hitbox_y.blockSignals(False)
-        self.hitbox_w.blockSignals(False)
-        self.hitbox_h.blockSignals(False)
-
-        self.preview_frame.blockSignals(True)
-        self.preview_frame.setMaximum(max(0, self._sprite.frame_count - 1))
-        self.preview_frame.setValue(min(self._preview_frame, self._sprite.frame_count - 1))
-        self.preview_frame.blockSignals(False)
+        if self._sprite:
+            self.preview_frame.blockSignals(True)
+            self.preview_frame.setMaximum(max(0, self._sprite.frame_count - 1))
+            self.preview_frame.setValue(min(self._preview_frame, self._sprite.frame_count - 1))
+            self.preview_frame.blockSignals(False)
 
     def _refresh_editor(self) -> None:
         if not self.tortu_object:
@@ -799,7 +927,7 @@ class ObjectEditorWidget(QWidget):
         self._refresh_script_row()
         self._sync_animation_controls()
         if self._load_sprite_asset():
-            self._refresh_hitbox_controls()
+            self._refresh_collider_controls()
             self._refresh_preview()
 
     def _apply_fields_to_object(self) -> None:
@@ -811,6 +939,8 @@ class ObjectEditorWidget(QWidget):
             self._save_animation_fields(self.tortu_object.animations[index])
         self.tortu_object.script = self.script_edit.text().strip()
         self.tortu_object.solid = self.solid.isChecked()
+
+    # ── field signal handlers ─────────────────────────────────────────────────
 
     def _on_fields_changed(self) -> None:
         self._apply_fields_to_object()
@@ -824,7 +954,7 @@ class ObjectEditorWidget(QWidget):
         self._load_animation_fields(self.tortu_object.animations[index])
         self._preview_frame = 0
         if self._load_sprite_asset():
-            self._refresh_hitbox_controls()
+            self._refresh_collider_controls()
             self._refresh_preview()
 
     def _on_animation_fields_changed(self) -> None:
@@ -860,7 +990,7 @@ class ObjectEditorWidget(QWidget):
         self._preview_frame = 0
         self._mark_dirty()
         if self._load_sprite_asset():
-            self._refresh_hitbox_controls()
+            self._refresh_collider_controls()
             self._refresh_preview()
 
     def _on_default_animation_changed(self, _index: int) -> None:
@@ -894,7 +1024,7 @@ class ObjectEditorWidget(QWidget):
         self._sync_animation_controls()
         self.animation_combo.setCurrentIndex(len(self.tortu_object.animations) - 1)
         if self._load_sprite_asset():
-            self._refresh_hitbox_controls()
+            self._refresh_collider_controls()
             self._refresh_preview()
 
     def _remove_animation(self) -> None:
@@ -912,8 +1042,73 @@ class ObjectEditorWidget(QWidget):
         self._mark_dirty()
         self._sync_animation_controls()
         if self._load_sprite_asset():
-            self._refresh_hitbox_controls()
+            self._refresh_collider_controls()
             self._refresh_preview()
+
+    def _on_collider_selection_changed(self, index: int) -> None:
+        if not self.tortu_object or index < 0:
+            return
+        c = self._active_collider()
+        if c is not None:
+            self._load_collider_fields(c)
+        self._refresh_preview()
+
+    def _on_collider_name_changed(self) -> None:
+        c = self._active_collider()
+        if c is None:
+            return
+        name = self.collider_name_edit.text().strip().replace(" ", "_") or "collider"
+        c.name = name
+        idx = self._active_collider_index()
+        self.collider_combo.blockSignals(True)
+        label = f"{idx}: {c.name}" + ("" if c.active else " (inactive)")
+        self.collider_combo.setItemText(idx, label)
+        self.collider_combo.blockSignals(False)
+        self._mark_dirty()
+
+    def _on_collider_active_changed(self, active: bool) -> None:
+        c = self._active_collider()
+        if c is None:
+            return
+        c.active = active
+        idx = self._active_collider_index()
+        self.collider_combo.blockSignals(True)
+        label = f"{idx}: {c.name}" + ("" if c.active else " (inactive)")
+        self.collider_combo.setItemText(idx, label)
+        self.collider_combo.blockSignals(False)
+        self._refresh_preview()
+        self._mark_dirty()
+
+    def _add_collider(self) -> None:
+        if not self.tortu_object:
+            return
+        if len(self.tortu_object.colliders) >= MAX_OBJECT_COLLIDERS:
+            QMessageBox.warning(self, "Add Collider", f"Maximum {MAX_OBJECT_COLLIDERS} colliders.")
+            return
+        base = "collider"
+        n = 1
+        names = {c.name for c in self.tortu_object.colliders}
+        while f"{base}{n}" in names:
+            n += 1
+        self.tortu_object.colliders.append(ObjectCollider(f"{base}{n}"))
+        self._mark_dirty()
+        self._sync_collider_controls()
+        self.collider_combo.setCurrentIndex(len(self.tortu_object.colliders) - 1)
+        self._refresh_preview()
+
+    def _remove_collider(self) -> None:
+        if not self.tortu_object:
+            return
+        idx = self._active_collider_index()
+        if idx < 0:
+            return
+        if len(self.tortu_object.colliders) <= 1:
+            QMessageBox.warning(self, "Remove Collider", "Keep at least one collider.")
+            return
+        self.tortu_object.colliders.pop(idx)
+        self._mark_dirty()
+        self._sync_collider_controls()
+        self._refresh_preview()
 
     def _on_origin_changed(self) -> None:
         if not self.tortu_object:
@@ -937,53 +1132,57 @@ class ObjectEditorWidget(QWidget):
         self._refresh_preview()
         self._mark_dirty()
 
-    def _on_preview_hitbox_moved(self, x: int, y: int) -> None:
-        if not self.tortu_object or not self._sprite:
+    def _on_preview_collider_moved(self, x: int, y: int) -> None:
+        c = self._active_collider()
+        if c is None or not self._sprite:
             return
         if self.hitbox_full_sprite.isChecked():
             self.hitbox_full_sprite.blockSignals(True)
             self.hitbox_full_sprite.setChecked(False)
             self.hitbox_full_sprite.blockSignals(False)
-            self.tortu_object.hitbox.w = self._sprite.pixel_width
-            self.tortu_object.hitbox.h = self._sprite.pixel_height
-        self.tortu_object.hitbox.x = x
-        self.tortu_object.hitbox.y = y
-        self._refresh_hitbox_controls()
+            c.w = self._sprite.pixel_width
+            c.h = self._sprite.pixel_height
+        c.x = x
+        c.y = y
+        self._load_collider_fields(c)
         self._mark_dirty()
 
-    def _on_preview_hitbox_resized(self, x: int, y: int, w: int, h: int) -> None:
-        if not self.tortu_object or not self._sprite:
+    def _on_preview_collider_resized(self, x: int, y: int, w: int, h: int) -> None:
+        c = self._active_collider()
+        if c is None:
             return
         if self.hitbox_full_sprite.isChecked():
             self.hitbox_full_sprite.blockSignals(True)
             self.hitbox_full_sprite.setChecked(False)
             self.hitbox_full_sprite.blockSignals(False)
-        self.tortu_object.hitbox.x = x
-        self.tortu_object.hitbox.y = y
-        self.tortu_object.hitbox.w = max(1, w)
-        self.tortu_object.hitbox.h = max(1, h)
-        self._refresh_hitbox_controls()
+        c.x = x
+        c.y = y
+        c.w = max(1, w)
+        c.h = max(1, h)
+        self._load_collider_fields(c)
         self._mark_dirty()
 
-    def _on_hitbox_full_toggled(self, full: bool) -> None:
-        if not self.tortu_object or not self._sprite:
+    def _on_collider_full_toggled(self, full: bool) -> None:
+        c = self._active_collider()
+        if c is None or not self._sprite:
             return
         if full:
-            self.tortu_object.hitbox = self.tortu_object.hitbox.__class__()
+            c.x, c.y, c.w, c.h = 0, 0, 0, 0
         else:
-            self.tortu_object.hitbox.w = self._sprite.pixel_width
-            self.tortu_object.hitbox.h = self._sprite.pixel_height
-        self._refresh_hitbox_controls()
+            c.w = self._sprite.pixel_width
+            c.h = self._sprite.pixel_height
+        self._load_collider_fields(c)
         self._refresh_preview()
         self._mark_dirty()
 
-    def _on_hitbox_changed(self) -> None:
-        if not self.tortu_object or not self._sprite or self.hitbox_full_sprite.isChecked():
+    def _on_collider_dims_changed(self) -> None:
+        c = self._active_collider()
+        if c is None or not self._sprite or self.hitbox_full_sprite.isChecked():
             return
-        self.tortu_object.hitbox.x = self.hitbox_x.value()
-        self.tortu_object.hitbox.y = self.hitbox_y.value()
-        self.tortu_object.hitbox.w = max(1, self.hitbox_w.value())
-        self.tortu_object.hitbox.h = max(1, self.hitbox_h.value())
+        c.x = self.hitbox_x.value()
+        c.y = self.hitbox_y.value()
+        c.w = max(1, self.hitbox_w.value())
+        c.h = max(1, self.hitbox_h.value())
         self._refresh_preview()
         self._mark_dirty()
 
@@ -1007,6 +1206,8 @@ class ObjectEditorWidget(QWidget):
         self.preview_frame.setValue(self._preview_frame)
         self.preview_frame.blockSignals(False)
         self._refresh_preview()
+
+    # ── script helpers ────────────────────────────────────────────────────────
 
     def _refresh_script_row(self) -> None:
         has_script = bool(self.script_edit.text().strip())
@@ -1071,6 +1272,8 @@ class ObjectEditorWidget(QWidget):
             subprocess.Popen(cmd, shell=True)
         except OSError as exc:
             QMessageBox.warning(self, "Open Script", str(exc))
+
+    # ── public API ────────────────────────────────────────────────────────────
 
     def new_object(self, path: Path, sprite: str, name: str, animation_name: str = "idle") -> None:
         self.file_path = path.resolve()

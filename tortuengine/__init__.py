@@ -25,8 +25,9 @@ from tortuengine.scene import (
     save_scene,
 )
 from tortuengine.object import (
+    MAX_OBJECT_COLLIDERS,
     ObjectAnimation,
-    ObjectHitbox,
+    ObjectCollider,
     ObjectOrigin,
     TortuObject,
     load_object,
@@ -59,9 +60,10 @@ __all__ = [
     "Sprite",
     "load_sprite",
     "save_sprite",
+    "MAX_OBJECT_COLLIDERS",
     "TortuObject",
     "ObjectAnimation",
-    "ObjectHitbox",
+    "ObjectCollider",
     "ObjectOrigin",
     "load_object",
     "save_object",
