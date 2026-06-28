@@ -6,8 +6,8 @@ import subprocess
 from pathlib import Path
 
 import pygame
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QImage, QMouseEvent, QPainter, QPen
+from PyQt6.QtCore import Qt, QPointF, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QImage, QMouseEvent, QPainter, QPen, QPolygonF
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -48,6 +48,7 @@ class ObjectPreviewCanvas(QWidget):
 
     origin_clicked = pyqtSignal(int, int)
     hitbox_moved = pyqtSignal(int, int)
+    hitbox_resized = pyqtSignal(int, int, int, int)  # x, y, w, h
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -61,10 +62,12 @@ class ObjectPreviewCanvas(QWidget):
         self._show_hitbox = True
         self._show_origin = True
         self._dragging_origin = False
-        self._show_hitbox_move_icon = False
+        self._hitbox_selected = False
         self._dragging_hitbox = False
+        self._dragging_resize: str | None = None
         self._drag_start_screen: tuple[float, float] | None = None
         self._drag_start_hitbox_pos: tuple[int, int] | None = None
+        self._drag_start_hitbox: tuple[int, int, int, int] | None = None
         self.zoom = 4
         self.setMinimumSize(120, 120)
         self.setMouseTracking(True)
@@ -156,6 +159,34 @@ class ObjectPreviewCanvas(QWidget):
         hx, hy, hw, hh = self._hitbox
         return int(ox + (hx + hw / 2) * self.zoom), int(oy + (hy + hh / 2) * self.zoom)
 
+    def _get_arrow_positions(self) -> dict[str, tuple[float, float]]:
+        """Center screen positions of the 4 resize arrows on each side."""
+        if self._hitbox is None or self._frame is None:
+            return {}
+        ox, oy, _sw, _sh = self._sprite_offset()
+        hx, hy, hw, hh = self._hitbox
+        sx0 = ox + hx * self.zoom
+        sy0 = oy + hy * self.zoom
+        sx1 = sx0 + hw * self.zoom
+        sy1 = sy0 + hh * self.zoom
+        mx = (sx0 + sx1) / 2
+        my = (sy0 + sy1) / 2
+        return {
+            'top': (mx, sy0),
+            'bottom': (mx, sy1),
+            'left': (sx0, my),
+            'right': (sx1, my),
+        }
+
+    def _get_arrow_hit(self, mx: float, my: float, radius: int = 12) -> str | None:
+        """Return which resize arrow is at (mx, my), or None."""
+        if not self._hitbox_selected:
+            return None
+        for edge, (ax, ay) in self._get_arrow_positions().items():
+            if (mx - ax) ** 2 + (my - ay) ** 2 <= radius * radius:
+                return edge
+        return None
+
     def _draw_move_icon(self, painter: QPainter, cx: int, cy: int) -> None:
         arm, tip = 10, 5
         for color, width in [(QColor(0, 0, 0, 200), 3), (QColor(255, 255, 255, 230), 2)]:
@@ -177,14 +208,57 @@ class ObjectPreviewCanvas(QWidget):
         painter.setBrush(QColor(255, 255, 255, 230))
         painter.drawEllipse(cx - 3, cy - 3, 6, 6)
 
+    def _draw_resize_arrow(self, painter: QPainter, cx: float, cy: float, direction: str) -> None:
+        s, h = 9, 5
+        if direction == 'top':
+            pts = [QPointF(cx, cy - s), QPointF(cx - h, cy + 2), QPointF(cx + h, cy + 2)]
+        elif direction == 'bottom':
+            pts = [QPointF(cx, cy + s), QPointF(cx - h, cy - 2), QPointF(cx + h, cy - 2)]
+        elif direction == 'left':
+            pts = [QPointF(cx - s, cy), QPointF(cx + 2, cy - h), QPointF(cx + 2, cy + h)]
+        else:
+            pts = [QPointF(cx + s, cy), QPointF(cx - 2, cy - h), QPointF(cx - 2, cy + h)]
+        poly = QPolygonF(pts)
+        pen = QPen(QColor(0, 0, 0, 200))
+        pen.setWidth(2)
+        pen.setCosmetic(True)
+        painter.setPen(pen)
+        painter.setBrush(QColor(255, 255, 255, 220))
+        painter.drawPolygon(poly)
+
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() != Qt.MouseButton.LeftButton:
             return
-        if self._show_hitbox_move_icon and self._hitbox is not None:
-            self._dragging_hitbox = True
-            self._drag_start_screen = (event.position().x(), event.position().y())
-            self._drag_start_hitbox_pos = (self._hitbox[0], self._hitbox[1])
+        mx, my = event.position().x(), event.position().y()
+
+        if self._hitbox_selected and self._hitbox is not None:
+            arrow = self._get_arrow_hit(mx, my)
+            if arrow is not None:
+                self._dragging_resize = arrow
+                self._drag_start_screen = (mx, my)
+                self._drag_start_hitbox = tuple(self._hitbox)  # type: ignore[assignment]
+                return
+            center = self._hitbox_center_screen()
+            if center is not None:
+                cdx, cdy = mx - center[0], my - center[1]
+                if cdx * cdx + cdy * cdy <= 14 * 14:
+                    self._dragging_hitbox = True
+                    self._drag_start_screen = (mx, my)
+                    self._drag_start_hitbox_pos = (self._hitbox[0], self._hitbox[1])
+                    return
+
+        if self._is_near_hitbox_border(mx, my):
+            if not self._hitbox_selected:
+                self._hitbox_selected = True
+                self.setCursor(Qt.CursorShape.SizeAllCursor)
+                self.update()
             return
+
+        if self._hitbox_selected:
+            self._hitbox_selected = False
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+            self.update()
+
         if self._is_near_origin(event):
             self._dragging_origin = True
 
@@ -196,6 +270,31 @@ class ObjectPreviewCanvas(QWidget):
                 self.origin_clicked.emit(pixel[0], pixel[1])
                 self.update()
             return
+
+        if self._dragging_resize is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            if self._drag_start_screen and self._drag_start_hitbox and self._hitbox:
+                dx_px = int((event.position().x() - self._drag_start_screen[0]) / self.zoom)
+                dy_px = int((event.position().y() - self._drag_start_screen[1]) / self.zoom)
+                ox, oy, ow, oh = self._drag_start_hitbox
+                if self._dragging_resize == 'top':
+                    dy = max(-oy, min(oh - 1, dy_px))
+                    self._hitbox = (ox, oy + dy, ow, oh - dy)
+                    self.hitbox_resized.emit(ox, oy + dy, ow, oh - dy)
+                elif self._dragging_resize == 'bottom':
+                    dy = max(1 - oh, min(self._sprite_h - oy - oh, dy_px))
+                    self._hitbox = (ox, oy, ow, oh + dy)
+                    self.hitbox_resized.emit(ox, oy, ow, oh + dy)
+                elif self._dragging_resize == 'left':
+                    dx = max(-ox, min(ow - 1, dx_px))
+                    self._hitbox = (ox + dx, oy, ow - dx, oh)
+                    self.hitbox_resized.emit(ox + dx, oy, ow - dx, oh)
+                elif self._dragging_resize == 'right':
+                    dx = max(1 - ow, min(self._sprite_w - ox - ow, dx_px))
+                    self._hitbox = (ox, oy, ow + dx, oh)
+                    self.hitbox_resized.emit(ox, oy, ow + dx, oh)
+                self.update()
+            return
+
         if self._dragging_hitbox and event.buttons() & Qt.MouseButton.LeftButton:
             if self._drag_start_screen and self._drag_start_hitbox_pos and self._hitbox:
                 dx = int((event.position().x() - self._drag_start_screen[0]) / self.zoom)
@@ -209,19 +308,32 @@ class ObjectPreviewCanvas(QWidget):
                 self.hitbox_moved.emit(new_x, new_y)
                 self.update()
             return
+
         mx, my = event.position().x(), event.position().y()
-        near = self._is_near_hitbox_border(mx, my)
-        if near != self._show_hitbox_move_icon:
-            self._show_hitbox_move_icon = near
-            self.setCursor(Qt.CursorShape.SizeAllCursor if near else Qt.CursorShape.ArrowCursor)
-            self.update()
+        if self._hitbox_selected:
+            arrow = self._get_arrow_hit(mx, my)
+            if arrow in ('top', 'bottom'):
+                self.setCursor(Qt.CursorShape.SizeVerCursor)
+            elif arrow in ('left', 'right'):
+                self.setCursor(Qt.CursorShape.SizeHorCursor)
+            elif self._is_near_hitbox_border(mx, my):
+                self.setCursor(Qt.CursorShape.SizeAllCursor)
+            else:
+                self.setCursor(Qt.CursorShape.ArrowCursor)
+        else:
+            if self._is_near_hitbox_border(mx, my):
+                self.setCursor(Qt.CursorShape.PointingHandCursor)
+            else:
+                self.setCursor(Qt.CursorShape.ArrowCursor)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging_origin = False
             self._dragging_hitbox = False
+            self._dragging_resize = None
             self._drag_start_screen = None
             self._drag_start_hitbox_pos = None
+            self._drag_start_hitbox = None
 
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
@@ -267,10 +379,12 @@ class ObjectPreviewCanvas(QWidget):
                 hw * self.zoom,
                 hh * self.zoom,
             )
-            if self._show_hitbox_move_icon or self._dragging_hitbox:
+            if self._hitbox_selected or self._dragging_hitbox or self._dragging_resize:
                 center = self._hitbox_center_screen()
                 if center is not None:
                     self._draw_move_icon(painter, *center)
+                for edge, (ax, ay) in self._get_arrow_positions().items():
+                    self._draw_resize_arrow(painter, ax, ay, edge)
 
         painter.end()
 
@@ -297,6 +411,7 @@ class ObjectEditorWidget(QWidget):
         self.preview = ObjectPreviewCanvas()
         self.preview.origin_clicked.connect(self._on_preview_origin_clicked)
         self.preview.hitbox_moved.connect(self._on_preview_hitbox_moved)
+        self.preview.hitbox_resized.connect(self._on_preview_hitbox_resized)
 
         self.btn_save = QPushButton("Save object")
         self.btn_save.clicked.connect(self.save)
@@ -833,6 +948,20 @@ class ObjectEditorWidget(QWidget):
             self.tortu_object.hitbox.h = self._sprite.pixel_height
         self.tortu_object.hitbox.x = x
         self.tortu_object.hitbox.y = y
+        self._refresh_hitbox_controls()
+        self._mark_dirty()
+
+    def _on_preview_hitbox_resized(self, x: int, y: int, w: int, h: int) -> None:
+        if not self.tortu_object or not self._sprite:
+            return
+        if self.hitbox_full_sprite.isChecked():
+            self.hitbox_full_sprite.blockSignals(True)
+            self.hitbox_full_sprite.setChecked(False)
+            self.hitbox_full_sprite.blockSignals(False)
+        self.tortu_object.hitbox.x = x
+        self.tortu_object.hitbox.y = y
+        self.tortu_object.hitbox.w = max(1, w)
+        self.tortu_object.hitbox.h = max(1, h)
         self._refresh_hitbox_controls()
         self._mark_dirty()
 
