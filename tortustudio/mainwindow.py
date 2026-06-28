@@ -32,8 +32,12 @@ from PyQt6.QtWidgets import (
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
+import sys as _sys
+
 from tortuengine.cart import load_game_module, reload_game_module
 from tortuengine.export_cart import export_cart
+from tortuengine.object import load_object
+from tortustudio.viewport import DebugEntity
 from tortuengine.game_settings import MAX_GAME_FPS, MIN_GAME_FPS, slugify_cart_name
 from tortuengine.background import save_background
 from tortuengine.object import save_object
@@ -69,6 +73,66 @@ from tortustudio.sound_editor import SoundEditorWidget
 from tortustudio.tileset_editor import TilesetEditorWidget
 from tortustudio.viewport import ViewportWidget
 from tortustudio.workspace_tabs import TabKind, TabRef, WorkspaceTabs
+
+
+def _make_debug_probe(project_root: Path, game_module):
+    """Return a callable that yields DebugEntity objects for every loaded object script."""
+    objects_dir = project_root / "assets" / "objects"
+    _entries: list[tuple[object, str]] = []  # (TortuObject, sys.modules key)
+
+    if objects_dir.is_dir():
+        for obj_file in sorted(objects_dir.glob("*.tortuobject")):
+            try:
+                obj = load_object(obj_file)
+            except Exception:
+                continue
+            if not obj.script:
+                continue
+            # "scripts/mechaturtle_player.py" → "scripts.mechaturtle_player"
+            mod_key = obj.script.replace("\\", "/").removesuffix(".py").replace("/", ".")
+            _entries.append((obj, mod_key))
+
+    def _probe() -> list[DebugEntity]:
+        result: list[DebugEntity] = []
+        for obj, mod_key in _entries:
+            script_mod = _sys.modules.get(mod_key)
+            if script_mod is None:
+                continue
+            px = getattr(script_mod, "_px", None)
+            if px is None:
+                continue
+            py: float = getattr(script_mod, "_py", 0.0)
+            cam_x: float = getattr(script_mod, "_cam_x", 0.0)
+            cam_y: float = getattr(script_mod, "_cam_y", 0.0)
+
+            # Scripts may expose _debug_collider_states: dict[name, bool] for
+            # precise per-collider active state.  Fall back to reading known
+            # state variables (e.g. _crouching) to derive active states when
+            # possible without requiring any game-script change.
+            dcs: dict[str, bool] | None = getattr(script_mod, "_debug_collider_states", None)
+            crouching: bool = getattr(script_mod, "_crouching", False)
+
+            colliders: list[tuple[int, int, int, int, bool]] = []
+            for c in obj.colliders:
+                if dcs is not None:
+                    active = bool(dcs.get(c.name, c.active))
+                elif crouching and c.name == "head":
+                    active = False
+                else:
+                    active = c.active
+                colliders.append((c.x, c.y, c.w, c.h, active))
+
+            result.append(DebugEntity(
+                px=px, py=py,
+                cam_x=cam_x, cam_y=cam_y,
+                origin_x=obj.origin.x,
+                origin_y=obj.origin.y,
+                colliders=colliders,
+                name=obj.name,
+            ))
+        return result
+
+    return _probe
 
 
 class _ScriptReloadHandler(FileSystemEventHandler):
@@ -206,6 +270,14 @@ class MainWindow(QMainWindow):
         reload_action.setShortcut("F6")
         reload_action.triggered.connect(self._reload_scripts)
         play_menu.addAction(reload_action)
+
+        play_menu.addSeparator()
+
+        self._debug_play_action = QAction("Debug Play (colliders)", self)
+        self._debug_play_action.setShortcut("F7")
+        self._debug_play_action.setCheckable(True)
+        self._debug_play_action.triggered.connect(self._action_debug_play)
+        play_menu.addAction(self._debug_play_action)
 
     def _build_ui(self) -> None:
         central = QWidget()
@@ -612,7 +684,40 @@ class MainWindow(QMainWindow):
             self._player_proc.terminate()
             self._player_proc = None
         self.viewport.stop_playback()
+        self.viewport.set_debug_mode(False)
+        self.viewport.set_debug_probe(None)
+        self._debug_play_action.setChecked(False)
         self.log("Stop")
+
+    def _action_debug_play(self, checked: bool) -> None:
+        if not self.project:
+            self._debug_play_action.setChecked(False)
+            QMessageBox.information(self, "Debug Play", "Open a project first.")
+            return
+
+        if not checked:
+            self.viewport.stop_playback()
+            self.viewport.set_debug_mode(False)
+            self.viewport.set_debug_probe(None)
+            self.log("Debug play stopped.")
+            return
+
+        # Stop any running subprocess first
+        if self._player_proc and self._player_proc.poll() is None:
+            self._player_proc.terminate()
+            self._player_proc = None
+
+        self._load_cart(silent=True)
+        if self._game_module is None:
+            self._debug_play_action.setChecked(False)
+            return
+
+        probe = _make_debug_probe(self.project.root, self._game_module)
+        self.viewport.set_debug_probe(probe)
+        self.viewport.set_debug_mode(True)
+        self.viewport.start_playback()
+        self.viewport.setFocus()
+        self.log("Debug play started — F7 to stop, click viewport to capture keys.")
 
     def _action_export_cart(self) -> None:
         if not self.project:
