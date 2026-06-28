@@ -487,8 +487,8 @@ class SpriteEditorWidget(QWidget):
         form.addRow("Show block Grid:", self.show_4x4_grid)
         side.addLayout(form)
 
-        self.blocks_w.valueChanged.connect(self._apply_resize)
-        self.blocks_h.valueChanged.connect(self._apply_resize)
+        self.blocks_w.editingFinished.connect(self._apply_resize)
+        self.blocks_h.editingFinished.connect(self._apply_resize)
 
         side.addWidget(self.btn_load_ref)
         side.addWidget(self.color_key)

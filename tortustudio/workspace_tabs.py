@@ -19,6 +19,7 @@ class TabKind(str, Enum):
     FONT_EDITOR = "font_editor"
     SOUND_EDITOR = "sound_editor"
     PALETTE_EDITOR = "palette_editor"
+    GAME_SETTINGS = "game_settings"
 
 
 @dataclass
@@ -40,6 +41,7 @@ class WorkspaceTabs(QWidget):
     FONT_EDITOR_LABEL = "Font Editor"
     SOUND_EDITOR_LABEL = "Sound"
     PALETTE_EDITOR_LABEL = "Palette Editor"
+    GAME_SETTINGS_LABEL = "Game Settings"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -64,6 +66,7 @@ class WorkspaceTabs(QWidget):
         self._add_object_editor_tab()
         self._add_sound_editor_tab()
         self._add_palette_editor_tab()
+        self._add_game_settings_tab()
 
     @property
     def preview_index(self) -> int:
@@ -100,6 +103,10 @@ class WorkspaceTabs(QWidget):
     @property
     def palette_editor_index(self) -> int:
         return 8
+
+    @property
+    def game_settings_index(self) -> int:
+        return 9
 
     @property
     def current_ref(self) -> TabRef | None:
@@ -144,6 +151,10 @@ class WorkspaceTabs(QWidget):
         self.tab_bar.addTab(self.PALETTE_EDITOR_LABEL)
         self._refs.append(TabRef(kind=TabKind.PALETTE_EDITOR))
 
+    def _add_game_settings_tab(self) -> None:
+        self.tab_bar.addTab(self.GAME_SETTINGS_LABEL)
+        self._refs.append(TabRef(kind=TabKind.GAME_SETTINGS))
+
     def reset(self) -> None:
         while self.tab_bar.count() > 0:
             self.tab_bar.removeTab(0)
@@ -157,6 +168,7 @@ class WorkspaceTabs(QWidget):
         self._add_object_editor_tab()
         self._add_sound_editor_tab()
         self._add_palette_editor_tab()
+        self._add_game_settings_tab()
 
     def select_preview(self) -> None:
         self.tab_bar.setCurrentIndex(self.preview_index)
@@ -184,6 +196,9 @@ class WorkspaceTabs(QWidget):
 
     def select_palette_editor(self) -> None:
         self.tab_bar.setCurrentIndex(self.palette_editor_index)
+
+    def select_game_settings(self) -> None:
+        self.tab_bar.setCurrentIndex(self.game_settings_index)
 
     def _on_current_changed(self, index: int) -> None:
         if index < 0 or index >= len(self._refs):

@@ -157,6 +157,7 @@ class MainWindow(QMainWindow):
     OBJECT_EDITOR = 6
     SOUND_EDITOR = 7
     PALETTE_EDITOR = 8
+    GAME_SETTINGS = 9
 
     def __init__(self, project: Project | None = None) -> None:
         super().__init__()
@@ -194,6 +195,10 @@ class MainWindow(QMainWindow):
         new_action = QAction("&New Project…", self)
         new_action.triggered.connect(self._action_new_project)
         file_menu.addAction(new_action)
+
+        open_entry_action = QAction("Open Entry Script in Editor", self)
+        open_entry_action.triggered.connect(self._open_entry_in_editor)
+        file_menu.addAction(open_entry_action)
 
         file_menu.addSeparator()
         quit_action = QAction("&Quit", self)
@@ -366,6 +371,50 @@ class MainWindow(QMainWindow):
         self.palette_editor = PaletteEditorWidget(Path("."))
         self.palette_editor.saved.connect(self._on_palette_saved)
 
+        # Game Settings panel — lives in the center stack as its own tab
+        game_settings_panel = QWidget()
+        gs_outer = QVBoxLayout(game_settings_panel)
+        gs_outer.setContentsMargins(24, 16, 24, 16)
+        gs_outer.setSpacing(12)
+        gs_outer.addWidget(QLabel("<b>Game Settings</b>"))
+        gs_form_widget = QWidget()
+        gs_form = QFormLayout(gs_form_widget)
+        gs_form.setContentsMargins(0, 0, 0, 0)
+
+        self.field_game_name = QLineEdit()
+        self.field_game_name.setPlaceholderText("My Game")
+        gs_form.addRow("Game name:", self.field_game_name)
+
+        self.field_cart_name = QLineEdit()
+        self.field_cart_name.setPlaceholderText("my_game")
+        gs_form.addRow("Cart name:", self.field_cart_name)
+
+        self.field_game_fps = QSpinBox()
+        self.field_game_fps.setRange(MIN_GAME_FPS, MAX_GAME_FPS)
+        self.field_game_fps.setValue(60)
+        gs_form.addRow("Game FPS:", self.field_game_fps)
+
+        self.field_start_scene = QComboBox()
+        self.field_start_scene.setEditable(True)
+        self.field_start_scene.lineEdit().setPlaceholderText("scenes/level_01.tortuscene")
+        self.field_start_scene.setToolTip(
+            "Scene loaded in Game Preview when you press Play (F5). Save game settings to keep."
+        )
+        gs_form.addRow("Start scene:", self.field_start_scene)
+
+        self.field_author = QLineEdit()
+        gs_form.addRow("Author:", self.field_author)
+
+        self.field_description = QLineEdit()
+        gs_form.addRow("Description:", self.field_description)
+
+        self.btn_save_game_settings = QPushButton("Save game settings")
+        self.btn_save_game_settings.clicked.connect(self._save_game_settings)
+        gs_form.addRow(self.btn_save_game_settings)
+
+        gs_outer.addWidget(gs_form_widget)
+        gs_outer.addStretch()
+
         self.center_stack.addWidget(self.viewport)
         self.center_stack.addWidget(self.scene_editor)
         self.center_stack.addWidget(self.sprite_editor)
@@ -375,59 +424,17 @@ class MainWindow(QMainWindow):
         self.center_stack.addWidget(self.object_editor)
         self.center_stack.addWidget(self.sound_editor)
         self.center_stack.addWidget(self.palette_editor)
+        self.center_stack.addWidget(game_settings_panel)
         self.center_stack.currentChanged.connect(self._on_center_stack_changed)
         splitter.addWidget(self.center_stack)
 
-        inspector = QWidget()
-        inspector_layout = QFormLayout(inspector)
-        inspector_layout.addRow(QLabel("<b>Game Settings</b>"))
-
-        self.field_game_name = QLineEdit()
-        self.field_game_name.setPlaceholderText("My Game")
-        inspector_layout.addRow("Game name:", self.field_game_name)
-
-        self.field_cart_name = QLineEdit()
-        self.field_cart_name.setPlaceholderText("my_game")
-        inspector_layout.addRow("Cart name:", self.field_cart_name)
-
-        self.field_game_fps = QSpinBox()
-        self.field_game_fps.setRange(MIN_GAME_FPS, MAX_GAME_FPS)
-        self.field_game_fps.setValue(60)
-        inspector_layout.addRow("Game FPS:", self.field_game_fps)
-
-        self.field_start_scene = QComboBox()
-        self.field_start_scene.setEditable(True)
-        self.field_start_scene.lineEdit().setPlaceholderText("scenes/level_01.tortuscene")
-        self.field_start_scene.setToolTip(
-            "Scene loaded in Game Preview when you press Play (F5). Save game settings to keep."
-        )
-        inspector_layout.addRow("Start scene:", self.field_start_scene)
-
-        self.field_author = QLineEdit()
-        inspector_layout.addRow("Author:", self.field_author)
-
-        self.field_description = QLineEdit()
-        inspector_layout.addRow("Description:", self.field_description)
-
-        self.btn_save_game_settings = QPushButton("Save game settings")
-        self.btn_save_game_settings.clicked.connect(self._save_game_settings)
-        inspector_layout.addRow(self.btn_save_game_settings)
-
-        inspector_layout.addRow(QLabel("<b>Open Asset</b>"))
+        # Hidden widgets kept to avoid touching the many field_name.setText() call sites.
         self.field_name = QLineEdit()
-        self.field_name.setReadOnly(True)
-        self.field_name.setPlaceholderText("No asset open")
-        inspector_layout.addRow("File:", self.field_name)
-
-        self.btn_open_editor = QPushButton("Open main.py in Editor")
+        self.btn_open_editor = QPushButton()
         self.btn_open_editor.clicked.connect(self._open_entry_in_editor)
-        inspector_layout.addRow(self.btn_open_editor)
-        inspector.setMinimumWidth(220)
-        splitter.addWidget(inspector)
 
         splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 3)
-        splitter.setStretchFactor(2, 1)
+        splitter.setStretchFactor(1, 4)
         root.addWidget(splitter, stretch=1)
 
         self.console = QPlainTextEdit()
@@ -1184,6 +1191,14 @@ class MainWindow(QMainWindow):
                 return
             self._show_palette_editor()
 
+        if ref.kind == TabKind.GAME_SETTINGS:
+            if not self._confirm_discard_editor_changes():
+                self._switching_tabs = True
+                self._restore_editor_tab()
+                self._switching_tabs = False
+                return
+            self.center_stack.setCurrentIndex(self.GAME_SETTINGS)
+
     def _restore_editor_tab(self) -> None:
         index = self.center_stack.currentIndex()
         if index == self.SCENE_EDITOR:
@@ -1202,6 +1217,8 @@ class MainWindow(QMainWindow):
             self.workspace_tabs.select_sound_editor()
         elif index == self.PALETTE_EDITOR:
             self.workspace_tabs.select_palette_editor()
+        elif index == self.GAME_SETTINGS:
+            self.workspace_tabs.select_game_settings()
         else:
             self.workspace_tabs.select_preview()
 
@@ -1227,6 +1244,9 @@ class MainWindow(QMainWindow):
             )
         elif index == self.PALETTE_EDITOR:
             self.asset_browser.populate("Palettes", list_palette_paths(root))
+        elif index == self.GAME_SETTINGS:
+            self._populate_start_scene_combo()
+            self.asset_browser.clear()
         else:
             self.asset_browser.clear()
 

@@ -1127,7 +1127,7 @@ class TilesetEditorWidget(QWidget):
 
         side.addLayout(form)
 
-        self.tile_size.valueChanged.connect(self._on_tile_size_changed)
+        self.tile_size.editingFinished.connect(self._on_tile_size_changed)
 
         side.addWidget(QLabel("Palette colors (0–62):"))
         side.addWidget(self.swatches_area)
@@ -1468,7 +1468,8 @@ class TilesetEditorWidget(QWidget):
             self._sync_meta_controls()
             self._refresh_collision_canvas()
 
-    def _on_tile_size_changed(self, value: int) -> None:
+    def _on_tile_size_changed(self) -> None:
+        value = self.tile_size.value()
         if not self.tileset:
             self._sync_tile_size_to_import()
             return
