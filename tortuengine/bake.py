@@ -28,33 +28,6 @@ def bake_tile(
     return tileset.tile_surface(palette, tile_index)
 
 
-def _composite_layers_to_arrays(
-    bg_layers,
-    palette: list[tuple[int, int, int]],
-    w: int,
-    h: int,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Return (rgb, alpha) arrays in surfarray (w, h) convention."""
-    pal_rgb = np.array(palette, dtype=np.uint8)  # (64, 3)
-    rgb = np.zeros((w, h, 3), dtype=np.uint8)
-    alpha = np.zeros((w, h), dtype=np.uint8)
-    filled = np.zeros((w, h), dtype=bool)
-
-    for layer in bg_layers:
-        if not layer.visible:
-            continue
-        # pixels is row-major (y*w + x); reshape to (h, w) then transpose to (w, h)
-        pixels = np.array(layer.pixels, dtype=np.uint8).reshape(h, w).T
-        can_set = ~filled & (pixels != TRANSPARENT_INDEX)
-        rgb[can_set] = pal_rgb[pixels[can_set]]
-        alpha[can_set] = 255
-        filled |= can_set
-        if filled.all():
-            break
-
-    return rgb, alpha
-
-
 def _write_arrays_to_surface(
     surface: pygame.Surface,
     rgb: np.ndarray,
@@ -71,10 +44,16 @@ def bake_background(
     background: Background,
     palette: list[tuple[int, int, int]],
 ) -> pygame.Surface:
-    """Composite visible bg layers into one RGBA surface."""
+    """Bake a background's single pixel canvas into an RGBA surface."""
     w, h = background.width, background.height
     surface = pygame.Surface((w, h), pygame.SRCALPHA)
-    rgb, alpha = _composite_layers_to_arrays(background.bg_layers, palette, w, h)
+    pal_rgb = np.array(palette, dtype=np.uint8)
+    pixels = np.array(background.pixels, dtype=np.uint8).reshape(h, w).T  # (w, h)
+    rgb = np.zeros((w, h, 3), dtype=np.uint8)
+    alpha = np.zeros((w, h), dtype=np.uint8)
+    mask = pixels != TRANSPARENT_INDEX
+    rgb[mask] = pal_rgb[pixels[mask]]
+    alpha[mask] = 255
     _write_arrays_to_surface(surface, rgb, alpha)
     return surface
 
@@ -94,25 +73,14 @@ def bake_background_band(
     w = background.width
 
     surface = pygame.Surface((w, band_h), pygame.SRCALPHA)
-
     pal_rgb = np.array(palette, dtype=np.uint8)
+    full = np.array(background.pixels, dtype=np.uint8).reshape(background.height, w)
+    pixels = full[top:bottom + 1, :].T  # (w, band_h)
     rgb = np.zeros((w, band_h, 3), dtype=np.uint8)
     alpha = np.zeros((w, band_h), dtype=np.uint8)
-    filled = np.zeros((w, band_h), dtype=bool)
-
-    for layer in background.bg_layers:
-        if not layer.visible:
-            continue
-        # Slice only the band rows before transposing to avoid full-image allocation
-        full = np.array(layer.pixels, dtype=np.uint8).reshape(background.height, w)
-        pixels = full[top : bottom + 1, :].T  # (w, band_h)
-        can_set = ~filled & (pixels != TRANSPARENT_INDEX)
-        rgb[can_set] = pal_rgb[pixels[can_set]]
-        alpha[can_set] = 255
-        filled |= can_set
-        if filled.all():
-            break
-
+    mask = pixels != TRANSPARENT_INDEX
+    rgb[mask] = pal_rgb[pixels[mask]]
+    alpha[mask] = 255
     _write_arrays_to_surface(surface, rgb, alpha)
     return surface
 

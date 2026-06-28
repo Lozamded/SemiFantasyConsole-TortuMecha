@@ -38,6 +38,14 @@
         }
       ],
       "background": "assets/backgrounds/bg1.tortubackground"
+    },
+    {
+      "name": "scene_bg_1",
+      "visible": true,
+      "parallax_x": 0.5,
+      "parallax_y": 0.0,
+      "repeat_x": true,
+      "background": "assets/backgrounds/bg_1_mountains.tortubackground"
     }
   ],
   "tile_layers": [

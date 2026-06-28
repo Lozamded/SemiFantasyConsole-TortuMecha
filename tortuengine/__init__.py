@@ -7,7 +7,6 @@ from tortuengine.project import Project, load_project, save_project
 from tortuengine.palette import TRANSPARENT_INDEX, load_palette, closest_index
 from tortuengine.background import (
     Background,
-    BackgroundLayer,
     load_background,
     save_background,
 )
@@ -68,7 +67,6 @@ __all__ = [
     "load_object",
     "save_object",
     "Background",
-    "BackgroundLayer",
     "load_background",
     "save_background",
     "Scene",

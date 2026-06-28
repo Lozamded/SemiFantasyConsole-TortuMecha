@@ -1,4 +1,4 @@
-"""Background editor — paint bg layers on a wide canvas."""
+"""Background editor — paint a single background canvas."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QImage, QMouseEvent, QPainter, QPen, QWheelEvent
 from PyQt6.QtWidgets import (
     QCheckBox,
-    QComboBox,
+    QFileDialog,
     QFormLayout,
     QGridLayout,
     QGroupBox,
@@ -30,12 +30,10 @@ from tortuengine.background import (
     DEFAULT_BACKGROUND_HEIGHT,
     DEFAULT_BACKGROUND_WIDTH,
     Background,
-    MAX_BG_LAYERS,
-    MIN_BG_LAYERS,
     load_background,
     save_background,
 )
-from tortuengine.constants import BACKGROUND_LAYERS, SCREEN_HEIGHT, SCREEN_WIDTH, TILE_BLOCK
+from tortuengine.constants import SCREEN_HEIGHT, SCREEN_WIDTH, TILE_BLOCK
 from tortuengine.image import apply_color_key, load_image
 from tortuengine.palette import (
     PAINTABLE_INDICES,
@@ -47,7 +45,7 @@ from tortustudio.sprite_editor import Tool
 
 
 class BackgroundCanvas(QWidget):
-    """Scrollable background canvas — composites bg layers, edits the active one."""
+    """Scrollable background canvas for editing a single background."""
 
     PIXEL_GRID_COLOR = (48, 48, 64)
     SEGMENT_GRID_COLOR = (36, 36, 50)
@@ -66,7 +64,6 @@ class BackgroundCanvas(QWidget):
 
         self.background: Background | None = None
         self.palette: list[tuple[int, int, int]] = []
-        self.active_bg_layer = 0
         self.current_index = 0
         self.tool = Tool.PENCIL
         self.show_pixel_grid = False
@@ -84,14 +81,12 @@ class BackgroundCanvas(QWidget):
         self,
         background: Background | None,
         palette: list[tuple[int, int, int]],
-        active_bg_layer: int,
         current_index: int,
         *,
         camera_x: int,
     ) -> None:
         self.background = background
         self.palette = palette
-        self.active_bg_layer = active_bg_layer
         self.current_index = current_index
         self.camera_x = camera_x
         self._refresh()
@@ -125,11 +120,8 @@ class BackgroundCanvas(QWidget):
 
         composite = pygame.Surface((self.background.width, self.background.height))
         composite.fill(self.MAP_BG)
-        for i, bg_layer in enumerate(self.background.bg_layers):
-            if not bg_layer.visible:
-                continue
-            layer_surface = self.background.layer_surface(i, self.palette)
-            composite.blit(layer_surface, (0, 0))
+        layer_surface = self.background.to_surface(self.palette)
+        composite.blit(layer_surface, (0, 0))
         map_w, map_h = self.background.width, self.background.height
 
         data = pygame.image.tobytes(composite, "RGBA")
@@ -249,11 +241,11 @@ class BackgroundCanvas(QWidget):
         if not self.background:
             return
         if self.tool == Tool.PENCIL:
-            self.background.set_pixel(self.active_bg_layer, x, y, self.current_index)
+            self.background.set_pixel(x, y, self.current_index)
         elif self.tool == Tool.ERASER:
-            self.background.set_pixel(self.active_bg_layer, x, y, TRANSPARENT_INDEX)
+            self.background.set_pixel(x, y, TRANSPARENT_INDEX)
         elif self.tool == Tool.EYEDROPPER:
-            picked = self.background.get_pixel(self.active_bg_layer, x, y)
+            picked = self.background.get_pixel(x, y)
             if picked != TRANSPARENT_INDEX:
                 self.current_index = picked
                 self.changed.emit()
@@ -322,21 +314,15 @@ class BackgroundEditorWidget(QWidget):
         self.btn_new.clicked.connect(self.new_background_requested.emit)
         self.btn_open = QPushButton("Open Background…")
         self.btn_open.clicked.connect(self.open_background_requested.emit)
+        self.btn_export_png = QPushButton("Export PNG…")
+        self.btn_export_png.setToolTip("Save background pixels as a PNG for external editing")
+        self.btn_export_png.clicked.connect(self._export_png)
+        self.btn_import_png = QPushButton("Import PNG…")
+        self.btn_import_png.setToolTip("Load a PNG and re-quantize its colors to the current palette")
+        self.btn_import_png.clicked.connect(self._import_png)
 
         self.status_label = QLabel("No background open")
         self.size_label = QLabel("—")
-
-        self.bg_layer_combo = QComboBox()
-        self.bg_layer_combo.currentIndexChanged.connect(self._on_bg_layer_changed)
-
-        self.bg_layer_visible = QCheckBox("Bg layer visible")
-        self.bg_layer_visible.setChecked(True)
-        self.bg_layer_visible.toggled.connect(self._on_bg_layer_visible_toggled)
-
-        self.btn_add_bg_layer = QPushButton("Add bg layer")
-        self.btn_add_bg_layer.clicked.connect(self._add_bg_layer)
-        self.btn_remove_bg_layer = QPushButton("Remove bg layer")
-        self.btn_remove_bg_layer.clicked.connect(self._remove_bg_layer)
 
         self.bg_width = QSpinBox()
         self.bg_width.setRange(SCREEN_WIDTH, 4096)
@@ -395,6 +381,8 @@ class BackgroundEditorWidget(QWidget):
         file_row.addWidget(self.btn_open)
         file_row.addWidget(self.btn_save)
         file_row.addWidget(self.btn_rename)
+        file_row.addWidget(self.btn_export_png)
+        file_row.addWidget(self.btn_import_png)
         file_row.addWidget(self.status_label)
         file_row.addStretch()
         outer.addLayout(file_row)
@@ -419,12 +407,6 @@ class BackgroundEditorWidget(QWidget):
         side = QVBoxLayout()
         form = QFormLayout()
         form.addRow("Canvas size:", self.size_label)
-        form.addRow("Active bg layer:", self.bg_layer_combo)
-        form.addRow("", self.bg_layer_visible)
-        bg_layer_btns = QHBoxLayout()
-        bg_layer_btns.addWidget(self.btn_add_bg_layer)
-        bg_layer_btns.addWidget(self.btn_remove_bg_layer)
-        form.addRow(bg_layer_btns)
         form.addRow("Width:", self.bg_width)
         form.addRow("Height:", self.bg_height)
         resize_row = QHBoxLayout()
@@ -441,11 +423,6 @@ class BackgroundEditorWidget(QWidget):
         side.addWidget(self.swatches_area)
         side.addStretch()
         body.addLayout(side)
-
-    def _active_bg_layer_index(self) -> int:
-        if not self.background or self.bg_layer_combo.count() == 0:
-            return 0
-        return self.bg_layer_combo.currentIndex()
 
     def _set_tool(self, tool: Tool) -> None:
         self.btn_pencil.setChecked(tool == Tool.PENCIL)
@@ -470,8 +447,7 @@ class BackgroundEditorWidget(QWidget):
             return
         screens = self.background.width / SCREEN_WIDTH
         self.size_label.setText(
-            f"{self.background.width}×{self.background.height} px  "
-            f"({screens:.1f}× screen, {BACKGROUND_LAYERS} bg layers max)"
+            f"{self.background.width}×{self.background.height} px  ({screens:.1f}× screen)"
         )
 
     def _update_camera_slider(self) -> None:
@@ -513,39 +489,13 @@ class BackgroundEditorWidget(QWidget):
         self._refresh_canvas()
         self._set_tool(Tool.PENCIL)
 
-    def _sync_bg_layer_controls(self) -> None:
-        if not self.background:
-            return
-        self.bg_layer_combo.blockSignals(True)
-        self.bg_layer_combo.clear()
-        for i, bg_layer in enumerate(self.background.bg_layers):
-            self.bg_layer_combo.addItem(f"{i}: {bg_layer.name}", i)
-        active = min(
-            self.canvas.active_bg_layer,
-            max(0, self.background.bg_layer_count - 1),
-        )
-        self.bg_layer_combo.setCurrentIndex(active)
-        bg_layer = self.background.bg_layers[active]
-        self.bg_layer_visible.blockSignals(True)
-        self.bg_layer_visible.setChecked(bg_layer.visible)
-        self.bg_layer_visible.blockSignals(False)
-        self.bg_layer_combo.blockSignals(False)
-        self.btn_remove_bg_layer.setEnabled(
-            self.background.bg_layer_count > MIN_BG_LAYERS
-        )
-        self.btn_add_bg_layer.setEnabled(
-            self.background.bg_layer_count < MAX_BG_LAYERS
-        )
-
     def _refresh_canvas(self) -> None:
         if not self.background:
-            self.canvas.set_context(None, [], 0, 0, camera_x=0)
+            self.canvas.set_context(None, [], 0, camera_x=0)
             return
-        active = self._active_bg_layer_index()
         self.canvas.set_context(
             self.background,
             self._palette_colors,
-            active,
             self._current_index,
             camera_x=self.camera_slider.value(),
         )
@@ -561,7 +511,6 @@ class BackgroundEditorWidget(QWidget):
         self.bg_height.blockSignals(False)
         self._update_size_label()
         self._update_camera_slider()
-        self._sync_bg_layer_controls()
         self._refresh_canvas()
 
     def _on_canvas_changed(self) -> None:
@@ -573,51 +522,7 @@ class BackgroundEditorWidget(QWidget):
         self._mark_dirty()
         self._refresh_canvas()
 
-    def _on_bg_layer_changed(self, index: int) -> None:
-        if not self.background or index < 0:
-            return
-        bg_layer = self.background.bg_layers[index]
-        self.bg_layer_visible.blockSignals(True)
-        self.bg_layer_visible.setChecked(bg_layer.visible)
-        self.bg_layer_visible.blockSignals(False)
-        self._refresh_canvas()
-
-    def _on_bg_layer_visible_toggled(self, visible: bool) -> None:
-        if not self.background:
-            return
-        index = self._active_bg_layer_index()
-        if 0 <= index < self.background.bg_layer_count:
-            self.background.bg_layers[index].visible = visible
-            self._mark_dirty()
-            self._refresh_canvas()
-
     def _on_camera_changed(self, value: int) -> None:
-        self._refresh_canvas()
-
-    def _add_bg_layer(self) -> None:
-        if not self.background:
-            return
-        try:
-            index = self.background.add_bg_layer()
-        except ValueError as exc:
-            QMessageBox.warning(self, "Add Bg Layer", str(exc))
-            return
-        self._mark_dirty()
-        self._sync_bg_layer_controls()
-        self.bg_layer_combo.setCurrentIndex(index)
-        self._refresh_canvas()
-
-    def _remove_bg_layer(self) -> None:
-        if not self.background:
-            return
-        index = self._active_bg_layer_index()
-        try:
-            self.background.remove_bg_layer(index)
-        except ValueError as exc:
-            QMessageBox.warning(self, "Remove Bg Layer", str(exc))
-            return
-        self._mark_dirty()
-        self._sync_bg_layer_controls()
         self._refresh_canvas()
 
     def _resize_background(self) -> None:
@@ -627,10 +532,7 @@ class BackgroundEditorWidget(QWidget):
         new_h = self.bg_height.value()
         if new_w == self.background.width and new_h == self.background.height:
             return
-        if any(
-            any(p != TRANSPARENT_INDEX for p in bg_layer.pixels)
-            for bg_layer in self.background.bg_layers
-        ):
+        if any(p != TRANSPARENT_INDEX for p in self.background.pixels):
             reply = QMessageBox.question(
                 self,
                 "Resize Background",
@@ -648,6 +550,58 @@ class BackgroundEditorWidget(QWidget):
     def _reset_to_screen_height(self) -> None:
         self.bg_height.setValue(SCREEN_HEIGHT)
         self._resize_background()
+
+    def _export_png(self) -> None:
+        if not self.background or not self._palette_colors:
+            QMessageBox.warning(self, "Export PNG", "No background open.")
+            return
+        default = str(self.file_path.with_suffix(".png")) if self.file_path else "background.png"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Background as PNG", default, "PNG Images (*.png)"
+        )
+        if not path:
+            return
+        surface = self.background.to_surface(self._palette_colors)
+        try:
+            pygame.image.save(surface, path)
+        except Exception as exc:
+            QMessageBox.warning(self, "Export PNG", f"Could not save: {exc}")
+
+    def _import_png(self) -> None:
+        if not self.background or not self._palette_colors:
+            QMessageBox.warning(self, "Import PNG", "No background open.")
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import PNG into Background", "", "PNG Images (*.png);;All Files (*)"
+        )
+        if not path:
+            return
+        try:
+            image = load_image(Path(path))
+        except Exception as exc:
+            QMessageBox.warning(self, "Import PNG", f"Could not load image: {exc}")
+            return
+        iw, ih = image.get_size()
+        if (iw, ih) != (self.background.width, self.background.height):
+            reply = QMessageBox.question(
+                self,
+                "Import PNG — Size Mismatch",
+                f"Image is {iw}×{ih} px but the canvas is "
+                f"{self.background.width}×{self.background.height} px.\n\n"
+                "Resize the canvas to match the image?  "
+                "(No = scale image to fit the current canvas)",
+                QMessageBox.StandardButton.Yes
+                | QMessageBox.StandardButton.No
+                | QMessageBox.StandardButton.Cancel,
+            )
+            if reply == QMessageBox.StandardButton.Cancel:
+                return
+            if reply == QMessageBox.StandardButton.Yes:
+                self.background.width = iw
+                self.background.height = ih
+        self.background.fill_from_surface(image, self._palette_colors)
+        self._mark_dirty()
+        self._refresh_editor()
 
     def new_background(
         self,
@@ -693,7 +647,7 @@ class BackgroundEditorWidget(QWidget):
             return
         try:
             self._load_palette_colors()
-            self.background.ensure_all_bg_layer_pixels()
+            self.background.ensure_pixels()
         except FileNotFoundError as exc:
             QMessageBox.warning(self, "Open Background", str(exc))
             self.background = None
