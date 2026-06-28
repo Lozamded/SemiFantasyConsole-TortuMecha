@@ -56,6 +56,7 @@ class ObjectPreviewCanvas(QWidget):
     origin_clicked = pyqtSignal(int, int)
     collider_moved = pyqtSignal(int, int)         # x, y of selected collider
     collider_resized = pyqtSignal(int, int, int, int)  # x, y, w, h of selected collider
+    zoom_changed = pyqtSignal(int)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -96,8 +97,20 @@ class ObjectPreviewCanvas(QWidget):
         self.update()
 
     def set_zoom(self, zoom: int) -> None:
-        self.zoom = max(1, min(16, zoom))
+        new_zoom = max(1, min(16, zoom))
+        if new_zoom == self.zoom:
+            return
+        self.zoom = new_zoom
+        self.zoom_changed.emit(self.zoom)
         self.update()
+
+    def wheelEvent(self, event) -> None:  # noqa: N802
+        delta = event.angleDelta().y()
+        if delta > 0:
+            self.set_zoom(self.zoom + 1)
+        elif delta < 0:
+            self.set_zoom(self.zoom - 1)
+        event.accept()
 
     def set_preview(
         self,
@@ -462,6 +475,7 @@ class ObjectEditorWidget(QWidget):
         self.preview.origin_clicked.connect(self._on_preview_origin_clicked)
         self.preview.collider_moved.connect(self._on_preview_collider_moved)
         self.preview.collider_resized.connect(self._on_preview_collider_resized)
+        self.preview.zoom_changed.connect(self._on_canvas_zoom_changed)
 
         self.btn_save = QPushButton("Save object")
         self.btn_save.clicked.connect(self.save)
@@ -653,6 +667,11 @@ class ObjectEditorWidget(QWidget):
         body.addWidget(side)
 
     # ── state helpers ─────────────────────────────────────────────────────────
+
+    def _on_canvas_zoom_changed(self, zoom: int) -> None:
+        self.zoom_spin.blockSignals(True)
+        self.zoom_spin.setValue(zoom)
+        self.zoom_spin.blockSignals(False)
 
     def _mark_dirty(self) -> None:
         self._dirty = True
