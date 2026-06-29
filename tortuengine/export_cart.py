@@ -316,6 +316,22 @@ def export_cart(project: Project, dest: Path) -> Path:
         "objects": manifest_objects,
         "scenes": manifest_scenes,
     }
+
+    # Optional meta folder (titlecard.png, icon.png, manual.pdf)
+    meta_src = project.root / "meta"
+    if meta_src.is_dir():
+        shutil.copytree(meta_src, dest / "meta")
+        meta_entry: dict[str, str] = {}
+        for fname, key in [
+            ("titlecard.png", "titlecard"),
+            ("icon.png", "icon"),
+            ("manual.pdf", "manual"),
+        ]:
+            if (meta_src / fname).is_file():
+                meta_entry[key] = f"meta/{fname}"
+        if meta_entry:
+            manifest["meta"] = meta_entry
+
     (dest / CART_MANIFEST_NAME).write_text(
         json.dumps(manifest, indent=2) + "\n",
         encoding="utf-8",

@@ -11,6 +11,8 @@ Future: controls config, date/time, system settings.
 
 from __future__ import annotations
 
+import os
+import platform
 import subprocess
 import sys
 from pathlib import Path
@@ -43,12 +45,34 @@ def _find_cart() -> Path | None:
     return None
 
 
+def _native_bin(cart_path: Path) -> Path | None:
+    """Return the arch-specific binary inside cart/bin/ if present and executable."""
+    m = platform.machine().lower()
+    if m in ("aarch64", "arm64"):
+        arch = "arm64"
+    elif m.startswith("arm"):
+        arch = "armhf"
+    else:
+        arch = "x86_64"
+    cart_name = cart_path.name
+    if cart_name.endswith(".tortucart"):
+        cart_name = cart_name[: -len(".tortucart")]
+    candidate = cart_path / "bin" / f"{cart_name}_{arch}"
+    if candidate.is_file() and os.access(str(candidate), os.X_OK):
+        return candidate
+    return None
+
+
 def _launch(cart_path: Path) -> None:
     pygame.quit()
-    subprocess.run(
-        [sys.executable, "-m", "tortuplayer", str(cart_path)],
-        cwd=ROOT,
-    )
+    native = _native_bin(cart_path)
+    if native:
+        subprocess.run([str(native)], cwd=str(cart_path))
+    else:
+        subprocess.run(
+            [sys.executable, "-m", "tortuplayer", str(cart_path)],
+            cwd=ROOT,
+        )
     pygame.init()
 
 

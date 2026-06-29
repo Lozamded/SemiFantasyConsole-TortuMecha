@@ -256,6 +256,10 @@ class MainWindow(QMainWindow):
         export_action.triggered.connect(self._action_export_cart)
         build_menu.addAction(export_action)
 
+        build_exe_action = QAction("Build Executable…", self)
+        build_exe_action.triggered.connect(self._action_build_executable)
+        build_menu.addAction(build_exe_action)
+
         validate_action = QAction("&Validate Project", self)
         validate_action.triggered.connect(self._action_validate_project)
         build_menu.addAction(validate_action)
@@ -771,6 +775,32 @@ class MainWindow(QMainWindow):
             f"Cart exported to:\n{cart_path}\n\n"
             f"Run: python -m tortuplayer {cart_path}",
         )
+
+    def _action_build_executable(self) -> None:
+        if not self.project:
+            QMessageBox.information(self, "Build Executable", "Open a project first.")
+            return
+        from tortustudio.build_dialog import BuildExecutableDialog
+        cart_name = self.project.game.cart_name or "untitled"
+        dest = QFileDialog.getExistingDirectory(
+            self, "Select folder containing the exported .tortucart"
+        )
+        if not dest:
+            return
+        cart_path = Path(dest)
+        if not (cart_path / "cart.json").is_file():
+            named = cart_path / f"{cart_name}.tortucart"
+            if (named / "cart.json").is_file():
+                cart_path = named
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Build Executable",
+                    f"No cart.json found in:\n{cart_path}\n\nExport the .tortucart first.",
+                )
+                return
+        dlg = BuildExecutableDialog(cart_path, self)
+        dlg.exec()
 
     def _load_game_settings_form(self) -> None:
         if not self.project:
