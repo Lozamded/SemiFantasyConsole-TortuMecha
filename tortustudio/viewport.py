@@ -106,6 +106,7 @@ class ViewportWidget(QWidget):
         self._camera_x = 0
         self._camera_y = 0
         self._use_scene_preview = False
+        self._pending_game_module = None
 
         # Debug-play state
         self._debug_mode: bool = False
@@ -139,9 +140,8 @@ class ViewportWidget(QWidget):
         self._scene = None
         self._scene_renderer = None
         self._scene_path = None
+        self._pending_game_module = module
         self.engine.unload_game()
-        if module is not None:
-            self.engine.load_game(module)
         self._refresh_frame()
 
     def set_debug_mode(self, enabled: bool) -> None:
@@ -199,12 +199,15 @@ class ViewportWidget(QWidget):
         self._refresh_frame()
 
     def start_playback(self) -> None:
+        if self._pending_game_module is not None:
+            self.engine.load_game(self._pending_game_module)
         self._playing = True
         self._timer.start()
 
     def stop_playback(self) -> None:
         self._playing = False
         self._timer.stop()
+        self.engine.unload_game()
         self._unpatch_keyboard()
         self._key_proxy.clear()
         self._refresh_frame()

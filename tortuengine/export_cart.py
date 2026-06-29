@@ -295,8 +295,8 @@ def export_cart(project: Project, dest: Path) -> Path:
     for scene_rel in plan.scene_paths:
         scene = load_scene(project.root / scene_rel, project_root=project.root)
         scene_id = cart_scene_key(scene_rel)
-        out_rel = f"scenes/{Path(scene_id).name}.json"
-        save_scene(scene, dest / out_rel, project_root=dest)
+        out_rel = f"scenes/{Path(scene_id).name}.tortuscene"
+        save_scene(scene, dest / out_rel, project_root=project.root)
         manifest_scenes[scene_id] = out_rel
         legacy_key = scene_rel
         if legacy_key not in manifest_scenes:
@@ -320,4 +320,41 @@ def export_cart(project: Project, dest: Path) -> Path:
         json.dumps(manifest, indent=2) + "\n",
         encoding="utf-8",
     )
+
+    entry_path = project.root / project.entry
+    if entry_path.is_file():
+        shutil.copy2(entry_path, dest / project.entry)
+
+    scripts_dir = project.scripts_dir()
+    if scripts_dir.is_dir():
+        shutil.copytree(scripts_dir, dest / "scripts")
+
+    audio_dir = project.audio_dir()
+    if audio_dir.is_dir():
+        shutil.copytree(audio_dir, dest / "assets" / "audio")
+
+    # Copy source asset files so game scripts can load them directly
+    # (sprites for frame metadata, tilesets for collision, objects for hitboxes)
+    palettes_dir = project.palettes_dir()
+    if palettes_dir.is_dir():
+        shutil.copytree(palettes_dir, dest / "palettes")
+
+    for sprite_rel in sorted(plan.sprites):
+        src = project.root / sprite_rel
+        dst = dest / sprite_rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+
+    for tileset_rel, _ in sorted(plan.tilesets):
+        src = project.root / tileset_rel
+        dst = dest / tileset_rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+
+    for object_rel in sorted(plan.objects):
+        src = project.root / object_rel
+        dst = dest / object_rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+
     return dest

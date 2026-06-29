@@ -1,13 +1,2 @@
-"""Script for scene level_01."""
-
-
-def init(engine):
-    pass
-
-
-def update(dt):
-    pass
-
-
-def draw(engine):
-    pass
+"""Script for scene level_01 — scene scripts are not yet called at runtime.
+Music and game logic go in main.py instead."""

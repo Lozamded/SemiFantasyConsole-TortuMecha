@@ -7,9 +7,10 @@ from enum import Enum
 from pathlib import Path
 
 import pygame
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import QByteArray, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QImage, QMouseEvent, QPainter, QPen, QWheelEvent
 from PyQt6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
@@ -65,6 +66,57 @@ class Tool(str, Enum):
     PAINT = "paint"
     ERASE = "erase"
     EYEDROPPER = "eyedropper"
+
+
+_OBJECT_MIME = "application/x-tortu-scene-object"
+
+
+class _ObjectsListWidget(QListWidget):
+    """QListWidget that carries the scene-object data key in its drag MIME."""
+
+    def __init__(self, get_object_data, parent=None) -> None:
+        super().__init__(parent)
+        self._get_object_data = get_object_data
+        self.setDragEnabled(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.DragOnly)
+
+    def mimeData(self, items):  # type: ignore[override]
+        mime = super().mimeData(items)
+        if items:
+            data = self._get_object_data(self.row(items[0]))
+            if data:
+                mime.setData(_OBJECT_MIME, QByteArray(data.encode()))
+        return mime
+
+
+class _DroppableTargetCombo(QComboBox):
+    """QComboBox that accepts drops from _ObjectsListWidget."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event) -> None:  # noqa: N802
+        if event.mimeData().hasFormat(_OBJECT_MIME):
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event) -> None:  # noqa: N802
+        if event.mimeData().hasFormat(_OBJECT_MIME):
+            event.acceptProposedAction()
+        else:
+            super().dragMoveEvent(event)
+
+    def dropEvent(self, event) -> None:  # noqa: N802
+        if event.mimeData().hasFormat(_OBJECT_MIME):
+            key = bytes(event.mimeData().data(_OBJECT_MIME)).decode()
+            idx = self.findData(key)
+            if idx >= 0:
+                self.setCurrentIndex(idx)
+            event.acceptProposedAction()
+        else:
+            super().dropEvent(event)
 
 
 class SceneMapCanvas(QWidget):
@@ -980,14 +1032,21 @@ class SceneEditorWidget(QWidget):
         self.btn_open_script = QPushButton("Open script")
         self.btn_open_script.clicked.connect(self._open_script_in_editor)
 
-        self.btn_create_script = QPushButton("Create Script")
+        self.btn_create_script = QPushButton("Create new")
         self.btn_create_script.clicked.connect(self._create_script)
+        self.btn_assign_script = QPushButton("Assign existing…")
+        self.btn_assign_script.clicked.connect(self._browse_script)
 
         self._script_container = QWidget()
         _script_vbox = QVBoxLayout(self._script_container)
         _script_vbox.setContentsMargins(0, 0, 0, 0)
         _script_vbox.setSpacing(2)
-        _script_vbox.addWidget(self.btn_create_script)
+        self._script_empty_row = QWidget()
+        _script_empty_inner = QHBoxLayout(self._script_empty_row)
+        _script_empty_inner.setContentsMargins(0, 0, 0, 0)
+        _script_empty_inner.addWidget(self.btn_create_script)
+        _script_empty_inner.addWidget(self.btn_assign_script)
+        _script_vbox.addWidget(self._script_empty_row)
         self._script_edit_row = QWidget()
         _script_edit_inner = QHBoxLayout(self._script_edit_row)
         _script_edit_inner.setContentsMargins(0, 0, 0, 0)
@@ -995,6 +1054,43 @@ class SceneEditorWidget(QWidget):
         _script_edit_inner.addWidget(self.btn_browse_script)
         _script_edit_inner.addWidget(self.btn_open_script)
         _script_vbox.addWidget(self._script_edit_row)
+
+        self.camera_target_combo = _DroppableTargetCombo()
+        self.camera_target_combo.setToolTip("Scene object the camera will follow (drag from object list)")
+        self.camera_target_combo.currentIndexChanged.connect(self._on_camera_target_changed)
+
+        self.camera_script_edit = QLineEdit()
+        self.camera_script_edit.setPlaceholderText("scripts/camera_follow.py")
+        self.camera_script_edit.textChanged.connect(self._on_camera_script_changed)
+        self.camera_script_edit.textChanged.connect(self._refresh_camera_script_row)
+
+        self.btn_browse_camera_script = QPushButton("Browse…")
+        self.btn_browse_camera_script.clicked.connect(self._browse_camera_script)
+        self.btn_open_camera_script = QPushButton("Open script")
+        self.btn_open_camera_script.clicked.connect(self._open_camera_script_in_editor)
+
+        self.btn_create_camera_script = QPushButton("Create new")
+        self.btn_create_camera_script.clicked.connect(self._create_camera_script)
+        self.btn_assign_camera_script = QPushButton("Assign existing…")
+        self.btn_assign_camera_script.clicked.connect(self._browse_camera_script)
+
+        self._camera_script_container = QWidget()
+        _cam_vbox = QVBoxLayout(self._camera_script_container)
+        _cam_vbox.setContentsMargins(0, 0, 0, 0)
+        _cam_vbox.setSpacing(2)
+        self._camera_script_empty_row = QWidget()
+        _cam_empty_inner = QHBoxLayout(self._camera_script_empty_row)
+        _cam_empty_inner.setContentsMargins(0, 0, 0, 0)
+        _cam_empty_inner.addWidget(self.btn_create_camera_script)
+        _cam_empty_inner.addWidget(self.btn_assign_camera_script)
+        _cam_vbox.addWidget(self._camera_script_empty_row)
+        self._camera_script_edit_row = QWidget()
+        _cam_edit_inner = QHBoxLayout(self._camera_script_edit_row)
+        _cam_edit_inner.setContentsMargins(0, 0, 0, 0)
+        _cam_edit_inner.addWidget(self.camera_script_edit, stretch=1)
+        _cam_edit_inner.addWidget(self.btn_browse_camera_script)
+        _cam_edit_inner.addWidget(self.btn_open_camera_script)
+        _cam_vbox.addWidget(self._camera_script_edit_row)
 
         self.btn_edit_mode = QPushButton("Edit")
         self.btn_draw_mode = QPushButton("Draw")
@@ -1018,7 +1114,7 @@ class SceneEditorWidget(QWidget):
         self.objects_search.setPlaceholderText("Filter objects…")
         self.objects_search.textChanged.connect(self._refresh_objects_list)
 
-        self.objects_list = QListWidget()
+        self.objects_list = _ObjectsListWidget(self._get_dragged_object_data)
         self.objects_list.setMaximumHeight(160)
         self.objects_list.currentRowChanged.connect(self._on_objects_list_selection_changed)
         self._selected_object_index = -1
@@ -1067,18 +1163,11 @@ class SceneEditorWidget(QWidget):
         side.setContentsMargins(0, 0, 0, 0)
         side.setSpacing(6)
 
-        tile_section = CollapsibleSection("Tile layers", expanded=True)
-        tile_form = QFormLayout()
-        tile_form.addRow("Active layer:", self.tile_layer_combo)
-        tile_form.addRow("Tileset:", self.tile_layer_tileset_combo)
-        tile_form.addRow("", self.tile_layer_visible)
-        tile_form.addRow("Collision layer:", self.collision_tile_layer_combo)
-        tile_layer_btns = QHBoxLayout()
-        tile_layer_btns.addWidget(self.btn_add_tile_layer)
-        tile_layer_btns.addWidget(self.btn_remove_tile_layer)
-        tile_form.addRow(tile_layer_btns)
-        tile_section.content_layout().addLayout(tile_form)
-        side.addWidget(tile_section)
+        script_section = CollapsibleSection("Scripts", expanded=True)
+        script_form = QFormLayout()
+        script_form.addRow("Scene script:", self._script_container)
+        script_section.content_layout().addLayout(script_form)
+        side.addWidget(script_section)
 
         bg_section = CollapsibleSection("Backgrounds", expanded=False)
         bg_form = QFormLayout()
@@ -1110,8 +1199,23 @@ class SceneEditorWidget(QWidget):
         bg_section.content_layout().addLayout(bg_form)
         side.addWidget(bg_section)
 
+        tile_section = CollapsibleSection("Tile layers", expanded=True)
+        tile_form = QFormLayout()
+        tile_form.addRow("Active layer:", self.tile_layer_combo)
+        tile_form.addRow("Tileset:", self.tile_layer_tileset_combo)
+        tile_form.addRow("", self.tile_layer_visible)
+        tile_form.addRow("Collision layer:", self.collision_tile_layer_combo)
+        tile_layer_btns = QHBoxLayout()
+        tile_layer_btns.addWidget(self.btn_add_tile_layer)
+        tile_layer_btns.addWidget(self.btn_remove_tile_layer)
+        tile_form.addRow(tile_layer_btns)
+        tile_section.content_layout().addLayout(tile_form)
+        side.addWidget(tile_section)
+
         camera_section = CollapsibleSection("Camera", expanded=True)
         camera_form = QFormLayout()
+        camera_form.addRow("Target object:", self.camera_target_combo)
+        camera_form.addRow("Camera script:", self._camera_script_container)
         camera_form.addRow("Camera X:", self.camera_slider)
         camera_form.addRow("Camera Y:", self.camera_y_slider)
         camera_form.addRow(self.show_camera_frame)
@@ -1133,12 +1237,6 @@ class SceneEditorWidget(QWidget):
         map_form.addRow(self.show_grid)
         map_section.content_layout().addLayout(map_form)
         side.addWidget(map_section)
-
-        script_section = CollapsibleSection("Script", expanded=False)
-        script_form = QFormLayout()
-        script_form.addRow("Scene script:", self._script_container)
-        script_section.content_layout().addLayout(script_form)
-        side.addWidget(script_section)
 
         objects_section = CollapsibleSection("Objects in Scene", expanded=True)
         objects_section.content_layout().addWidget(self.objects_search)
@@ -1609,6 +1707,7 @@ class SceneEditorWidget(QWidget):
                 self._selected_object_index = -1
         self.btn_remove_selected_object.setEnabled(self._selected_object_index >= 0)
         self.objects_list.blockSignals(False)
+        self._refresh_camera_target_combo()
 
     def _set_editor_mode(self, edit: bool) -> None:
         self._edit_mode = edit
@@ -1666,6 +1765,11 @@ class SceneEditorWidget(QWidget):
         self.script_edit.setText(self.scene.script)
         self.script_edit.blockSignals(False)
         self._refresh_script_row()
+        self.camera_script_edit.blockSignals(True)
+        self.camera_script_edit.setText(self.scene.camera_script)
+        self.camera_script_edit.blockSignals(False)
+        self._refresh_camera_script_row()
+        self._refresh_camera_target_combo()
         self._update_map_size_label()
         self._sync_tile_layer_controls()
         self._sync_tile_layer_tileset_combo()
@@ -2086,6 +2190,8 @@ class SceneEditorWidget(QWidget):
         if not self.scene or not self.file_path:
             return
         self.scene.script = self.script_edit.text().strip()
+        self.scene.camera_script = self.camera_script_edit.text().strip()
+        self.scene.camera_target = self.camera_target_combo.currentData() or ""
         save_scene(self.scene, self.file_path, project_root=self.project_root)
         self._dirty = False
         self._update_status()
@@ -2098,7 +2204,7 @@ class SceneEditorWidget(QWidget):
 
     def _refresh_script_row(self) -> None:
         has_script = bool(self.script_edit.text().strip())
-        self.btn_create_script.setVisible(not has_script)
+        self._script_empty_row.setVisible(not has_script)
         self._script_edit_row.setVisible(has_script)
 
     def _create_script(self) -> None:
@@ -2128,6 +2234,123 @@ class SceneEditorWidget(QWidget):
         rel = script_path.resolve().relative_to(self.project_root.resolve()).as_posix()
         self.script_edit.setText(rel)
         self._open_script_in_editor()
+
+    def _get_dragged_object_data(self, row: int) -> str:
+        """Return the combo-key string for the list row being dragged."""
+        if not self.scene or row < 0 or row >= len(self._objects_list_indices):
+            return ""
+        obj_idx = self._objects_list_indices[row]
+        if obj_idx >= len(self.scene.objects):
+            return ""
+        inst = self.scene.objects[obj_idx]
+        prior_count = sum(1 for o in self.scene.objects[:obj_idx] if o.prefab == inst.prefab)
+        return inst.prefab + (f"[{prior_count}]" if prior_count > 0 else "")
+
+    def _refresh_camera_target_combo(self) -> None:
+        self.camera_target_combo.blockSignals(True)
+        self.camera_target_combo.clear()
+        self.camera_target_combo.addItem("(none)", "")
+        if self.scene:
+            seen: dict[str, int] = {}
+            for inst in self.scene.objects:
+                stem = Path(inst.prefab).stem
+                count = seen.get(inst.prefab, 0)
+                seen[inst.prefab] = count + 1
+                suffix = f" [{count}]" if count > 0 else ""
+                label = f"{stem}{suffix}  @ ({inst.x}, {inst.y})"
+                self.camera_target_combo.addItem(label, inst.prefab + (f"[{count}]" if count > 0 else ""))
+            current = self.scene.camera_target if self.scene else ""
+            idx = self.camera_target_combo.findData(current)
+            self.camera_target_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self.camera_target_combo.blockSignals(False)
+
+    def _on_camera_target_changed(self, _index: int) -> None:
+        if self.scene is not None:
+            self.scene.camera_target = self.camera_target_combo.currentData() or ""
+            self._mark_dirty()
+
+    def _on_camera_script_changed(self) -> None:
+        if self.scene is not None:
+            self.scene.camera_script = self.camera_script_edit.text().strip()
+            self._mark_dirty()
+
+    def _refresh_camera_script_row(self) -> None:
+        has_script = bool(self.camera_script_edit.text().strip())
+        self._camera_script_empty_row.setVisible(not has_script)
+        self._camera_script_edit_row.setVisible(has_script)
+
+    def _create_camera_script(self) -> None:
+        if not self.file_path:
+            return
+        scripts_dir = self.project_root / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        script_path = scripts_dir / "camera_follow.py"
+        if script_path.exists():
+            reply = QMessageBox.question(
+                self,
+                "Create Camera Script",
+                f"Script already exists:\n{script_path}\n\nLink and open it?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+        else:
+            template = (
+                '"""Smooth follow camera — horizontal only."""\n\n'
+                "from tortuengine.constants import SCREEN_WIDTH\n\n"
+                "SMOOTHING = 8.0\n\n"
+                "_cam_x: float = 0.0\n"
+                "_cam_y: float = 0.0\n"
+                "_scene_w: int = 0\n"
+                "_scene_h: int = 0\n\n\n"
+                "def init(scene_width: int, scene_height: int) -> None:\n"
+                "    global _cam_x, _cam_y, _scene_w, _scene_h\n"
+                "    _cam_x = 0.0\n"
+                "    _cam_y = 0.0\n"
+                "    _scene_w = scene_width\n"
+                "    _scene_h = scene_height\n\n\n"
+                "def update(dt: float, target_x: float, target_y: float) -> None:\n"
+                "    global _cam_x\n"
+                "    tx = target_x - SCREEN_WIDTH / 2.0\n"
+                "    tx = max(0.0, min(tx, float(_scene_w - SCREEN_WIDTH)))\n"
+                "    _cam_x += (tx - _cam_x) * min(1.0, dt * SMOOTHING)\n\n\n"
+                "def get() -> tuple[float, float]:\n"
+                "    return _cam_x, _cam_y\n"
+            )
+            script_path.write_text(template, encoding="utf-8")
+        rel = script_path.resolve().relative_to(self.project_root.resolve()).as_posix()
+        self.camera_script_edit.setText(rel)
+        self._open_camera_script_in_editor()
+
+    def _browse_camera_script(self) -> None:
+        scripts_dir = self.project_root / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Choose Camera Script",
+            str(scripts_dir),
+            "Python Scripts (*.py)",
+        )
+        if not path:
+            return
+        rel = Path(path).resolve().relative_to(self.project_root.resolve()).as_posix()
+        self.camera_script_edit.setText(rel)
+
+    def _open_camera_script_in_editor(self) -> None:
+        script = self.camera_script_edit.text().strip()
+        if not script:
+            QMessageBox.information(self, "Open Camera Script", "Set a camera script path first.")
+            return
+        path = (self.project_root / script).resolve()
+        if not path.is_file():
+            QMessageBox.warning(self, "Open Camera Script", f"Script not found: {path}")
+            return
+        try:
+            project = load_project(self.project_root)
+            cmd = project.editor_command.format(file=path, line=1)
+            subprocess.Popen(cmd, shell=True)
+        except OSError as exc:
+            QMessageBox.warning(self, "Open Camera Script", str(exc))
 
     def _browse_script(self) -> None:
         scripts_dir = self.project_root / "scripts"

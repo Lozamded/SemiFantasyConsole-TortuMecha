@@ -4,54 +4,88 @@
     "game_name": "Hello Tortu",
     "cart_name": "hello_tortu",
     "fps": 60,
-    "start_scene": "scenes/level_01.tortuscene"
+    "start_scene": "scenes/level_01.tortuscene",
+    "audio_channels": [
+      "music",
+      "sfx_1",
+      "sfx_2",
+      "sfx_3"
+    ]
   },
   "start_scene": "scenes/level_01",
   "sprites": {
-    "assets/sprites/robot_damage.tortusprite": {
+    "assets/sprites/mechaturtle_air_attack.tortusprite": {
       "fps": 8,
-      "width": 20,
-      "height": 20,
+      "width": 40,
+      "height": 32,
       "frames": [
-        "baked/assets/sprites/robot_damage/f0.png"
+        "baked/assets/sprites/mechaturtle_air_attack/f0.png",
+        "baked/assets/sprites/mechaturtle_air_attack/f1.png"
       ]
     },
-    "assets/sprites/robot_fall.tortusprite": {
+    "assets/sprites/mechaturtle_attack.tortusprite": {
       "fps": 8,
-      "width": 20,
-      "height": 20,
+      "width": 40,
+      "height": 32,
       "frames": [
-        "baked/assets/sprites/robot_fall/f0.png"
+        "baked/assets/sprites/mechaturtle_attack/f0.png",
+        "baked/assets/sprites/mechaturtle_attack/f1.png"
       ]
     },
-    "assets/sprites/robot_idle.tortusprite": {
+    "assets/sprites/mechaturtle_crouch.tortusprite": {
       "fps": 8,
-      "width": 20,
-      "height": 20,
+      "width": 40,
+      "height": 32,
       "frames": [
-        "baked/assets/sprites/robot_idle/f0.png",
-        "baked/assets/sprites/robot_idle/f1.png"
+        "baked/assets/sprites/mechaturtle_crouch/f0.png",
+        "baked/assets/sprites/mechaturtle_crouch/f1.png"
       ]
     },
-    "assets/sprites/robot_jump.tortusprite": {
+    "assets/sprites/mechaturtle_damage.tortusprite": {
       "fps": 8,
-      "width": 20,
-      "height": 20,
+      "width": 40,
+      "height": 32,
       "frames": [
-        "baked/assets/sprites/robot_jump/f0.png"
+        "baked/assets/sprites/mechaturtle_damage/f0.png"
       ]
     },
-    "assets/sprites/robot_walk.tortusprite": {
+    "assets/sprites/mechaturtle_fall.tortusprite": {
       "fps": 8,
-      "width": 20,
-      "height": 20,
+      "width": 40,
+      "height": 32,
       "frames": [
-        "baked/assets/sprites/robot_walk/f0.png",
-        "baked/assets/sprites/robot_walk/f1.png",
-        "baked/assets/sprites/robot_walk/f2.png",
-        "baked/assets/sprites/robot_walk/f3.png",
-        "baked/assets/sprites/robot_walk/f4.png",
-        "baked/assets/sprites/robot_walk/f5.png"
+        "baked/assets/sprites/mechaturtle_fall/f0.png",
+        "baked/assets/sprites/mechaturtle_fall/f1.png"
+      ]
+    },
+    "assets/sprites/mechaturtle_idle.tortusprite": {
+      "fps": 8,
+      "width": 40,
+      "height": 32,
+      "frames": [
+        "baked/assets/sprites/mechaturtle_idle/f0.png",
+        "baked/assets/sprites/mechaturtle_idle/f1.png",
+        "baked/assets/sprites/mechaturtle_idle/f2.png"
+      ]
+    },
+    "assets/sprites/mechaturtle_jump.tortusprite": {
+      "fps": 8,
+      "width": 40,
+      "height": 32,
+      "frames": [
+        "baked/assets/sprites/mechaturtle_jump/f0.png",
+        "baked/assets/sprites/mechaturtle_jump/f1.png"
+      ]
+    },
+    "assets/sprites/mechaturtle_walk.tortusprite": {
+      "fps": 8,
+      "width": 40,
+      "height": 32,
+      "frames": [
+        "baked/assets/sprites/mechaturtle_walk/f0.png",
+        "baked/assets/sprites/mechaturtle_walk/f1.png",
+        "baked/assets/sprites/mechaturtle_walk/f2.png",
+        "baked/assets/sprites/mechaturtle_walk/f3.png"
       ]
     }
   },
@@ -99,39 +133,60 @@
       "full": "baked/assets/backgrounds/bg1/full.png",
       "bands": {
         "0:19": "baked/assets/backgrounds/bg1/band_0_19.png",
-        "21:80": "baked/assets/backgrounds/bg1/band_21_80.png",
+        "20:80": "baked/assets/backgrounds/bg1/band_20_80.png",
         "81:125": "baked/assets/backgrounds/bg1/band_81_125.png",
         "126:197": "baked/assets/backgrounds/bg1/band_126_197.png"
       }
+    },
+    "assets/backgrounds/bg_1_mountains.tortubackground": {
+      "width": 312,
+      "height": 198,
+      "full": "baked/assets/backgrounds/bg_1_mountains/full.png",
+      "bands": {}
     }
   },
   "objects": {
-    "assets/objects/robot.tortuobject": {
-      "name": "robot",
+    "assets/objects/mechaturtle.tortuobject": {
+      "name": "mechaturtle",
       "default_animation": "idle",
       "animations": {
-        "idle": "assets/sprites/robot_idle.tortusprite",
-        "damage": "assets/sprites/robot_damage.tortusprite",
-        "walk": "assets/sprites/robot_walk.tortusprite",
-        "jump": "assets/sprites/robot_jump.tortusprite",
-        "fall": "assets/sprites/robot_fall.tortusprite"
+        "idle": "assets/sprites/mechaturtle_idle.tortusprite",
+        "walk": "assets/sprites/mechaturtle_walk.tortusprite",
+        "jump": "assets/sprites/mechaturtle_jump.tortusprite",
+        "fall": "assets/sprites/mechaturtle_fall.tortusprite",
+        "attack": "assets/sprites/mechaturtle_attack.tortusprite",
+        "damge": "assets/sprites/mechaturtle_damage.tortusprite",
+        "air_attack": "assets/sprites/mechaturtle_air_attack.tortusprite",
+        "crouch": "assets/sprites/mechaturtle_crouch.tortusprite"
       },
-      "solid": true,
+      "solid": false,
       "origin": {
-        "x": 10,
-        "y": 19
+        "x": 18,
+        "y": 31
       },
-      "hitbox": {
-        "x": 4,
-        "y": 3,
-        "w": 13,
-        "h": 17
-      },
-      "script": ""
+      "colliders": [
+        {
+          "name": "body",
+          "x": 11,
+          "y": 18,
+          "w": 15,
+          "h": 14,
+          "active": true
+        },
+        {
+          "name": "head",
+          "x": 13,
+          "y": 5,
+          "w": 14,
+          "h": 12,
+          "active": true
+        }
+      ],
+      "script": "scripts/mechaturtle_player.py"
     }
   },
   "scenes": {
-    "scenes/level_01": "scenes/level_01.json",
-    "scenes/level_01.tortuscene": "scenes/level_01.json"
+    "scenes/level_01": "scenes/level_01.tortuscene",
+    "scenes/level_01.tortuscene": "scenes/level_01.tortuscene"
   }
 }

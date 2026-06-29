@@ -14,7 +14,7 @@ class TortuEngine:
         if not pygame.get_init():
             pygame.init()
 
-        self.framebuffer = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        self.framebuffer = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), 0, 32)
         self.clock = pygame.time.Clock()
         self.fps = DEFAULT_FPS
         self._game_module = None
@@ -34,6 +34,9 @@ class TortuEngine:
 
     def unload_game(self) -> None:
         self._game_module = None
+        if pygame.mixer.get_init():
+            pygame.mixer.music.stop()
+            pygame.mixer.stop()
 
     def clear(self, color: tuple[int, int, int]) -> None:
         self.framebuffer.fill(color)

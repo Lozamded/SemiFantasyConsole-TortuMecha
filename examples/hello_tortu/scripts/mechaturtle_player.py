@@ -24,6 +24,7 @@ from tortuengine.tileset import (
 )
 
 ROOT = Path(__file__).parent.parent
+_PREFAB_PATH = "assets/objects/mechaturtle.tortuobject"
 
 SCREEN_W, SCREEN_H = 264, 198
 TILE_SIZE = 16
@@ -60,16 +61,27 @@ _anim_elapsed = 0.0
 _attack_timer = 0.0
 _coyote_timer = 0.0
 _jump_buffer_timer = 0.0
-_cam_x = 0.0
 _prev_jump = False
 _prev_attack = False
 _was_on_ground = False
 _crouching = False
 _prev_down = False
 
+_sfx_jump: pygame.mixer.Sound | None = None
+_sfx_shell: pygame.mixer.Sound | None = None
+_sfx_attack: pygame.mixer.Sound | None = None
+
+_camera = None
+_is_camera_target: bool = True
+
+
+def set_camera(cam) -> None:
+    global _camera
+    _camera = cam
+
 _ANIM_FPS: dict[str, int] = {
-    "idle": 8, "walk": 8, "jump": 6, "fall": 2,
-    "attack": 2, "air_attack": 2, "crouch": 3,
+    "idle": 8, "walk": 8, "jump": 6, "fall": 8,
+    "attack": 5, "air_attack": 5, "crouch": 3,
 }
 _ANIM_NOLOOP: frozenset[str] = frozenset({"jump", "attack", "air_attack", "crouch"})
 _ANIMS = ("idle", "walk", "jump", "fall", "attack", "air_attack", "crouch")
@@ -259,10 +271,11 @@ def init(engine) -> None:
     global _px, _py, _vx, _vy, _facing, _on_ground
     global _state, _prev_state, _anim_frame, _anim_elapsed
     global _attack_timer, _coyote_timer, _jump_buffer_timer
-    global _cam_x, _prev_jump, _prev_attack, _was_on_ground
+    global _prev_jump, _prev_attack, _was_on_ground
     global _crouching, _prev_down
     global STAND_HB_L, STAND_HB_R, STAND_HB_T, STAND_HB_B
     global CROUCH_HB_L, CROUCH_HB_R, CROUCH_HB_T, CROUCH_HB_B
+    global _sfx_jump, _sfx_shell, _sfx_attack, _is_camera_target
 
     _px, _py = 34.0, 191.0
     _vx, _vy = 0.0, 0.0
@@ -270,14 +283,14 @@ def init(engine) -> None:
     _state = _prev_state = "idle"
     _anim_frame, _anim_elapsed = 0, 0.0
     _attack_timer, _coyote_timer, _jump_buffer_timer = 0.0, 0.0, 0.0
-    _cam_x = 0.0
     _prev_jump, _prev_attack = False, False
     _was_on_ground = False
     _crouching, _prev_down = False, False
 
     scene_path = ROOT / "scenes/level_01.tortuscene"
     _scene = load_scene(scene_path, project_root=ROOT)
-    _scene.objects.clear()
+    _scene.objects = [o for o in _scene.objects if o.prefab != _PREFAB_PATH]
+    _is_camera_target = not _scene.camera_target or _scene.camera_target == _PREFAB_PATH
 
     collision_layer = _scene.tile_layers[_scene.collision_tile_layer]
     if collision_layer.tileset:
@@ -285,7 +298,12 @@ def init(engine) -> None:
     else:
         _collision_tileset = None
 
-    _renderer = SceneRenderer(ROOT)
+    cart_manifest = getattr(engine, 'manifest', None)
+    cart_root = getattr(engine, 'cart_root', None)
+    if cart_manifest is not None and cart_root is not None:
+        _renderer = SceneRenderer.from_cart(cart_root, cart_manifest)
+    else:
+        _renderer = SceneRenderer(ROOT)
 
     idle_spr = load_sprite(ROOT / "assets/sprites/mechaturtle_idle.tortusprite")
     pal = load_palette(palette_path(ROOT, idle_spr.palette))
@@ -328,12 +346,31 @@ def init(engine) -> None:
             flipped.append(pygame.transform.flip(s, True, False))
         _frames[anim] = (normal, flipped)
 
+    try:
+        _sfx_jump = pygame.mixer.Sound(str(ROOT / "assets/audio/sfx_jump.ogg"))
+        _sfx_shell = pygame.mixer.Sound(str(ROOT / "assets/audio/sfx_shell.ogg"))
+        _sfx_attack = pygame.mixer.Sound(str(ROOT / "assets/audio/sfx_attack.ogg"))
+    except Exception:
+        pass
+
+    # Auto-wire camera from scene metadata when not set explicitly by main.py
+    if _camera is None and _scene and _scene.camera_script:
+        try:
+            import importlib
+            mod_name = _scene.camera_script.removesuffix(".py").replace("\\", "/").replace("/", ".")
+            set_camera(importlib.import_module(mod_name))
+        except Exception:
+            pass
+
+    if _camera and _scene:
+        _camera.init(_scene.width, _scene.height)
+
 
 def update(dt: float) -> None:
     global _px, _py, _vx, _vy, _facing, _on_ground
     global _state, _prev_state, _anim_frame, _anim_elapsed
     global _attack_timer, _coyote_timer, _jump_buffer_timer
-    global _cam_x, _prev_jump, _prev_attack, _was_on_ground
+    global _prev_jump, _prev_attack, _was_on_ground
     global _crouching, _prev_down
 
     keys = pygame.key.get_pressed()
@@ -354,6 +391,8 @@ def update(dt: float) -> None:
     attacking = _attack_timer > 0
     if _on_ground and not attacking:
         if down_held:
+            if not _crouching and _sfx_shell:
+                _sfx_shell.play()
             _crouching = True
         elif _crouching and _can_uncrouch():
             _crouching = False
@@ -387,6 +426,8 @@ def update(dt: float) -> None:
     if atk_pressed and not attacking and not _crouching:
         _attack_timer = ATTACK_DUR
         attacking = True
+        if _sfx_attack:
+            _sfx_attack.play()
         if _on_ground:
             _vx = 0.0
 
@@ -410,6 +451,8 @@ def update(dt: float) -> None:
         _on_ground = False
         _coyote_timer = 0.0
         _jump_buffer_timer = 0.0
+        if _sfx_jump:
+            _sfx_jump.play()
 
     _physics(dt, hb_l, hb_r, hb_t, hb_b)
 
@@ -445,15 +488,16 @@ def update(dt: float) -> None:
     else:
         _anim_frame = 0
 
-    target_cam = _px - SCREEN_W / 2.0
-    if _scene:
-        target_cam = max(0.0, min(target_cam, float(_scene.width - SCREEN_W)))
-    _cam_x += (target_cam - _cam_x) * min(1.0, dt * 8.0)
+    if _camera and _is_camera_target:
+        _camera.update(dt, _px, _py)
+    if _renderer and _scene:
+        _renderer.tick(_scene, dt)
 
 
 def draw(engine) -> None:
+    cam_x, cam_y = _camera.get() if _camera else (0.0, 0.0)
     if _renderer and _scene:
-        frame = _renderer.render(_scene, camera_x=int(_cam_x), camera_y=0)
+        frame = _renderer.render(_scene, camera_x=int(cam_x), camera_y=int(cam_y))
         engine.blit(frame, (0, 0))
     else:
         engine.clear((12, 18, 32))
@@ -464,7 +508,7 @@ def draw(engine) -> None:
         pool = flipped if _facing == -1 else normal
         fi = _anim_frame % len(pool)
         surf = pool[fi]
-        screen_x = int(_px - 18 - _cam_x)
+        screen_x = int(_px - 18 - cam_x)
         screen_y = int(_py - 31)
         engine.blit(surf, (screen_x, screen_y))
 

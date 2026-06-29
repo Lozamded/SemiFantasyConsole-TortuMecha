@@ -171,6 +171,8 @@ class Scene:
     objects: list[SceneObject] = field(default_factory=list)
     collision_tile_layer: int = 0
     script: str = ""
+    camera_script: str = ""
+    camera_target: str = ""
 
     @property
     def tile_layer_count(self) -> int:
@@ -611,8 +613,11 @@ def load_scene(path: Path, *, project_root: Path | None = None) -> Scene:
     objects = _normalize_scene_objects(data.get("objects", []), path)
 
     script = _normalize_asset_path(str(data.get("script", "")))
+    camera_script = _normalize_asset_path(str(data.get("camera_script", "")))
+    camera_target = _normalize_asset_path(str(data.get("camera_target", "")))
     scene = Scene(
-        palette, width, height, tile_layers, scene_bg_layers, objects, collision_tile_layer, script
+        palette, width, height, tile_layers, scene_bg_layers, objects,
+        collision_tile_layer, script, camera_script, camera_target,
     )
     scene.ensure_all_tile_layer_grids(project_root)
     return scene
@@ -630,6 +635,8 @@ def save_scene(scene: Scene, path: Path, *, project_root: Path | None = None) ->
         "height": scene.height,
         "collision_tile_layer": scene.collision_tile_layer,
         **({"script": _normalize_asset_path(scene.script)} if scene.script.strip() else {}),
+        **({"camera_script": _normalize_asset_path(scene.camera_script)} if scene.camera_script.strip() else {}),
+        **({"camera_target": _normalize_asset_path(scene.camera_target)} if scene.camera_target.strip() else {}),
         "bg_layers": [
             {
                 "name": scene_bg_layer.name,

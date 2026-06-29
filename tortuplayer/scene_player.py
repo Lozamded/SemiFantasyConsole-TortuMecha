@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import pygame
 
+from tortuengine.cart import load_game_module
 from tortuengine.cart_manifest import CartManifest
 from tortuengine.constants import DEFAULT_FPS, SCREEN_HEIGHT, SCREEN_WIDTH
+from tortuengine.engine import TortuEngine
 from tortuengine.scene import load_scene
 from tortuengine.scene_renderer import SceneRenderer
 
@@ -30,6 +32,8 @@ class CartScenePlayer:
         self.fps = fps
         self.running = False
         self.window: pygame.Surface | None = None
+        self._game_module = None
+        self._engine: TortuEngine | None = None
 
         scene_id = manifest.resolve_start_scene()
         scene_path = manifest.scene_path(scene_id)
@@ -38,10 +42,22 @@ class CartScenePlayer:
         self.camera_x = 0
         self.camera_y = 0
 
+        entry = manifest.game.get("entry", "main.py")
+        main_py = cart_root / entry
+        if main_py.is_file():
+            game = load_game_module(cart_root, entry)
+            engine = TortuEngine()
+            engine.cart_root = cart_root  # type: ignore[attr-defined]
+            engine.manifest = manifest    # type: ignore[attr-defined]
+            self._game_module = game
+            self._engine = engine
+            if hasattr(game, "init"):
+                game.init(engine)
+
     def _ensure_window(self) -> pygame.Surface:
         if self.window is None:
             self.window = pygame.display.set_mode(
-                (SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SCALED
+                (SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SCALED, 32
             )
             pygame.display.set_caption(self.title)
         return self.window
@@ -60,13 +76,29 @@ class CartScenePlayer:
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     self.running = False
 
-            self.renderer.tick(self.scene, dt)
-            frame = self.renderer.render(
-                self.scene,
-                camera_x=self.camera_x,
-                camera_y=self.camera_y,
-            )
-            window.blit(frame, (0, 0))
+            if self._game_module and self._engine:
+                game = self._game_module
+                engine = self._engine
+                if hasattr(game, "update"):
+                    game.update(dt)
+                self.renderer.tick(self.scene, dt)
+                frame = self.renderer.render(
+                    self.scene,
+                    camera_x=self.camera_x,
+                    camera_y=self.camera_y,
+                )
+                engine.framebuffer.blit(frame, (0, 0))
+                if hasattr(game, "draw"):
+                    game.draw(engine)
+                window.blit(engine.framebuffer, (0, 0))
+            else:
+                self.renderer.tick(self.scene, dt)
+                frame = self.renderer.render(
+                    self.scene,
+                    camera_x=self.camera_x,
+                    camera_y=self.camera_y,
+                )
+                window.blit(frame, (0, 0))
             pygame.display.flip()
 
         pygame.quit()
