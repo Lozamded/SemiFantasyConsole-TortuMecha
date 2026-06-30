@@ -28,6 +28,8 @@ from tortuengine.build_executable import (
     ARCH_X86_64,
     current_arch,
     podman_available,
+    podman_networking_available,
+    qemu_arm_available,
 )
 
 
@@ -76,32 +78,59 @@ class BuildExecutableDialog(QDialog):
         self._cb_native.setChecked(True)
         ag_layout.addWidget(self._cb_native)
 
-        podman = podman_available()
+        podman      = podman_available()
+        networking  = podman and podman_networking_available()
+        qemu        = podman and qemu_arm_available()
+        cross_ready = networking and qemu
+
+        def _cross_tooltip() -> str:
+            if not podman:
+                return "Install Podman to enable cross-compilation"
+            parts = []
+            if not networking:
+                parts.append("network backend missing (sudo apt install passt)")
+            if not qemu:
+                parts.append(
+                    "ARM emulation missing "
+                    "(sudo apt install qemu-user-static && sudo systemctl restart systemd-binfmt)"
+                )
+            return " | ".join(parts)
 
         self._cb_arm64 = QCheckBox("ARM64  (via Podman — for Raspberry Pi 4 / Orange Pi)")
         if native == ARCH_ARM64:
             self._cb_arm64.setEnabled(False)
             self._cb_arm64.setToolTip("Already covered by current platform")
-        elif not podman:
+        elif not cross_ready:
             self._cb_arm64.setEnabled(False)
-            self._cb_arm64.setToolTip("Install Podman to enable cross-compilation")
+            self._cb_arm64.setToolTip(_cross_tooltip())
         ag_layout.addWidget(self._cb_arm64)
 
         self._cb_armhf = QCheckBox("ARMhf / ARM32  (via Podman — for older ARM boards)")
         if native == ARCH_ARMHF:
             self._cb_armhf.setEnabled(False)
             self._cb_armhf.setToolTip("Already covered by current platform")
-        elif not podman:
+        elif not cross_ready:
             self._cb_armhf.setEnabled(False)
-            self._cb_armhf.setToolTip("Install Podman to enable cross-compilation")
+            self._cb_armhf.setToolTip(_cross_tooltip())
         ag_layout.addWidget(self._cb_armhf)
 
         layout.addWidget(arch_group)
 
+        hints: list[str] = []
         if not podman:
-            hint = QLabel("Podman not found — install it to enable ARM cross-builds.")
-            hint.setStyleSheet("color: #cc8800;")
-            layout.addWidget(hint)
+            hints.append("Podman not found — sudo apt install podman")
+        else:
+            if not networking:
+                hints.append("Network backend missing — sudo apt install passt")
+            if not qemu:
+                hints.append(
+                    "ARM emulation missing — sudo apt install qemu-user-static"
+                    "  &&  sudo systemctl restart systemd-binfmt"
+                )
+        for text in hints:
+            lbl = QLabel(text)
+            lbl.setStyleSheet("color: #cc8800;")
+            layout.addWidget(lbl)
 
         # Log output
         self._log = QPlainTextEdit()

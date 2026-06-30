@@ -87,6 +87,52 @@
         "baked/assets/sprites/mechaturtle_walk/f2.png",
         "baked/assets/sprites/mechaturtle_walk/f3.png"
       ]
+    },
+    "assets/sprites/robot_damage.tortusprite": {
+      "fps": 8,
+      "width": 20,
+      "height": 20,
+      "frames": [
+        "baked/assets/sprites/robot_damage/f0.png"
+      ]
+    },
+    "assets/sprites/robot_fall.tortusprite": {
+      "fps": 8,
+      "width": 20,
+      "height": 20,
+      "frames": [
+        "baked/assets/sprites/robot_fall/f0.png"
+      ]
+    },
+    "assets/sprites/robot_idle.tortusprite": {
+      "fps": 8,
+      "width": 20,
+      "height": 20,
+      "frames": [
+        "baked/assets/sprites/robot_idle/f0.png",
+        "baked/assets/sprites/robot_idle/f1.png"
+      ]
+    },
+    "assets/sprites/robot_jump.tortusprite": {
+      "fps": 8,
+      "width": 20,
+      "height": 20,
+      "frames": [
+        "baked/assets/sprites/robot_jump/f0.png"
+      ]
+    },
+    "assets/sprites/robot_walk.tortusprite": {
+      "fps": 8,
+      "width": 20,
+      "height": 20,
+      "frames": [
+        "baked/assets/sprites/robot_walk/f0.png",
+        "baked/assets/sprites/robot_walk/f1.png",
+        "baked/assets/sprites/robot_walk/f2.png",
+        "baked/assets/sprites/robot_walk/f3.png",
+        "baked/assets/sprites/robot_walk/f4.png",
+        "baked/assets/sprites/robot_walk/f5.png"
+      ]
     }
   },
   "tilesets": {
@@ -183,6 +229,33 @@
         }
       ],
       "script": "scripts/mechaturtle_player.py"
+    },
+    "assets/objects/robot.tortuobject": {
+      "name": "robot",
+      "default_animation": "idle",
+      "animations": {
+        "idle": "assets/sprites/robot_idle.tortusprite",
+        "damage": "assets/sprites/robot_damage.tortusprite",
+        "walk": "assets/sprites/robot_walk.tortusprite",
+        "jump": "assets/sprites/robot_jump.tortusprite",
+        "fall": "assets/sprites/robot_fall.tortusprite"
+      },
+      "solid": true,
+      "origin": {
+        "x": 10,
+        "y": 19
+      },
+      "colliders": [
+        {
+          "name": "main",
+          "x": 4,
+          "y": 3,
+          "w": 13,
+          "h": 17,
+          "active": true
+        }
+      ],
+      "script": "scripts/robot.py"
     }
   },
   "scenes": {

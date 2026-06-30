@@ -67,6 +67,20 @@ def podman_available() -> bool:
     return shutil.which("podman") is not None
 
 
+def podman_networking_available() -> bool:
+    """Check if podman's rootless network backend (pasta or slirp4netns) is present."""
+    return shutil.which("pasta") is not None or shutil.which("slirp4netns") is not None
+
+
+def qemu_arm_available() -> bool:
+    """Check if binfmt_misc handlers for ARM are registered (needed for cross-arch containers)."""
+    binfmt = Path("/proc/sys/fs/binfmt_misc")
+    return any(
+        (binfmt / name).exists()
+        for name in ("qemu-aarch64", "qemu-arm", "qemu-armeb")
+    )
+
+
 def build_executable(
     cart_root: Path,
     arch: str = ARCH_NATIVE,
@@ -152,6 +166,21 @@ def _build_podman(
     platform_flag = _PODMAN_PLATFORMS[arch]
     log(f"[build] podman {platform_flag} — {exe_name}")
 
+    if not podman_networking_available():
+        raise RuntimeError(
+            "Podman rootless network backend not found.\n"
+            "Install pasta:  sudo apt install passt\n"
+            "Then retry the build."
+        )
+
+    if arch in (ARCH_ARM64, ARCH_ARMHF) and not qemu_arm_available():
+        raise RuntimeError(
+            "ARM binfmt handlers not registered — podman cannot emulate ARM.\n"
+            "Install qemu:   sudo apt install qemu-user-static\n"
+            "Then run:       sudo systemctl restart systemd-binfmt\n"
+            "Then retry the build."
+        )
+
     with tempfile.TemporaryDirectory(prefix="tortu_podman_") as tmp:
         tmp_path = Path(tmp)
 
@@ -159,10 +188,23 @@ def _build_podman(
         src.mkdir()
         shutil.copytree(_PKG_ROOT / "tortuengine", src / "tortuengine")
         shutil.copytree(_PKG_ROOT / "tortuplayer", src / "tortuplayer")
-        for fname in ("pyproject.toml", "setup.cfg", "setup.py"):
-            p = _PKG_ROOT / fname
-            if p.exists():
-                shutil.copy2(p, src / fname)
+        # Write a minimal pyproject.toml — no PyQt6/tortustudio inside the container
+        (src / "pyproject.toml").write_text(
+            '[build-system]\n'
+            'requires = ["setuptools>=61"]\n'
+            'build-backend = "setuptools.build_meta"\n'
+            '\n'
+            '[project]\n'
+            'name = "semi-fantasy-console"\n'
+            'version = "0.1.0"\n'
+            'requires-python = ">=3.11"\n'
+            'dependencies = ["pygame>=2.6.0", "numpy>=1.24.0"]\n'
+            '\n'
+            '[tool.setuptools.packages.find]\n'
+            'where = ["."]\n'
+            'include = ["tortuengine*", "tortuplayer*"]\n',
+            encoding="utf-8",
+        )
 
         (tmp_path / "_launcher.py").write_text(_LAUNCHER, encoding="utf-8")
         (tmp_path / "dist").mkdir()
@@ -170,6 +212,7 @@ def _build_podman(
         flags = " ".join(_PYINSTALLER_FLAGS)
         script = (
             "set -e && "
+            "apt-get update -qq && apt-get install -y -q binutils gcc g++ zlib1g-dev libsdl2-dev libfreetype6-dev pkg-config && "
             "pip install --quiet pyinstaller pygame numpy && "
             "pip install --quiet -e /build/src && "
             f"pyinstaller {flags} "

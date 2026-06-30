@@ -70,6 +70,8 @@ class CartScenePlayer:
         while self.running:
             dt = clock.tick(self.fps) / 1000.0
 
+            dt = min(dt, 0.05)  # cap at 50 ms — prevents physics tunnelling on slow frames
+
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False

@@ -1,0 +1,38 @@
+{
+  "name": "robot",
+  "default_animation": "idle",
+  "animations": [
+    {
+      "name": "idle",
+      "sprite": "assets/sprites/robot_idle.tortusprite"
+    },
+    {
+      "name": "damage",
+      "sprite": "assets/sprites/robot_damage.tortusprite"
+    },
+    {
+      "name": "walk",
+      "sprite": "assets/sprites/robot_walk.tortusprite"
+    },
+    {
+      "name": "jump",
+      "sprite": "assets/sprites/robot_jump.tortusprite"
+    },
+    {
+      "name": "fall",
+      "sprite": "assets/sprites/robot_fall.tortusprite"
+    }
+  ],
+  "solid": true,
+  "script": "scripts/robot.py",
+  "origin": {
+    "x": 10,
+    "y": 19
+  },
+  "hitbox": {
+    "x": 4,
+    "y": 3,
+    "w": 13,
+    "h": 17
+  }
+}

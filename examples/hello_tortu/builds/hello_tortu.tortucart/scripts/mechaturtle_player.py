@@ -24,6 +24,7 @@ from tortuengine.tileset import (
 )
 
 ROOT = Path(__file__).parent.parent
+_PREFAB_PATH = "assets/objects/mechaturtle.tortuobject"
 
 SCREEN_W, SCREEN_H = 264, 198
 TILE_SIZE = 16
@@ -71,6 +72,7 @@ _sfx_shell: pygame.mixer.Sound | None = None
 _sfx_attack: pygame.mixer.Sound | None = None
 
 _camera = None
+_is_camera_target: bool = True
 
 
 def set_camera(cam) -> None:
@@ -273,7 +275,7 @@ def init(engine) -> None:
     global _crouching, _prev_down
     global STAND_HB_L, STAND_HB_R, STAND_HB_T, STAND_HB_B
     global CROUCH_HB_L, CROUCH_HB_R, CROUCH_HB_T, CROUCH_HB_B
-    global _sfx_jump, _sfx_shell, _sfx_attack
+    global _sfx_jump, _sfx_shell, _sfx_attack, _is_camera_target
 
     _px, _py = 34.0, 191.0
     _vx, _vy = 0.0, 0.0
@@ -287,7 +289,8 @@ def init(engine) -> None:
 
     scene_path = ROOT / "scenes/level_01.tortuscene"
     _scene = load_scene(scene_path, project_root=ROOT)
-    _scene.objects.clear()
+    _scene.objects = [o for o in _scene.objects if o.prefab != _PREFAB_PATH]
+    _is_camera_target = not _scene.camera_target or _scene.camera_target == _PREFAB_PATH
 
     collision_layer = _scene.tile_layers[_scene.collision_tile_layer]
     if collision_layer.tileset:
@@ -349,6 +352,15 @@ def init(engine) -> None:
         _sfx_attack = pygame.mixer.Sound(str(ROOT / "assets/audio/sfx_attack.ogg"))
     except Exception:
         pass
+
+    # Auto-wire camera from scene metadata when not set explicitly by main.py
+    if _camera is None and _scene and _scene.camera_script:
+        try:
+            import importlib
+            mod_name = _scene.camera_script.removesuffix(".py").replace("\\", "/").replace("/", ".")
+            set_camera(importlib.import_module(mod_name))
+        except Exception:
+            pass
 
     if _camera and _scene:
         _camera.init(_scene.width, _scene.height)
@@ -476,8 +488,10 @@ def update(dt: float) -> None:
     else:
         _anim_frame = 0
 
-    if _camera:
+    if _camera and _is_camera_target:
         _camera.update(dt, _px, _py)
+    if _renderer and _scene:
+        _renderer.tick(_scene, dt)
 
 
 def draw(engine) -> None:

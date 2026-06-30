@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
+
+# Force nearest-neighbour pixel scaling on all SDL2 backends (including ARM GLES).
+# Must be set before any pygame.init() call.
+os.environ.setdefault("SDL_RENDER_SCALE_QUALITY", "0")
 
 from tortuengine.cart import load_cart_manifest, load_game_module, resolve_cart_root
 from tortuengine.project import load_project

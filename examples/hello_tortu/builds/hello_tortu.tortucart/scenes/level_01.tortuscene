@@ -4,6 +4,8 @@
   "height": 198,
   "collision_tile_layer": 0,
   "script": "scripts/level_01.py",
+  "camera_script": "scripts/camera_follow.py",
+  "camera_target": "assets/objects/mechaturtle.tortuobject",
   "bg_layers": [
     {
       "name": "scene_bg_0",
@@ -4793,6 +4795,16 @@
       "object": "assets/objects/mechaturtle.tortuobject",
       "x": 34,
       "y": 191
+    },
+    {
+      "object": "assets/objects/robot.tortuobject",
+      "x": 119,
+      "y": 127
+    },
+    {
+      "object": "assets/objects/robot.tortuobject",
+      "x": 374,
+      "y": 175
     }
   ]
 }
