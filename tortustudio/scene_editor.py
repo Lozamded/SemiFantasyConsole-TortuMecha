@@ -44,6 +44,7 @@ from tortuengine.scene import (
     EMPTY_TILE,
     MAX_PARALLAX_BANDS,
     MAX_SCENE_BG_LAYERS,
+    MAX_SCENE_GUI_LAYERS,
     MAX_SCENE_OBJECTS,
     MAX_SCENE_TILE_LAYERS,
     MIN_SCENE_TILE_LAYERS,
@@ -57,6 +58,7 @@ from tortuengine.scene import (
 )
 from tortuengine.sprite import Sprite, load_sprite
 from tortuengine.tileset import Tileset, load_tileset
+from tortustudio.new_gui_layer_dialog import NewGuiLayerDialog
 from tortustudio.object_strip import ObjectStripCanvas
 from tortustudio.scene_assets import list_background_paths, list_object_paths, list_tileset_paths
 from tortustudio.tileset_editor import TilesetStripCanvas
@@ -972,6 +974,16 @@ class SceneEditorWidget(QWidget):
         self.btn_remove_scene_bg_layer = QPushButton("Remove bg layer")
         self.btn_remove_scene_bg_layer.clicked.connect(self._remove_scene_bg_layer)
 
+        self.gui_layer_combo = QComboBox()
+        self.gui_layer_combo.currentIndexChanged.connect(self._on_gui_layer_changed)
+
+        self.gui_layer_size_label = QLabel("—")
+
+        self.btn_add_gui_layer = QPushButton("Add GUI layer…")
+        self.btn_add_gui_layer.clicked.connect(self._add_gui_layer)
+        self.btn_remove_gui_layer = QPushButton("Remove GUI layer")
+        self.btn_remove_gui_layer.clicked.connect(self._remove_gui_layer)
+
         self.show_backgrounds = QCheckBox("Show backgrounds")
         self.show_backgrounds.setChecked(True)
         self.show_backgrounds.toggled.connect(self._on_show_backgrounds_toggled)
@@ -1199,6 +1211,17 @@ class SceneEditorWidget(QWidget):
         bg_section.content_layout().addLayout(bg_form)
         side.addWidget(bg_section)
 
+        gui_section = CollapsibleSection("GUI Layers", expanded=False)
+        gui_form = QFormLayout()
+        gui_form.addRow("Active GUI layer:", self.gui_layer_combo)
+        gui_form.addRow("Size:", self.gui_layer_size_label)
+        gui_layer_btns = QHBoxLayout()
+        gui_layer_btns.addWidget(self.btn_add_gui_layer)
+        gui_layer_btns.addWidget(self.btn_remove_gui_layer)
+        gui_form.addRow(gui_layer_btns)
+        gui_section.content_layout().addLayout(gui_form)
+        side.addWidget(gui_section)
+
         tile_section = CollapsibleSection("Tile layers", expanded=True)
         tile_form = QFormLayout()
         tile_form.addRow("Active layer:", self.tile_layer_combo)
@@ -1297,6 +1320,11 @@ class SceneEditorWidget(QWidget):
         if not self.scene or self.scene_bg_layer_combo.count() == 0:
             return -1
         return self.scene_bg_layer_combo.currentIndex()
+
+    def _active_gui_layer_index(self) -> int:
+        if not self.scene or self.gui_layer_combo.count() == 0:
+            return -1
+        return self.gui_layer_combo.currentIndex()
 
     def _active_tile_layer_tile_size(self) -> int:
         if not self.scene:
@@ -1586,6 +1614,24 @@ class SceneEditorWidget(QWidget):
         )
         self.btn_remove_scene_bg_layer.setEnabled(self.scene.scene_bg_layer_count > 0)
 
+    def _sync_gui_layer_controls(self) -> None:
+        if not self.scene:
+            return
+        self.gui_layer_combo.blockSignals(True)
+        self.gui_layer_combo.clear()
+        for i, gui_layer in enumerate(self.scene.gui_layers):
+            self.gui_layer_combo.addItem(f"{i}: {gui_layer.name}", i)
+        if self.scene.gui_layer_count == 0:
+            self.gui_layer_size_label.setText("—")
+        else:
+            active = max(0, self.gui_layer_combo.currentIndex())
+            self.gui_layer_combo.setCurrentIndex(min(active, self.scene.gui_layer_count - 1))
+            gui_layer = self.scene.gui_layers[self.gui_layer_combo.currentIndex()]
+            self.gui_layer_size_label.setText(f"{gui_layer.width}×{gui_layer.height} px")
+        self.gui_layer_combo.blockSignals(False)
+        self.btn_add_gui_layer.setEnabled(self.scene.gui_layer_count < MAX_SCENE_GUI_LAYERS)
+        self.btn_remove_gui_layer.setEnabled(self.scene.gui_layer_count > 0)
+
     def _update_camera_slider(self) -> None:
         if not self.scene:
             return
@@ -1775,6 +1821,7 @@ class SceneEditorWidget(QWidget):
         self._sync_tile_layer_tileset_combo()
         self._sync_scene_bg_layer_controls()
         self._sync_scene_bg_background_combo()
+        self._sync_gui_layer_controls()
         self._sync_band_controls()
         self._update_camera_slider()
         self._load_active_tile_layer_tileset()
@@ -1812,6 +1859,41 @@ class SceneEditorWidget(QWidget):
         self._sync_scene_bg_background_combo()
         self._sync_band_controls()
         self._refresh_map()
+
+    def _on_gui_layer_changed(self, index: int) -> None:
+        if not self.scene or index < 0:
+            return
+        gui_layer = self.scene.gui_layers[index]
+        self.gui_layer_size_label.setText(f"{gui_layer.width}×{gui_layer.height} px")
+
+    def _add_gui_layer(self) -> None:
+        if not self.scene:
+            return
+        dialog = NewGuiLayerDialog(self)
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+        try:
+            index = self.scene.add_gui_layer(dialog.layer_width, dialog.layer_height)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Add GUI Layer", str(exc))
+            return
+        self._mark_dirty()
+        self._sync_gui_layer_controls()
+        self.gui_layer_combo.setCurrentIndex(index)
+
+    def _remove_gui_layer(self) -> None:
+        if not self.scene:
+            return
+        index = self._active_gui_layer_index()
+        if index < 0:
+            return
+        try:
+            self.scene.remove_gui_layer(index)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Remove GUI Layer", str(exc))
+            return
+        self._mark_dirty()
+        self._sync_gui_layer_controls()
 
     def _on_scene_bg_background_changed(self, index: int) -> None:
         if not self.scene or index < 0:

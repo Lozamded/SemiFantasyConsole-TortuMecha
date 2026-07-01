@@ -8,6 +8,7 @@ from pathlib import Path
 
 from tortuengine.constants import (
     BACKGROUND_LAYERS,
+    GUI_LAYERS,
     SCREEN_HEIGHT,
     SCREEN_WIDTH,
     TILE_BLOCK,
@@ -29,6 +30,11 @@ MIN_SCENE_BG_LAYERS = 0
 MAX_SCENE_BG_LAYERS = BACKGROUND_LAYERS
 
 DEFAULT_SCENE_BG_LAYER_NAMES = tuple(f"scene_bg_{i}" for i in range(MAX_SCENE_BG_LAYERS))
+
+MIN_SCENE_GUI_LAYERS = 0
+MAX_SCENE_GUI_LAYERS = GUI_LAYERS
+
+DEFAULT_SCENE_GUI_LAYER_NAMES = tuple(f"gui_layer_{i}" for i in range(MAX_SCENE_GUI_LAYERS))
 
 MAX_PARALLAX_BANDS = 8
 MAX_SCENE_OBJECTS = 256
@@ -160,6 +166,18 @@ class SceneBgLayer:
 
 
 @dataclass
+class SceneGuiLayer:
+    """Scene layer for on-screen GUI, sized independently of the scene/tile map."""
+
+    name: str
+    width: int = SCREEN_WIDTH
+    height: int = SCREEN_HEIGHT
+
+    def copy(self) -> SceneGuiLayer:
+        return SceneGuiLayer(self.name, self.width, self.height)
+
+
+@dataclass
 class Scene:
     """Tile map sized in pixels; each tile layer may reference its own tileset."""
 
@@ -173,6 +191,7 @@ class Scene:
     script: str = ""
     camera_script: str = ""
     camera_target: str = ""
+    gui_layers: list[SceneGuiLayer] = field(default_factory=list)
 
     @property
     def tile_layer_count(self) -> int:
@@ -181,6 +200,10 @@ class Scene:
     @property
     def scene_bg_layer_count(self) -> int:
         return len(self.scene_bg_layers)
+
+    @property
+    def gui_layer_count(self) -> int:
+        return len(self.gui_layers)
 
     def grid_columns(self, tile_size: int) -> int:
         return grid_columns(self.width, tile_size)
@@ -271,6 +294,42 @@ class Scene:
     def remove_scene_bg_layer(self, scene_bg_layer_index: int) -> None:
         self._validate_scene_bg_layer(scene_bg_layer_index)
         self.scene_bg_layers.pop(scene_bg_layer_index)
+
+    def _validate_gui_layer(self, gui_layer_index: int) -> None:
+        if not (0 <= gui_layer_index < len(self.gui_layers)):
+            raise IndexError(f"GUI layer index out of range: {gui_layer_index}")
+
+    def _validate_gui_layer_count(self) -> None:
+        count = len(self.gui_layers)
+        if count > MAX_SCENE_GUI_LAYERS:
+            raise ValueError(f"Scene cannot have more than {MAX_SCENE_GUI_LAYERS} GUI layers")
+
+    def add_gui_layer(
+        self,
+        width: int = SCREEN_WIDTH,
+        height: int = SCREEN_HEIGHT,
+        *,
+        copy_from: int | None = None,
+    ) -> int:
+        if len(self.gui_layers) >= MAX_SCENE_GUI_LAYERS:
+            raise ValueError(f"Scene cannot have more than {MAX_SCENE_GUI_LAYERS} GUI layers")
+        if width < 1 or height < 1:
+            raise ValueError("GUI layer must be at least 1×1 pixels")
+        index = len(self.gui_layers)
+        if copy_from is not None:
+            self._validate_gui_layer(copy_from)
+            source = self.gui_layers[copy_from]
+            self.gui_layers.append(source.copy())
+            self.gui_layers[-1].name = f"{source.name}_copy"
+        else:
+            self.gui_layers.append(
+                SceneGuiLayer(DEFAULT_SCENE_GUI_LAYER_NAMES[index], width, height)
+            )
+        return index
+
+    def remove_gui_layer(self, gui_layer_index: int) -> None:
+        self._validate_gui_layer(gui_layer_index)
+        self.gui_layers.pop(gui_layer_index)
 
     def _validate_coords(self, x: int, y: int, tile_size: int) -> None:
         cols = self.grid_columns(tile_size)
@@ -557,6 +616,23 @@ def _normalize_scene_bg_layers(raw_scene_bg_layers: list[dict]) -> list[SceneBgL
     ]
 
 
+def _normalize_gui_layer(raw: dict, gui_layer_index: int) -> SceneGuiLayer:
+    name = str(raw.get("name", DEFAULT_SCENE_GUI_LAYER_NAMES[gui_layer_index]))
+    width = int(raw.get("width", SCREEN_WIDTH))
+    height = int(raw.get("height", SCREEN_HEIGHT))
+    if width < 1 or height < 1:
+        raise ValueError(f"GUI layer {gui_layer_index} must be at least 1×1 pixels")
+    return SceneGuiLayer(name, width, height)
+
+
+def _normalize_gui_layers(raw_gui_layers: list[dict]) -> list[SceneGuiLayer]:
+    if len(raw_gui_layers) > MAX_SCENE_GUI_LAYERS:
+        raise ValueError(
+            f"Scene has {len(raw_gui_layers)} GUI layers; maximum is {MAX_SCENE_GUI_LAYERS}"
+        )
+    return [_normalize_gui_layer(raw, i) for i, raw in enumerate(raw_gui_layers)]
+
+
 def _normalize_scene_object(raw: dict, path: Path) -> SceneObject:
     prefab = _normalize_asset_path(str(raw.get("object", raw.get("prefab", ""))))
     if not prefab:
@@ -611,6 +687,7 @@ def load_scene(path: Path, *, project_root: Path | None = None) -> Scene:
     )
     scene_bg_layers = _normalize_scene_bg_layers(data.get("bg_layers", []))
     objects = _normalize_scene_objects(data.get("objects", []), path)
+    gui_layers = _normalize_gui_layers(data.get("gui_layers", []))
 
     script = _normalize_asset_path(str(data.get("script", "")))
     camera_script = _normalize_asset_path(str(data.get("camera_script", "")))
@@ -618,6 +695,7 @@ def load_scene(path: Path, *, project_root: Path | None = None) -> Scene:
     scene = Scene(
         palette, width, height, tile_layers, scene_bg_layers, objects,
         collision_tile_layer, script, camera_script, camera_target,
+        gui_layers,
     )
     scene.ensure_all_tile_layer_grids(project_root)
     return scene
@@ -627,6 +705,7 @@ def save_scene(scene: Scene, path: Path, *, project_root: Path | None = None) ->
     path.parent.mkdir(parents=True, exist_ok=True)
     scene._validate_tile_layer_count()
     scene._validate_scene_bg_layer_count()
+    scene._validate_gui_layer_count()
     scene.ensure_all_tile_layer_grids(project_root)
     scene.set_collision_tile_layer(scene.collision_tile_layer)
     data = {
@@ -693,6 +772,14 @@ def save_scene(scene: Scene, path: Path, *, project_root: Path | None = None) ->
                 **({"animation": inst.animation} if inst.animation else {}),
             }
             for inst in scene.objects
+        ],
+        "gui_layers": [
+            {
+                "name": gui_layer.name,
+                "width": gui_layer.width,
+                "height": gui_layer.height,
+            }
+            for gui_layer in scene.gui_layers
         ],
     }
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
