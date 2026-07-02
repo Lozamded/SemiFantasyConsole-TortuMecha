@@ -4807,11 +4807,5 @@
       "y": 175
     }
   ],
-  "gui_layers": [
-    {
-      "name": "gui_layer_0",
-      "width": 264,
-      "height": 198
-    }
-  ]
+  "gui_layers": []
 }

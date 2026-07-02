@@ -48,6 +48,9 @@ class Project:
     def backgrounds_dir(self) -> Path:
         return self.root / "assets" / "backgrounds"
 
+    def gui_dir(self) -> Path:
+        return self.root / "assets" / "gui"
+
     def audio_dir(self) -> Path:
         return self.root / "assets" / "audio"
 
@@ -106,6 +109,7 @@ def create_project(root: Path, name: str = "Untitled") -> Project:
         "assets/objects",
         "assets/fonts",
         "assets/audio",
+        "assets/gui",
         "scripts",
     ):
         (root / sub).mkdir(parents=True, exist_ok=True)

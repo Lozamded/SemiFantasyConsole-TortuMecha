@@ -167,14 +167,13 @@ class SceneBgLayer:
 
 @dataclass
 class SceneGuiLayer:
-    """Scene layer for on-screen GUI, sized independently of the scene/tile map."""
+    """Scene slot referencing a .tortuguilayer asset."""
 
     name: str
-    width: int = SCREEN_WIDTH
-    height: int = SCREEN_HEIGHT
+    gui_layer: str = ""
 
     def copy(self) -> SceneGuiLayer:
-        return SceneGuiLayer(self.name, self.width, self.height)
+        return SceneGuiLayer(self.name, self.gui_layer)
 
 
 @dataclass
@@ -304,17 +303,9 @@ class Scene:
         if count > MAX_SCENE_GUI_LAYERS:
             raise ValueError(f"Scene cannot have more than {MAX_SCENE_GUI_LAYERS} GUI layers")
 
-    def add_gui_layer(
-        self,
-        width: int = SCREEN_WIDTH,
-        height: int = SCREEN_HEIGHT,
-        *,
-        copy_from: int | None = None,
-    ) -> int:
+    def add_gui_layer(self, *, copy_from: int | None = None) -> int:
         if len(self.gui_layers) >= MAX_SCENE_GUI_LAYERS:
             raise ValueError(f"Scene cannot have more than {MAX_SCENE_GUI_LAYERS} GUI layers")
-        if width < 1 or height < 1:
-            raise ValueError("GUI layer must be at least 1×1 pixels")
         index = len(self.gui_layers)
         if copy_from is not None:
             self._validate_gui_layer(copy_from)
@@ -322,9 +313,7 @@ class Scene:
             self.gui_layers.append(source.copy())
             self.gui_layers[-1].name = f"{source.name}_copy"
         else:
-            self.gui_layers.append(
-                SceneGuiLayer(DEFAULT_SCENE_GUI_LAYER_NAMES[index], width, height)
-            )
+            self.gui_layers.append(SceneGuiLayer(DEFAULT_SCENE_GUI_LAYER_NAMES[index]))
         return index
 
     def remove_gui_layer(self, gui_layer_index: int) -> None:
@@ -618,11 +607,8 @@ def _normalize_scene_bg_layers(raw_scene_bg_layers: list[dict]) -> list[SceneBgL
 
 def _normalize_gui_layer(raw: dict, gui_layer_index: int) -> SceneGuiLayer:
     name = str(raw.get("name", DEFAULT_SCENE_GUI_LAYER_NAMES[gui_layer_index]))
-    width = int(raw.get("width", SCREEN_WIDTH))
-    height = int(raw.get("height", SCREEN_HEIGHT))
-    if width < 1 or height < 1:
-        raise ValueError(f"GUI layer {gui_layer_index} must be at least 1×1 pixels")
-    return SceneGuiLayer(name, width, height)
+    gui_layer = _normalize_asset_path(str(raw.get("gui_layer", "")))
+    return SceneGuiLayer(name, gui_layer)
 
 
 def _normalize_gui_layers(raw_gui_layers: list[dict]) -> list[SceneGuiLayer]:
@@ -776,8 +762,11 @@ def save_scene(scene: Scene, path: Path, *, project_root: Path | None = None) ->
         "gui_layers": [
             {
                 "name": gui_layer.name,
-                "width": gui_layer.width,
-                "height": gui_layer.height,
+                **(
+                    {"gui_layer": _normalize_asset_path(gui_layer.gui_layer)}
+                    if gui_layer.gui_layer
+                    else {}
+                ),
             }
             for gui_layer in scene.gui_layers
         ],

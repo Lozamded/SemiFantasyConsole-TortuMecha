@@ -40,6 +40,7 @@ from tortuengine.object import load_object
 from tortustudio.viewport import DebugEntity
 from tortuengine.game_settings import MAX_GAME_FPS, MIN_GAME_FPS, slugify_cart_name
 from tortuengine.background import save_background
+from tortuengine.gui_layer import save_gui_layer
 from tortuengine.object import save_object
 from tortuengine.project import Project, create_project, load_project, save_project
 from tortuengine.scene import save_scene
@@ -49,7 +50,9 @@ from tortustudio.asset_browser import AssetBrowserPanel
 from tortustudio.asset_drag import DraggableProjectTree
 from tortustudio.background_editor import BackgroundEditorWidget
 from tortustudio.font_editor import FontEditorWidget
+from tortustudio.gui_layer_editor import GuiLayerEditorWidget
 from tortustudio.new_background_dialog import NewBackgroundDialog
+from tortustudio.new_gui_layer_dialog import NewGuiLayerDialog
 from tortustudio.new_object_dialog import NewObjectDialog
 from tortustudio.new_scene_dialog import NewSceneDialog
 from tortustudio.new_sprite_dialog import NewSpriteDialog
@@ -58,6 +61,7 @@ from tortustudio.object_editor import ObjectEditorWidget
 from tortustudio.scene_assets import (
     is_engine_asset,
     list_background_paths,
+    list_gui_layer_paths,
     list_object_paths,
     list_palette_paths,
     list_scene_paths,
@@ -157,7 +161,8 @@ class MainWindow(QMainWindow):
     OBJECT_EDITOR = 6
     SOUND_EDITOR = 7
     PALETTE_EDITOR = 8
-    GAME_SETTINGS = 9
+    GUI_LAYER_EDITOR = 9
+    GAME_SETTINGS = 10
 
     def __init__(self, project: Project | None = None) -> None:
         super().__init__()
@@ -171,6 +176,7 @@ class MainWindow(QMainWindow):
         self._active_tileset_path: Path | None = None
         self._active_scene_path: Path | None = None
         self._active_background_path: Path | None = None
+        self._active_gui_layer_path: Path | None = None
         self._active_object_path: Path | None = None
         self._active_font_path: Path | None = None
         self._active_palette_path: Path | None = None
@@ -250,6 +256,11 @@ class MainWindow(QMainWindow):
         palette_tab_action.setShortcut("Ctrl+9")
         palette_tab_action.triggered.connect(self._activate_palette_editor_tab)
         tabs_menu.addAction(palette_tab_action)
+
+        gui_layer_tab_action = QAction("&GUI Layer Editor", self)
+        gui_layer_tab_action.setShortcut("Ctrl+0")
+        gui_layer_tab_action.triggered.connect(self._activate_gui_layer_editor_tab)
+        tabs_menu.addAction(gui_layer_tab_action)
 
         build_menu = menu.addMenu("&Build")
         export_action = QAction("Export .tortucart…", self)
@@ -358,6 +369,11 @@ class MainWindow(QMainWindow):
         self.background_editor.renamed.connect(self._on_background_renamed)
         self.background_editor.new_background_requested.connect(self._action_new_background)
         self.background_editor.open_background_requested.connect(self._action_open_background)
+        self.gui_layer_editor = GuiLayerEditorWidget(Path("."))
+        self.gui_layer_editor.saved.connect(self._on_gui_layer_saved)
+        self.gui_layer_editor.renamed.connect(self._on_gui_layer_renamed)
+        self.gui_layer_editor.new_gui_layer_requested.connect(self._action_new_gui_layer)
+        self.gui_layer_editor.open_gui_layer_requested.connect(self._action_open_gui_layer)
         self.font_editor = FontEditorWidget(Path("."))
         self.font_editor.saved.connect(self._on_font_saved)
         self.font_editor.renamed.connect(self._on_font_renamed)
@@ -428,6 +444,7 @@ class MainWindow(QMainWindow):
         self.center_stack.addWidget(self.object_editor)
         self.center_stack.addWidget(self.sound_editor)
         self.center_stack.addWidget(self.palette_editor)
+        self.center_stack.addWidget(self.gui_layer_editor)
         self.center_stack.addWidget(game_settings_panel)
         self.center_stack.currentChanged.connect(self._on_center_stack_changed)
         splitter.addWidget(self.center_stack)
@@ -459,6 +476,7 @@ class MainWindow(QMainWindow):
         self.tileset_editor.project_root = project.root
         self.scene_editor.project_root = project.root
         self.background_editor.project_root = project.root
+        self.gui_layer_editor.project_root = project.root
         self.font_editor.set_project_root(project.root)
         self.object_editor.project_root = project.root
         self.sound_editor.set_project_root(project.root)
@@ -468,6 +486,7 @@ class MainWindow(QMainWindow):
         self._active_tileset_path = None
         self._active_scene_path = None
         self._active_background_path = None
+        self._active_gui_layer_path = None
         self._active_object_path = None
         self._active_font_path = None
         self._active_palette_path = None
@@ -546,6 +565,7 @@ class MainWindow(QMainWindow):
             ("Palettes", self.project.palettes_dir()),
             ("Tiles", self.project.tiles_dir()),
             ("Backgrounds", self.project.backgrounds_dir()),
+            ("GUI Layers", self.project.gui_dir()),
             ("Scenes", self.project.scenes_dir()),
             ("Fonts", self.project.fonts_dir()),
             ("Sprites", self.project.sprites_dir()),
@@ -908,6 +928,14 @@ class MainWindow(QMainWindow):
         self._switching_tabs = False
         self._show_background_editor()
     
+    def _activate_gui_layer_editor_tab(self) -> None:
+        if not self._confirm_discard_editor_changes():
+            return
+        self._switching_tabs = True
+        self.workspace_tabs.select_gui_layer_editor()
+        self._switching_tabs = False
+        self._show_gui_layer_editor()
+
     def _activate_object_editor_tab(self) -> None:
         if not self._confirm_discard_editor_changes():
             return
@@ -971,6 +999,14 @@ class MainWindow(QMainWindow):
         self.workspace_tabs.select_background_editor()
         self._switching_tabs = False
         self._show_background(path)
+
+    def _open_gui_layer(self, path: Path) -> None:
+        if not self._confirm_discard_editor_changes():
+            return
+        self._switching_tabs = True
+        self.workspace_tabs.select_gui_layer_editor()
+        self._switching_tabs = False
+        self._show_gui_layer(path)
 
     def _open_object(self, path: Path) -> None:
         if not self._confirm_discard_editor_changes():
@@ -1067,6 +1103,21 @@ class MainWindow(QMainWindow):
         self.background_editor.open_background(path)
         self._active_background_path = path.resolve()
         self.center_stack.setCurrentIndex(self.BACKGROUND_EDITOR)
+        self.field_name.setText(path.name)
+
+    def _show_gui_layer_editor(self) -> None:
+        self.center_stack.setCurrentIndex(self.GUI_LAYER_EDITOR)
+        if self._active_gui_layer_path:
+            self.field_name.setText(self._active_gui_layer_path.name)
+        else:
+            self.field_name.setPlaceholderText(
+                "No GUI layer open — use New / Open GUI Layer above"
+            )
+
+    def _show_gui_layer(self, path: Path) -> None:
+        self.gui_layer_editor.open_gui_layer(path)
+        self._active_gui_layer_path = path.resolve()
+        self.center_stack.setCurrentIndex(self.GUI_LAYER_EDITOR)
         self.field_name.setText(path.name)
 
     def _show_object_editor(self) -> None:
@@ -1181,6 +1232,18 @@ class MainWindow(QMainWindow):
                 self._show_background_editor()
             return
 
+        if ref.kind == TabKind.GUI_LAYER_EDITOR:
+            if not self._confirm_discard_editor_changes():
+                self._switching_tabs = True
+                self._restore_editor_tab()
+                self._switching_tabs = False
+                return
+            if self._active_gui_layer_path and self._active_gui_layer_path.is_file():
+                self._show_gui_layer(self._active_gui_layer_path)
+            else:
+                self._show_gui_layer_editor()
+            return
+
         if ref.kind == TabKind.FONT_EDITOR:
             if not self._confirm_discard_editor_changes():
                 self._switching_tabs = True
@@ -1247,6 +1310,8 @@ class MainWindow(QMainWindow):
             self.workspace_tabs.select_sound_editor()
         elif index == self.PALETTE_EDITOR:
             self.workspace_tabs.select_palette_editor()
+        elif index == self.GUI_LAYER_EDITOR:
+            self.workspace_tabs.select_gui_layer_editor()
         elif index == self.GAME_SETTINGS:
             self.workspace_tabs.select_game_settings()
         else:
@@ -1265,6 +1330,8 @@ class MainWindow(QMainWindow):
             self.asset_browser.populate("Tilesets", list_tileset_paths(root))
         elif index == self.BACKGROUND_EDITOR:
             self.asset_browser.populate("Backgrounds", list_background_paths(root))
+        elif index == self.GUI_LAYER_EDITOR:
+            self.asset_browser.populate("GUI Layers", list_gui_layer_paths(root))
         elif index == self.OBJECT_EDITOR:
             self.asset_browser.populate("Objects", list_object_paths(root))
         elif index == self.FONT_EDITOR:
@@ -1298,6 +1365,8 @@ class MainWindow(QMainWindow):
             return self._confirm_discard_unsaved("tileset", self.tileset_editor.save)
         if index == self.BACKGROUND_EDITOR and self.background_editor.has_unsaved_changes():
             return self._confirm_discard_unsaved("background", self.background_editor.save)
+        if index == self.GUI_LAYER_EDITOR and self.gui_layer_editor.has_unsaved_changes():
+            return self._confirm_discard_unsaved("GUI layer", self.gui_layer_editor.save)
         if index == self.FONT_EDITOR and self.font_editor.has_unsaved_changes():
             return self._confirm_discard_unsaved("font", self.font_editor.save)
         if index == self.OBJECT_EDITOR and self.object_editor.has_unsaved_changes():
@@ -1331,6 +1400,8 @@ class MainWindow(QMainWindow):
             self._open_tileset(path)
         elif path.suffix == ".tortubackground":
             self._open_background(path)
+        elif path.suffix == ".tortuguilayer":
+            self._open_gui_layer(path)
         elif path.suffix == ".tortuobject":
             self._open_object(path)
         elif path.suffix == ".tortufont":
@@ -1380,6 +1451,13 @@ class MainWindow(QMainWindow):
         if self.project:
             self.log(f"Renamed {old_path.name} → {new_path.name}")
 
+    def _on_gui_layer_renamed(self, old_path: Path, new_path: Path) -> None:
+        self._active_gui_layer_path = new_path
+        self.field_name.setText(new_path.name)
+        self._populate_tree()
+        if self.project:
+            self.log(f"Renamed {old_path.name} → {new_path.name}")
+
     def _on_object_renamed(self, old_path: Path, new_path: Path) -> None:
         self._active_object_path = new_path
         self.field_name.setText(new_path.name)
@@ -1412,6 +1490,10 @@ class MainWindow(QMainWindow):
         self._populate_tree()
         if self.viewport.scene_preview_active:
             self.viewport.invalidate_baked_assets()
+
+    def _on_gui_layer_saved(self, path: Path) -> None:
+        self.log(f"Saved {path.relative_to(self.project.root)}")
+        self._populate_tree()
 
     def _on_font_saved(self, path: Path) -> None:
         self.log(f"Saved {path.relative_to(self.project.root)}")
@@ -1630,6 +1712,51 @@ class MainWindow(QMainWindow):
         )
         if path:
             self._open_background(Path(path))
+
+    def _action_new_gui_layer(self) -> None:
+        if not self.project:
+            QMessageBox.information(self, "New GUI Layer", "Open a project first.")
+            return
+
+        dialog = NewGuiLayerDialog(self.project.root, self)
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+
+        name = dialog.gui_layer_name or "gui_layer"
+        gui_layer_path = self.project.gui_dir() / f"{name}.tortuguilayer"
+        if gui_layer_path.exists():
+            QMessageBox.warning(
+                self, "New GUI Layer", f"{gui_layer_path.name} already exists."
+            )
+            return
+
+        if not self._confirm_discard_editor_changes():
+            return
+
+        self.gui_layer_editor.new_gui_layer(
+            gui_layer_path, dialog.layer_width, dialog.layer_height, dialog.palette_name
+        )
+        if not self.gui_layer_editor.gui_layer:
+            return
+        save_gui_layer(self.gui_layer_editor.gui_layer, gui_layer_path)
+        self.gui_layer_editor._dirty = False
+        self.gui_layer_editor._update_status()
+        self._populate_tree()
+        self._open_gui_layer(gui_layer_path)
+        self.log(f"Created {gui_layer_path.relative_to(self.project.root)}")
+
+    def _action_open_gui_layer(self) -> None:
+        if not self.project:
+            QMessageBox.information(self, "Open GUI Layer", "Open a project first.")
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open GUI Layer",
+            str(self.project.gui_dir()),
+            "Tortu GUI Layers (*.tortuguilayer)",
+        )
+        if path:
+            self._open_gui_layer(Path(path))
 
     def _action_new_text_font(self) -> None:
         if not self.project:

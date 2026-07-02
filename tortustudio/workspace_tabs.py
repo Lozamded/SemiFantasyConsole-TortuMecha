@@ -19,6 +19,7 @@ class TabKind(str, Enum):
     FONT_EDITOR = "font_editor"
     SOUND_EDITOR = "sound_editor"
     PALETTE_EDITOR = "palette_editor"
+    GUI_LAYER_EDITOR = "gui_layer_editor"
     GAME_SETTINGS = "game_settings"
 
 
@@ -41,6 +42,7 @@ class WorkspaceTabs(QWidget):
     FONT_EDITOR_LABEL = "Font Editor"
     SOUND_EDITOR_LABEL = "Sound"
     PALETTE_EDITOR_LABEL = "Palette Editor"
+    GUI_LAYER_EDITOR_LABEL = "GUI Layer Editor"
     GAME_SETTINGS_LABEL = "Game Settings"
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -66,6 +68,7 @@ class WorkspaceTabs(QWidget):
         self._add_object_editor_tab()
         self._add_sound_editor_tab()
         self._add_palette_editor_tab()
+        self._add_gui_layer_editor_tab()
         self._add_game_settings_tab()
 
     @property
@@ -105,8 +108,12 @@ class WorkspaceTabs(QWidget):
         return 8
 
     @property
-    def game_settings_index(self) -> int:
+    def gui_layer_editor_index(self) -> int:
         return 9
+
+    @property
+    def game_settings_index(self) -> int:
+        return 10
 
     @property
     def current_ref(self) -> TabRef | None:
@@ -151,6 +158,10 @@ class WorkspaceTabs(QWidget):
         self.tab_bar.addTab(self.PALETTE_EDITOR_LABEL)
         self._refs.append(TabRef(kind=TabKind.PALETTE_EDITOR))
 
+    def _add_gui_layer_editor_tab(self) -> None:
+        self.tab_bar.addTab(self.GUI_LAYER_EDITOR_LABEL)
+        self._refs.append(TabRef(kind=TabKind.GUI_LAYER_EDITOR))
+
     def _add_game_settings_tab(self) -> None:
         self.tab_bar.addTab(self.GAME_SETTINGS_LABEL)
         self._refs.append(TabRef(kind=TabKind.GAME_SETTINGS))
@@ -168,6 +179,7 @@ class WorkspaceTabs(QWidget):
         self._add_object_editor_tab()
         self._add_sound_editor_tab()
         self._add_palette_editor_tab()
+        self._add_gui_layer_editor_tab()
         self._add_game_settings_tab()
 
     def select_preview(self) -> None:
@@ -196,6 +208,9 @@ class WorkspaceTabs(QWidget):
 
     def select_palette_editor(self) -> None:
         self.tab_bar.setCurrentIndex(self.palette_editor_index)
+
+    def select_gui_layer_editor(self) -> None:
+        self.tab_bar.setCurrentIndex(self.gui_layer_editor_index)
 
     def select_game_settings(self) -> None:
         self.tab_bar.setCurrentIndex(self.game_settings_index)

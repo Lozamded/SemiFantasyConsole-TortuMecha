@@ -9,6 +9,7 @@ ENGINE_ASSET_SUFFIXES = frozenset(
         ".tortusprite",
         ".tortutileset",
         ".tortubackground",
+        ".tortuguilayer",
         ".tortuscene",
         ".tortuobject",
         ".tortufont",
@@ -42,6 +43,15 @@ def list_background_paths(project_root: Path) -> list[str]:
     return sorted(
         p.relative_to(project_root).as_posix()
         for p in backgrounds_dir.glob("*.tortubackground")
+    )
+
+
+def list_gui_layer_paths(project_root: Path) -> list[str]:
+    gui_dir = project_root / "assets" / "gui"
+    if not gui_dir.is_dir():
+        return []
+    return sorted(
+        p.relative_to(project_root).as_posix() for p in gui_dir.glob("*.tortuguilayer")
     )
 
 
