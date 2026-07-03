@@ -2,6 +2,9 @@ Semi-Fantasy Console "TortuMecha"
 
 Project to make a semi fantasy console using PyGame. The target is mini-pc ARM boards like Raspberry / Orange / Radxa Pi Zero, expected 1 GB of RAM (maybe RISC-V in the future).
 
+```bash
+python -m tortuplayer examples/hello_tortu --fullscreen
+```
 
 ## Run TortuStudio
 

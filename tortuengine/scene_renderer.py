@@ -21,11 +21,14 @@ from tortuengine.bake import (
 )
 from tortuengine.cart_manifest import CartManifest, tileset_manifest_key
 from tortuengine.constants import SCREEN_HEIGHT, SCREEN_WIDTH
+from tortuengine.gui_layer import GuiLayer, GuiTextLabel, load_gui_layer
 from tortuengine.image import load_image
 from tortuengine.object import TortuObject, load_object
 from tortuengine.palette import load_palette, palette_path
 from tortuengine.scene import EMPTY_TILE, Scene, SceneObject, tile_size_for_tile_layer
 from tortuengine.sprite import Sprite, load_sprite
+from tortuengine.sprite_font import TortuSpriteFont, load_sprite_font, render_sprite_text_line
+from tortuengine.text_font import TortuFont, load_tortu_font, render_text_line
 from tortuengine.tileset import Tileset, load_tileset
 
 MAP_BG = (30, 30, 40)
@@ -71,6 +74,9 @@ class SceneRenderer:
         self._tile_palettes: dict[str, list[tuple[int, int, int]]] = {}
         self._sprites: dict[str, Sprite] = {}
         self._objects: dict[str, TortuObject] = {}
+        self._gui_layers: dict[str, GuiLayer] = {}
+        self._text_fonts: dict[str, TortuFont] = {}
+        self._sprite_fonts: dict[str, TortuSpriteFont] = {}
         self._object_anim: list[_ObjectAnimState] = []
         # Baked surface caches: LRU-bounded to prevent unbounded RAM growth.
         # Source-asset dicts above are bounded by project size and don't need eviction.
@@ -484,6 +490,100 @@ class SceneRenderer:
             frame_index = 0
         return self._baked_sprite_frame(sprite_path, sprite, frame_index)
 
+    def _gui_layer(self, rel_path: str) -> GuiLayer | None:
+        if not rel_path or self._cart_mode():
+            return None
+        if rel_path in self._gui_layers:
+            return self._gui_layers[rel_path]
+        path = (self.project_root / rel_path).resolve()
+        if not path.is_file():
+            return None
+        loaded = load_gui_layer(path, project_root=self.project_root)
+        self._gui_layers[rel_path] = loaded
+        return loaded
+
+    def _text_font(self, rel_path: str) -> TortuFont | None:
+        if not rel_path:
+            return None
+        if rel_path in self._text_fonts:
+            return self._text_fonts[rel_path]
+        path = (self.project_root / rel_path).resolve()
+        if not path.is_file():
+            return None
+        loaded = load_tortu_font(path)
+        self._text_fonts[rel_path] = loaded
+        return loaded
+
+    def _sprite_font(self, rel_path: str) -> TortuSpriteFont | None:
+        if not rel_path:
+            return None
+        if rel_path in self._sprite_fonts:
+            return self._sprite_fonts[rel_path]
+        path = (self.project_root / rel_path).resolve()
+        if not path.is_file():
+            return None
+        loaded = load_sprite_font(path)
+        self._sprite_fonts[rel_path] = loaded
+        return loaded
+
+    def _gui_label_surface(self, label: GuiTextLabel) -> pygame.Surface | None:
+        if not label.text or not label.font:
+            return None
+        if label.font.endswith(".tortuspritefont"):
+            sprite_font = self._sprite_font(label.font)
+            if sprite_font is None:
+                return None
+            colors = self._palette(sprite_font.palette)
+            if colors is None:
+                return None
+            return render_sprite_text_line(sprite_font, label.text, colors)
+        text_font = self._text_font(label.font)
+        if text_font is None:
+            return None
+        colors = self._palette(text_font.palette)
+        if colors is None:
+            return None
+        return render_text_line(text_font, label.text, colors)
+
+    def _draw_gui_layer(self, target: pygame.Surface, gui_layer: GuiLayer) -> None:
+        if gui_layer.tile_layer_visible and gui_layer.tileset:
+            tileset = self._tileset(gui_layer.tileset, palette_name=gui_layer.palette)
+            palette = self._palette(gui_layer.palette)
+            if tileset is not None and palette is not None:
+                tile_size = tileset.tile_size
+                cols = gui_layer.grid_columns(tile_size)
+                rows = gui_layer.grid_rows(tile_size)
+                for ty in range(rows):
+                    for tx in range(cols):
+                        px = tx * tile_size
+                        py = ty * tile_size
+                        if px >= gui_layer.width or py >= gui_layer.height:
+                            continue
+                        tile_index = gui_layer.tiles[ty * cols + tx]
+                        if tile_index == EMPTY_TILE:
+                            continue
+                        tile_surface = self._baked_tile(
+                            gui_layer.tileset, tileset, tile_index, gui_layer.palette, palette
+                        )
+                        if tile_surface is not None:
+                            target.blit(tile_surface, (px, py))
+
+        for inst in gui_layer.objects:
+            surface = self._object_surface(inst)
+            if surface is None:
+                continue
+            tortu_object = self._tortu_object(inst.prefab)
+            if tortu_object is None:
+                continue
+            draw_x = inst.x - tortu_object.origin.x
+            draw_y = inst.y - tortu_object.origin.y
+            target.blit(surface, (draw_x, draw_y))
+
+        for label in gui_layer.text_labels:
+            surface = self._gui_label_surface(label)
+            if surface is not None:
+                target.blit(surface, (label.x, label.y))
+
     def render(
         self,
         scene: Scene,
@@ -602,4 +702,13 @@ class SceneRenderer:
         cx = max(0, min(camera_x, max_x))
         cy = max(0, min(camera_y, max_y))
         view.blit(composite, (0, 0), pygame.Rect(cx, cy, view_width, view_height))
+
+        for scene_gui in scene.gui_layers:
+            if not scene_gui.gui_layer:
+                continue
+            gui_layer = self._gui_layer(scene_gui.gui_layer)
+            if gui_layer is None:
+                continue
+            self._draw_gui_layer(view, gui_layer)
+
         return view

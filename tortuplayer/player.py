@@ -4,12 +4,19 @@ from __future__ import annotations
 
 import pygame
 
-from tortuengine.constants import DEFAULT_FPS, SCREEN_HEIGHT, SCREEN_WIDTH
+from tortuengine.constants import DEFAULT_FPS
 from tortuengine.engine import TortuEngine
+from tortuplayer.display import Display
 
 
 class WindowPlayer:
-    def __init__(self, scale: int = 3, title: str = "TortuPlayer", fps: int = DEFAULT_FPS) -> None:
+    def __init__(
+        self,
+        scale: int = 3,
+        title: str = "TortuPlayer",
+        fps: int = DEFAULT_FPS,
+        fullscreen: bool = False,
+    ) -> None:
         if not pygame.get_init():
             pygame.init()
 
@@ -18,18 +25,17 @@ class WindowPlayer:
         self.scale = scale
         self.title = title
         self.fps = fps
-        self.window: pygame.Surface | None = None
+        self.fullscreen = fullscreen
+        self.display: Display | None = None
 
     def _ensure_window(self) -> pygame.Surface:
-        if self.window is None:
-            self.window = pygame.display.set_mode(
-                (SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SCALED
-            )
-            pygame.display.set_caption(self.title)
-        return self.window
+        if self.display is None:
+            self.display = Display(self.scale, self.fullscreen, self.title)
+            self.engine.framebuffer = self.engine.framebuffer.convert(self.display.window)
+        return self.display.window
 
     def run(self) -> None:
-        window = self._ensure_window()
+        self._ensure_window()
         clock = pygame.time.Clock()
         self.engine.running = True
 
@@ -44,7 +50,6 @@ class WindowPlayer:
 
             self.engine.tick(dt)
             frame = self.engine.render_frame()
-            window.blit(frame, (0, 0))
-            pygame.display.flip()
+            self.display.present(frame)
 
         pygame.quit()

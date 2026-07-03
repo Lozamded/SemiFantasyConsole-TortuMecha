@@ -1,0 +1,21 @@
+{
+  "name": "UI_MechaTurtle_face",
+  "default_animation": "idle",
+  "animations": [
+    {
+      "name": "idle",
+      "sprite": "assets/sprites/Turtlemecha_head_UI.tortusprite"
+    }
+  ],
+  "solid": false,
+  "colliders": [
+    {
+      "name": "main",
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0,
+      "active": true
+    }
+  ]
+}

@@ -428,6 +428,13 @@ class MainWindow(QMainWindow):
         self.field_description = QLineEdit()
         gs_form.addRow("Description:", self.field_description)
 
+        self.check_play_fullscreen = QCheckBox("Fullscreen")
+        self.check_play_fullscreen.setToolTip(
+            "Launch Play (F5) fullscreen — auto-fits the largest integer pixel "
+            "scale to the display. Testing-only, not saved with the project."
+        )
+        gs_form.addRow("Test Play:", self.check_play_fullscreen)
+
         self.btn_save_game_settings = QPushButton("Save game settings")
         self.btn_save_game_settings.clicked.connect(self._save_game_settings)
         gs_form.addRow(self.btn_save_game_settings)
@@ -703,6 +710,8 @@ class MainWindow(QMainWindow):
             self._player_proc = None
 
         cmd = [sys.executable, "-m", "tortuplayer", str(self.project.root)]
+        if self.check_play_fullscreen.isChecked():
+            cmd.append("--fullscreen")
         try:
             self._player_proc = subprocess.Popen(cmd)
         except OSError as exc:

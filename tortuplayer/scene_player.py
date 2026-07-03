@@ -6,10 +6,11 @@ import pygame
 
 from tortuengine.cart import load_game_module
 from tortuengine.cart_manifest import CartManifest
-from tortuengine.constants import DEFAULT_FPS, SCREEN_HEIGHT, SCREEN_WIDTH
+from tortuengine.constants import DEFAULT_FPS
 from tortuengine.engine import TortuEngine
 from tortuengine.scene import load_scene
 from tortuengine.scene_renderer import SceneRenderer
+from tortuplayer.display import Display
 
 
 class CartScenePlayer:
@@ -21,6 +22,7 @@ class CartScenePlayer:
         scale: int = 3,
         title: str = "TortuPlayer",
         fps: int = DEFAULT_FPS,
+        fullscreen: bool = False,
     ) -> None:
         if not pygame.get_init():
             pygame.init()
@@ -30,8 +32,9 @@ class CartScenePlayer:
         self.scale = scale
         self.title = title
         self.fps = fps
+        self.fullscreen = fullscreen
         self.running = False
-        self.window: pygame.Surface | None = None
+        self.display: Display | None = None
         self._game_module = None
         self._engine: TortuEngine | None = None
 
@@ -55,15 +58,14 @@ class CartScenePlayer:
                 game.init(engine)
 
     def _ensure_window(self) -> pygame.Surface:
-        if self.window is None:
-            self.window = pygame.display.set_mode(
-                (SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SCALED, 32
-            )
-            pygame.display.set_caption(self.title)
-        return self.window
+        if self.display is None:
+            self.display = Display(self.scale, self.fullscreen, self.title)
+            if self._engine is not None:
+                self._engine.framebuffer = self._engine.framebuffer.convert(self.display.window)
+        return self.display.window
 
     def run(self) -> None:
-        window = self._ensure_window()
+        self._ensure_window()
         clock = pygame.time.Clock()
         self.running = True
 
@@ -92,7 +94,7 @@ class CartScenePlayer:
                 engine.framebuffer.blit(frame, (0, 0))
                 if hasattr(game, "draw"):
                     game.draw(engine)
-                window.blit(engine.framebuffer, (0, 0))
+                self.display.present(engine.framebuffer)
             else:
                 self.renderer.tick(self.scene, dt)
                 frame = self.renderer.render(
@@ -100,7 +102,6 @@ class CartScenePlayer:
                     camera_x=self.camera_x,
                     camera_y=self.camera_y,
                 )
-                window.blit(frame, (0, 0))
-            pygame.display.flip()
+                self.display.present(frame)
 
         pygame.quit()

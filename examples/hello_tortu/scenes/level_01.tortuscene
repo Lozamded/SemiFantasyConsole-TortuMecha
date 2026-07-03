@@ -22,20 +22,26 @@
         },
         {
           "y0": 20,
-          "y1": 80,
+          "y1": 46,
           "parallax_x": 0.45,
           "repeat_x": true
         },
         {
-          "y0": 81,
-          "y1": 125,
-          "parallax_x": 0.65,
+          "y0": 47,
+          "y1": 72,
+          "parallax_x": 0.52,
           "repeat_x": true
         },
         {
-          "y0": 126,
+          "y0": 73,
+          "y1": 126,
+          "parallax_x": 0.64,
+          "repeat_x": true
+        },
+        {
+          "y0": 127,
           "y1": 197,
-          "parallax_x": 0.8,
+          "parallax_x": 0.85,
           "repeat_x": true
         }
       ],
@@ -4807,5 +4813,10 @@
       "y": 175
     }
   ],
-  "gui_layers": []
+  "gui_layers": [
+    {
+      "name": "gui_layer_0",
+      "gui_layer": "assets/gui/hud.tortuguilayer"
+    }
+  ]
 }

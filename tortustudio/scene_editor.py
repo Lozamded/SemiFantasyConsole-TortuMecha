@@ -57,8 +57,10 @@ from tortuengine.scene import (
     save_scene,
     tile_size_for_tile_layer,
 )
-from tortuengine.gui_layer import GuiLayer, load_gui_layer
+from tortuengine.gui_layer import GuiLayer, GuiTextLabel, load_gui_layer
 from tortuengine.sprite import Sprite, load_sprite
+from tortuengine.sprite_font import TortuSpriteFont, load_sprite_font, render_sprite_text_line
+from tortuengine.text_font import TortuFont, load_tortu_font, render_text_line
 from tortuengine.tileset import Tileset, load_tileset
 from tortustudio.object_strip import ObjectStripCanvas
 from tortustudio.scene_assets import (
@@ -158,6 +160,9 @@ class SceneMapCanvas(QWidget):
         self.tortu_objects: dict[str, TortuObject] = {}
         self.object_sprites: dict[str, Sprite] = {}
         self.object_sprite_palettes: dict[str, list[tuple[int, int, int]]] = {}
+        self.gui_layers: dict[str, GuiLayer] = {}
+        self.text_fonts: dict[str, TortuFont] = {}
+        self.sprite_fonts: dict[str, TortuSpriteFont] = {}
         self.active_tileset: Tileset | None = None
         self.palette: list[tuple[int, int, int]] = []
         self.active_tile_layer = 0
@@ -165,6 +170,7 @@ class SceneMapCanvas(QWidget):
         self.camera_y = 0
         self.show_camera_frame = True
         self.show_backgrounds = True
+        self.show_gui_layers = True
         self.show_band_guides = False
         self.parallax_bands: list[SceneBgParallaxBand] = []
         self.active_band_index = -1
@@ -208,6 +214,10 @@ class SceneMapCanvas(QWidget):
         show_objects: bool = True,
         selected_object_index: int = -1,
         edit_mode: bool = False,
+        gui_layers: dict[str, GuiLayer] | None = None,
+        text_fonts: dict[str, TortuFont] | None = None,
+        sprite_fonts: dict[str, TortuSpriteFont] | None = None,
+        show_gui_layers: bool = True,
     ) -> None:
         self.scene = scene
         self.project_root = project_root
@@ -223,6 +233,13 @@ class SceneMapCanvas(QWidget):
         self.show_camera_frame = show_camera_frame
         self.show_backgrounds = show_backgrounds
         self.show_band_guides = show_band_guides
+        if gui_layers is not None:
+            self.gui_layers = gui_layers
+        if text_fonts is not None:
+            self.text_fonts = text_fonts
+        if sprite_fonts is not None:
+            self.sprite_fonts = sprite_fonts
+        self.show_gui_layers = show_gui_layers
         self.parallax_bands = list(parallax_bands or [])
         self.active_band_index = active_band_index
         self.edit_objects = edit_objects
@@ -390,18 +407,24 @@ class SceneMapCanvas(QWidget):
         else:
             self.resize(200, 200)
 
-    def _tile_surface(self, tileset: Tileset, tile_index: int) -> pygame.Surface | None:
+    def _tile_surface(
+        self,
+        tileset: Tileset,
+        tile_index: int,
+        palette: list[tuple[int, int, int]] | None = None,
+    ) -> pygame.Surface | None:
         if tile_index < 0 or tile_index >= tileset.tile_count:
             return None
         size = tileset.tile_size
         tile = tileset.get_tile(tile_index)
+        colors = palette if palette is not None else self.palette
         surface = pygame.Surface((size, size), pygame.SRCALPHA)
         for ly in range(size):
             for lx in range(size):
                 index = tile[ly * size + lx]
                 if index == TRANSPARENT_INDEX:
                     continue
-                rgb = self.palette[index]
+                rgb = colors[index]
                 surface.set_at((lx, ly), (*rgb, 255))
         return surface
 
@@ -513,6 +536,129 @@ class SceneMapCanvas(QWidget):
             draw_y = inst.y - tortu_object.origin.y
             composite.blit(surface, (draw_x, draw_y))
 
+    def _get_gui_layer_asset(self, rel_path: str) -> GuiLayer | None:
+        if not rel_path:
+            return None
+        if rel_path in self.gui_layers:
+            return self.gui_layers[rel_path]
+        if self.project_root is None:
+            return None
+        path = (self.project_root / rel_path).resolve()
+        if not path.is_file():
+            return None
+        loaded = load_gui_layer(path, project_root=self.project_root)
+        self.gui_layers[rel_path] = loaded
+        return loaded
+
+    def _gui_palette(self, palette_name: str) -> list[tuple[int, int, int]] | None:
+        if palette_name in self.bg_palettes:
+            return self.bg_palettes[palette_name]
+        if self.project_root is None:
+            return None
+        path = palette_path(self.project_root, palette_name)
+        if not path.is_file():
+            return None
+        colors = load_palette(path)
+        self.bg_palettes[palette_name] = colors
+        return colors
+
+    def _get_text_font(self, rel_path: str) -> TortuFont | None:
+        if not rel_path:
+            return None
+        if rel_path in self.text_fonts:
+            return self.text_fonts[rel_path]
+        if self.project_root is None:
+            return None
+        path = (self.project_root / rel_path).resolve()
+        if not path.is_file():
+            return None
+        loaded = load_tortu_font(path)
+        self.text_fonts[rel_path] = loaded
+        return loaded
+
+    def _get_sprite_font(self, rel_path: str) -> TortuSpriteFont | None:
+        if not rel_path:
+            return None
+        if rel_path in self.sprite_fonts:
+            return self.sprite_fonts[rel_path]
+        if self.project_root is None:
+            return None
+        path = (self.project_root / rel_path).resolve()
+        if not path.is_file():
+            return None
+        loaded = load_sprite_font(path)
+        self.sprite_fonts[rel_path] = loaded
+        return loaded
+
+    def _gui_label_surface(self, label: GuiTextLabel) -> pygame.Surface | None:
+        if not label.text or not label.font:
+            return None
+        if label.font.endswith(".tortuspritefont"):
+            font = self._get_sprite_font(label.font)
+            if font is None:
+                return None
+            colors = self._gui_palette(font.palette)
+            if colors is None:
+                return None
+            return render_sprite_text_line(font, label.text, colors)
+        font = self._get_text_font(label.font)
+        if font is None:
+            return None
+        colors = self._gui_palette(font.palette)
+        if colors is None:
+            return None
+        return render_text_line(font, label.text, colors)
+
+    def _draw_gui_layer(
+        self, composite: pygame.Surface, gui_layer: GuiLayer, ox: int, oy: int
+    ) -> None:
+        if gui_layer.tile_layer_visible and gui_layer.tileset:
+            tileset = self._tile_layer_tileset(gui_layer.tileset)
+            palette = self._gui_palette(gui_layer.palette)
+            if tileset is not None and palette is not None:
+                ts = tileset.tile_size
+                cols = gui_layer.grid_columns(ts)
+                rows = gui_layer.grid_rows(ts)
+                for ty in range(rows):
+                    for tx in range(cols):
+                        px, py = tx * ts, ty * ts
+                        if px >= gui_layer.width or py >= gui_layer.height:
+                            continue
+                        tile_index = gui_layer.tiles[ty * cols + tx]
+                        if tile_index == EMPTY_TILE:
+                            continue
+                        tile_surface = self._tile_surface(tileset, tile_index, palette)
+                        if tile_surface is not None:
+                            composite.blit(tile_surface, (ox + px, oy + py))
+
+        for inst in gui_layer.objects:
+            surface = self._object_instance_surface(inst)
+            if surface is None:
+                continue
+            tortu_object = self._get_tortu_object(inst.prefab)
+            if tortu_object is None:
+                continue
+            draw_x = ox + inst.x - tortu_object.origin.x
+            draw_y = oy + inst.y - tortu_object.origin.y
+            composite.blit(surface, (draw_x, draw_y))
+
+        for label in gui_layer.text_labels:
+            surface = self._gui_label_surface(label)
+            if surface is not None:
+                composite.blit(surface, (ox + label.x, oy + label.y))
+
+    def _draw_scene_gui_layers(self, composite: pygame.Surface) -> None:
+        if not self.scene or not self.show_gui_layers:
+            return
+        cx, cy, _view_w, _view_h = self._clamped_camera()
+        for scene_gui in self.scene.gui_layers:
+            if not scene_gui.gui_layer:
+                continue
+            gui_layer = self._get_gui_layer_asset(scene_gui.gui_layer)
+            if gui_layer is None:
+                continue
+            self._draw_gui_layer(composite, gui_layer, cx, cy)
+
     def _refresh(self) -> None:
         if not self.scene:
             self._frame = None
@@ -580,6 +726,7 @@ class SceneMapCanvas(QWidget):
                     composite.blit(tile_surface, (px, py))
 
         self._draw_scene_objects(composite)
+        self._draw_scene_gui_layers(composite)
 
         data = pygame.image.tobytes(composite, "RGBA")
         self._frame = QImage(data, map_w, map_h, map_w * 4, QImage.Format.Format_RGBA8888)
@@ -846,6 +993,8 @@ class SceneEditorWidget(QWidget):
         self._tilesets_cache: dict[str, Tileset] = {}
         self._backgrounds_cache: dict[str, Background] = {}
         self._gui_layers_cache: dict[str, GuiLayer] = {}
+        self._text_fonts_cache: dict[str, TortuFont] = {}
+        self._sprite_fonts_cache: dict[str, TortuSpriteFont] = {}
         self._bg_palettes_cache: dict[str, list[tuple[int, int, int]]] = {}
         self._palette_colors: list[tuple[int, int, int]] = []
         self._dirty = False
@@ -994,6 +1143,13 @@ class SceneEditorWidget(QWidget):
         self.btn_add_gui_layer.clicked.connect(self._add_gui_layer)
         self.btn_remove_gui_layer = QPushButton("Remove GUI layer")
         self.btn_remove_gui_layer.clicked.connect(self._remove_gui_layer)
+
+        self.show_gui_layers = QCheckBox("Show GUI layers")
+        self.show_gui_layers.setChecked(True)
+        self.show_gui_layers.setToolTip(
+            "Preview GUI layers pinned to the camera viewport, as shown during play"
+        )
+        self.show_gui_layers.toggled.connect(self._on_show_gui_layers_toggled)
 
         self.show_backgrounds = QCheckBox("Show backgrounds")
         self.show_backgrounds.setChecked(True)
@@ -1231,6 +1387,7 @@ class SceneEditorWidget(QWidget):
         gui_layer_btns.addWidget(self.btn_add_gui_layer)
         gui_layer_btns.addWidget(self.btn_remove_gui_layer)
         gui_form.addRow(gui_layer_btns)
+        gui_form.addRow(self.show_gui_layers)
         gui_section.content_layout().addLayout(gui_form)
         side.addWidget(gui_section)
 
@@ -1774,6 +1931,10 @@ class SceneEditorWidget(QWidget):
             show_objects=self.show_objects.isChecked(),
             selected_object_index=self._selected_object_index,
             edit_mode=self._edit_mode,
+            gui_layers=self._gui_layers_cache,
+            text_fonts=self._text_fonts_cache,
+            sprite_fonts=self._sprite_fonts_cache,
+            show_gui_layers=self.show_gui_layers.isChecked(),
         )
 
     def _refresh_objects_list(self) -> None:
@@ -2136,6 +2297,9 @@ class SceneEditorWidget(QWidget):
         self._refresh_map()
 
     def _on_show_objects_toggled(self, _visible: bool) -> None:
+        self._refresh_map()
+
+    def _on_show_gui_layers_toggled(self, _visible: bool) -> None:
         self._refresh_map()
 
     def _on_show_band_guides_toggled(self, _visible: bool) -> None:

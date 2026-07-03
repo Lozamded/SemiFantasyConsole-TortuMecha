@@ -67,10 +67,10 @@ def _launch(cart_path: Path) -> None:
     pygame.quit()
     native = _native_bin(cart_path)
     if native:
-        subprocess.run([str(native)], cwd=str(cart_path))
+        subprocess.run([str(native), "--fullscreen"], cwd=str(cart_path))
     else:
         subprocess.run(
-            [sys.executable, "-m", "tortuplayer", str(cart_path)],
+            [sys.executable, "-m", "tortuplayer", str(cart_path), "--fullscreen"],
             cwd=ROOT,
         )
     pygame.init()

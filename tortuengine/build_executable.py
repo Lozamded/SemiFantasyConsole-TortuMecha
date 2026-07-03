@@ -36,7 +36,7 @@ if getattr(sys, "frozen", False):
     _cart = Path(sys.executable).parent.parent
 else:
     _cart = Path(__file__).parent.parent
-sys.argv = [sys.argv[0], str(_cart)]
+sys.argv = [sys.argv[0], str(_cart), *sys.argv[1:]]
 from tortuplayer.__main__ import main
 raise SystemExit(main())
 """
