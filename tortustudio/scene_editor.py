@@ -7,10 +7,10 @@ from enum import Enum
 from pathlib import Path
 
 import pygame
-from PyQt6.QtCore import QByteArray, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QImage, QMouseEvent, QPainter, QPen, QWheelEvent
+from PyQt6.QtCore import QByteArray, QMimeData, Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QDrag, QFont, QImage, QMouseEvent, QPainter, QPen, QWheelEvent
 from PyQt6.QtWidgets import (
-    QAbstractItemView,
+    QApplication,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
@@ -20,13 +20,14 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
     QMessageBox,
     QPushButton,
     QScrollArea,
     QSlider,
     QSpinBox,
+    QSplitter,
     QTabWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -81,26 +82,167 @@ class Tool(str, Enum):
 _OBJECT_MIME = "application/x-tortu-scene-object"
 
 
-class _ObjectsListWidget(QListWidget):
-    """QListWidget that carries the scene-object data key in its drag MIME."""
+class _DraggableObjectToggle(QToolButton):
+    """Collapsible-card header button that also starts a drag carrying the object's key."""
 
     def __init__(self, get_object_data, parent=None) -> None:
         super().__init__(parent)
         self._get_object_data = get_object_data
-        self.setDragEnabled(True)
-        self.setDragDropMode(QAbstractItemView.DragDropMode.DragOnly)
+        self._press_pos = None
 
-    def mimeData(self, items):  # type: ignore[override]
-        mime = super().mimeData(items)
-        if items:
-            data = self._get_object_data(self.row(items[0]))
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._press_pos = event.position().toPoint()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802
+        if (
+            self._press_pos is not None
+            and event.buttons() & Qt.MouseButton.LeftButton
+            and (event.position().toPoint() - self._press_pos).manhattanLength()
+            > QApplication.startDragDistance()
+        ):
+            self._press_pos = None
+            data = self._get_object_data()
             if data:
+                drag = QDrag(self)
+                mime = QMimeData()
                 mime.setData(_OBJECT_MIME, QByteArray(data.encode()))
-        return mime
+                drag.setMimeData(mime)
+                drag.exec(Qt.DropAction.CopyAction)
+                return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        self._press_pos = None
+        super().mouseReleaseEvent(event)
+
+
+class _SceneObjectCard(QWidget):
+    """Collapsible editor for one placed object instance in the scene."""
+
+    changed = pyqtSignal()
+    remove_requested = pyqtSignal()
+    picked = pyqtSignal()
+
+    def __init__(self, get_object_data, parent=None) -> None:
+        super().__init__(parent)
+        self._suspend = False
+
+        self.toggle = _DraggableObjectToggle(get_object_data, self)
+        self.toggle.setCheckable(True)
+        self.toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.toggle.setArrowType(Qt.ArrowType.RightArrow)
+        self.toggle.setStyleSheet(
+            "QToolButton { border: none; font-weight: 600; padding: 4px; text-align: left; }"
+            "QToolButton:hover { background-color: rgba(255, 255, 255, 24); }"
+        )
+        self.toggle.clicked.connect(self._on_toggle_clicked)
+
+        self.btn_remove = QPushButton("✕")
+        self.btn_remove.setFixedWidth(22)
+        self.btn_remove.setToolTip("Remove this object")
+        self.btn_remove.clicked.connect(self.remove_requested.emit)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.addWidget(self.toggle, stretch=1)
+        header.addWidget(self.btn_remove)
+
+        self.id_edit = QLineEdit()
+        self.id_edit.setPlaceholderText("(optional, unique name)")
+        self.x_spin = QSpinBox()
+        self.x_spin.setRange(-9999, 9999)
+        self.y_spin = QSpinBox()
+        self.y_spin.setRange(-9999, 9999)
+        self.z_spin = QSpinBox()
+        self.z_spin.setRange(-1000, 1000)
+        self.z_spin.setToolTip("Draw order: higher values draw on top")
+        self.anim_combo = QComboBox()
+
+        form = QFormLayout()
+        form.setContentsMargins(20, 2, 0, 6)
+        form.addRow("ID:", self.id_edit)
+        form.addRow("X:", self.x_spin)
+        form.addRow("Y:", self.y_spin)
+        form.addRow("Z-index:", self.z_spin)
+        form.addRow("Animation:", self.anim_combo)
+
+        self.content = QWidget()
+        self.content.setLayout(form)
+        self.content.setVisible(False)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addLayout(header)
+        outer.addWidget(self.content)
+
+        self.id_edit.editingFinished.connect(self._emit_changed)
+        self.x_spin.valueChanged.connect(self._emit_changed)
+        self.y_spin.valueChanged.connect(self._emit_changed)
+        self.z_spin.valueChanged.connect(self._emit_changed)
+        self.anim_combo.currentIndexChanged.connect(self._emit_changed)
+
+    def _on_toggle_clicked(self) -> None:
+        self.set_expanded(self.toggle.isChecked())
+        self.picked.emit()
+
+    def is_expanded(self) -> bool:
+        return self.toggle.isChecked()
+
+    def set_expanded(self, expanded: bool) -> None:
+        self.toggle.setChecked(expanded)
+        self.content.setVisible(expanded)
+        self.toggle.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
+
+    def set_header_text(self, text: str) -> None:
+        self.toggle.setText(text)
+
+    def set_highlighted(self, on: bool) -> None:
+        weight = "700" if on else "600"
+        color = " color: #4da3ff;" if on else ""
+        self.toggle.setStyleSheet(
+            f"QToolButton {{ border: none; font-weight: {weight};{color} padding: 4px;"
+            " text-align: left; }"
+            "QToolButton:hover { background-color: rgba(255, 255, 255, 24); }"
+        )
+
+    def _emit_changed(self) -> None:
+        if not self._suspend:
+            self.changed.emit()
+
+    def sync(self, inst: SceneObject, tortu_object: TortuObject | None) -> None:
+        widgets = (self.id_edit, self.x_spin, self.y_spin, self.z_spin, self.anim_combo)
+        self._suspend = True
+        for widget in widgets:
+            widget.blockSignals(True)
+        if self.id_edit.text() != inst.id:
+            self.id_edit.setText(inst.id)
+        self.x_spin.setValue(inst.x)
+        self.y_spin.setValue(inst.y)
+        self.z_spin.setValue(inst.z_index)
+        self.anim_combo.clear()
+        self.anim_combo.addItem("(default)", "")
+        if tortu_object is not None:
+            for anim in tortu_object.animations:
+                self.anim_combo.addItem(anim.name, anim.name)
+        found = self.anim_combo.findData(inst.animation)
+        self.anim_combo.setCurrentIndex(found if found >= 0 else 0)
+        for widget in widgets:
+            widget.blockSignals(False)
+        self._suspend = False
+
+    def read_into(self, inst: SceneObject) -> None:
+        inst.id = self.id_edit.text().strip()
+        inst.x = self.x_spin.value()
+        inst.y = self.y_spin.value()
+        inst.z_index = self.z_spin.value()
+        inst.animation = self.anim_combo.currentData() or ""
 
 
 class _DroppableTargetCombo(QComboBox):
-    """QComboBox that accepts drops from _ObjectsListWidget."""
+    """QComboBox that accepts drops from a _SceneObjectCard."""
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -525,7 +667,7 @@ class SceneMapCanvas(QWidget):
     def _draw_scene_objects(self, composite: pygame.Surface) -> None:
         if not self.scene or not self.show_objects:
             return
-        for inst in self.scene.objects:
+        for inst in sorted(self.scene.objects, key=lambda o: o.z_index):
             surface = self._object_instance_surface(inst)
             if surface is None:
                 continue
@@ -1293,15 +1435,20 @@ class SceneEditorWidget(QWidget):
         self.objects_search.setPlaceholderText("Filter objects…")
         self.objects_search.textChanged.connect(self._refresh_objects_list)
 
-        self.objects_list = _ObjectsListWidget(self._get_dragged_object_data)
-        self.objects_list.setMaximumHeight(160)
-        self.objects_list.currentRowChanged.connect(self._on_objects_list_selection_changed)
         self._selected_object_index = -1
         self._objects_list_indices: list[int] = []
+        self._object_cards: dict[int, _SceneObjectCard] = {}
 
-        self.btn_remove_selected_object = QPushButton("Remove selected")
-        self.btn_remove_selected_object.setEnabled(False)
-        self.btn_remove_selected_object.clicked.connect(self._remove_selected_object)
+        self.objects_container = QWidget()
+        self.objects_container_layout = QVBoxLayout(self.objects_container)
+        self.objects_container_layout.setContentsMargins(0, 0, 0, 0)
+        self.objects_container_layout.setSpacing(2)
+        self.objects_container_layout.addStretch(1)
+
+        self.objects_scroll = QScrollArea()
+        self.objects_scroll.setWidgetResizable(True)
+        self.objects_scroll.setWidget(self.objects_container)
+        self.objects_scroll.setMinimumHeight(160)
 
         self.chk_click_origin = QCheckBox("Click origin of object to move")
         self.chk_click_origin.setChecked(False)
@@ -1326,8 +1473,8 @@ class SceneEditorWidget(QWidget):
         file_row.addStretch()
         outer.addLayout(file_row)
 
-        body = QHBoxLayout()
-        outer.addLayout(body, stretch=1)
+        body = QSplitter(Qt.Orientation.Horizontal)
+        outer.addWidget(body, stretch=1)
 
         self.map_group = QGroupBox("Map — DRAW MODE  ·  Paint")
         map_layout = QVBoxLayout(self.map_group)
@@ -1335,7 +1482,7 @@ class SceneEditorWidget(QWidget):
         map_scroll.setWidgetResizable(False)
         map_scroll.setWidget(self.map_canvas)
         map_layout.addWidget(map_scroll)
-        body.addWidget(self.map_group, stretch=1)
+        body.addWidget(self.map_group)
 
         side_widget = QWidget()
         side = QVBoxLayout(side_widget)
@@ -1430,13 +1577,6 @@ class SceneEditorWidget(QWidget):
         map_section.content_layout().addLayout(map_form)
         side.addWidget(map_section)
 
-        objects_section = CollapsibleSection("Objects in Scene", expanded=True)
-        objects_section.content_layout().addWidget(self.objects_search)
-        objects_section.content_layout().addWidget(self.objects_list)
-        objects_section.content_layout().addWidget(self.btn_remove_selected_object)
-        objects_section.content_layout().addWidget(self.chk_click_origin)
-        side.addWidget(objects_section)
-
         side.addStretch()
 
         side_scroll = QScrollArea()
@@ -1445,6 +1585,24 @@ class SceneEditorWidget(QWidget):
         side_scroll.setWidget(side_widget)
         side_scroll.setMinimumWidth(260)
         body.addWidget(side_scroll)
+
+        objects_panel = QWidget()
+        objects_panel_layout = QVBoxLayout(objects_panel)
+        objects_panel_layout.setContentsMargins(4, 4, 4, 4)
+        objects_panel_layout.setSpacing(6)
+        objects_title = QLabel("Objects in Scene")
+        objects_title.setStyleSheet("font-weight: 700; padding: 2px;")
+        objects_panel_layout.addWidget(objects_title)
+        objects_panel_layout.addWidget(self.objects_search)
+        objects_panel_layout.addWidget(self.objects_scroll, stretch=1)
+        objects_panel_layout.addWidget(self.chk_click_origin)
+        objects_panel.setMinimumWidth(260)
+        body.addWidget(objects_panel)
+
+        body.setStretchFactor(0, 3)
+        body.setStretchFactor(1, 2)
+        body.setStretchFactor(2, 2)
+        body.setSizes([700, 320, 380])
 
         self.bottom_tabs = QTabWidget()
         tile_tab = QWidget()
@@ -1938,32 +2096,70 @@ class SceneEditorWidget(QWidget):
         )
 
     def _refresh_objects_list(self) -> None:
-        self.objects_list.blockSignals(True)
-        self.objects_list.clear()
-        self._objects_list_indices = []
         if not self.scene:
+            self._rebuild_object_cards([])
+            self._objects_list_indices = []
             self._selected_object_index = -1
-            self.objects_list.blockSignals(False)
+            self._refresh_camera_target_combo()
             return
         if self._selected_object_index >= len(self.scene.objects):
             self._selected_object_index = -1
         query = self.objects_search.text().strip().lower()
+        visible_indices: list[int] = []
         for i, inst in enumerate(self.scene.objects):
             name = Path(inst.prefab).stem
-            label = f"#{i}  {name}  @ ({inst.x}, {inst.y})"
-            if query and query not in label.lower():
+            haystack = f"{name} {inst.id}".lower()
+            if query and query not in haystack:
                 continue
-            self.objects_list.addItem(label)
-            self._objects_list_indices.append(i)
-        if self._selected_object_index >= 0:
-            try:
-                row = self._objects_list_indices.index(self._selected_object_index)
-                self.objects_list.setCurrentRow(row)
-            except ValueError:
-                self._selected_object_index = -1
-        self.btn_remove_selected_object.setEnabled(self._selected_object_index >= 0)
-        self.objects_list.blockSignals(False)
+            visible_indices.append(i)
+        if visible_indices != self._objects_list_indices:
+            self._rebuild_object_cards(visible_indices)
+            self._objects_list_indices = visible_indices
+        for i in visible_indices:
+            inst = self.scene.objects[i]
+            card = self._object_cards[i]
+            tortu_object = self.map_canvas._get_tortu_object(inst.prefab)
+            card.sync(inst, tortu_object)
+            suffix = f"  [{inst.id}]" if inst.id else ""
+            card.set_header_text(f"#{i}  {Path(inst.prefab).stem}{suffix}")
+            card.toggle.setToolTip(
+                f"{Path(inst.prefab).stem}{suffix}  @ ({inst.x}, {inst.y})  z={inst.z_index}"
+            )
+            card.set_highlighted(i == self._selected_object_index)
         self._refresh_camera_target_combo()
+
+    def _rebuild_object_cards(self, visible_indices: list[int]) -> None:
+        for card in self._object_cards.values():
+            card.setParent(None)
+            card.deleteLater()
+        self._object_cards = {}
+        for i in visible_indices:
+            card = _SceneObjectCard(lambda idx=i: self._get_dragged_object_data(idx))
+            card.changed.connect(lambda idx=i: self._on_object_card_changed(idx))
+            card.remove_requested.connect(lambda idx=i: self._remove_object(idx))
+            card.picked.connect(lambda idx=i: self._on_object_card_picked(idx))
+            self.objects_container_layout.insertWidget(
+                self.objects_container_layout.count() - 1, card
+            )
+            self._object_cards[i] = card
+
+    def _on_object_card_changed(self, obj_idx: int) -> None:
+        if not self.scene or not (0 <= obj_idx < len(self.scene.objects)):
+            return
+        card = self._object_cards.get(obj_idx)
+        if card is None:
+            return
+        card.read_into(self.scene.objects[obj_idx])
+        self._mark_dirty()
+        self._refresh_map()
+        self._refresh_objects_list()
+
+    def _on_object_card_picked(self, obj_idx: int) -> None:
+        self._selected_object_index = obj_idx
+        self.map_canvas.selected_object_index = obj_idx
+        self.map_canvas.update()
+        for idx, card in self._object_cards.items():
+            card.set_highlighted(idx == self._selected_object_index)
 
     def _set_editor_mode(self, edit: bool) -> None:
         self._edit_mode = edit
@@ -1979,20 +2175,19 @@ class SceneEditorWidget(QWidget):
         self.map_canvas.selected_object_index = index
         self.map_canvas.update()
         self._refresh_objects_list()
+        card = self._object_cards.get(index)
+        if card is not None:
+            card.set_expanded(True)
+            self.objects_scroll.ensureWidgetVisible(card)
 
-    def _on_objects_list_selection_changed(self, row: int) -> None:
-        if row < 0 or row >= len(self._objects_list_indices):
-            self._selected_object_index = -1
-        else:
-            self._selected_object_index = self._objects_list_indices[row]
-        self.btn_remove_selected_object.setEnabled(self._selected_object_index >= 0)
-        self._refresh_map()
-
-    def _remove_selected_object(self) -> None:
-        if not self.scene or self._selected_object_index < 0:
+    def _remove_object(self, obj_idx: int) -> None:
+        if not self.scene or not (0 <= obj_idx < len(self.scene.objects)):
             return
-        self.scene.remove_object(self._selected_object_index)
-        self._selected_object_index = -1
+        self.scene.remove_object(obj_idx)
+        if self._selected_object_index == obj_idx:
+            self._selected_object_index = -1
+        elif self._selected_object_index > obj_idx:
+            self._selected_object_index -= 1
         self._mark_dirty()
         self._refresh_objects_list()
         self._refresh_map()
@@ -2543,12 +2738,9 @@ class SceneEditorWidget(QWidget):
         self.script_edit.setText(rel)
         self._open_script_in_editor()
 
-    def _get_dragged_object_data(self, row: int) -> str:
-        """Return the combo-key string for the list row being dragged."""
-        if not self.scene or row < 0 or row >= len(self._objects_list_indices):
-            return ""
-        obj_idx = self._objects_list_indices[row]
-        if obj_idx >= len(self.scene.objects):
+    def _get_dragged_object_data(self, obj_idx: int) -> str:
+        """Return the combo-key string for the scene object being dragged."""
+        if not self.scene or not (0 <= obj_idx < len(self.scene.objects)):
             return ""
         inst = self.scene.objects[obj_idx]
         prior_count = sum(1 for o in self.scene.objects[:obj_idx] if o.prefab == inst.prefab)

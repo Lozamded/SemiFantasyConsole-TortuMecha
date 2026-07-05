@@ -48,9 +48,11 @@ class SceneObject:
     x: int
     y: int
     animation: str = ""
+    z_index: int = 0
+    id: str = ""
 
     def copy(self) -> SceneObject:
-        return SceneObject(self.prefab, self.x, self.y, self.animation)
+        return SceneObject(self.prefab, self.x, self.y, self.animation, self.z_index, self.id)
 
 
 @dataclass
@@ -238,10 +240,12 @@ class Scene:
         y: int,
         *,
         animation: str = "",
+        z_index: int = 0,
+        obj_id: str = "",
     ) -> int:
         if len(self.objects) >= MAX_SCENE_OBJECTS:
             raise ValueError(f"Scene cannot have more than {MAX_SCENE_OBJECTS} objects")
-        self.objects.append(SceneObject(prefab, x, y, animation))
+        self.objects.append(SceneObject(prefab, x, y, animation, z_index, obj_id))
         return len(self.objects) - 1
 
     def remove_object(self, object_index: int) -> None:
@@ -624,7 +628,11 @@ def _normalize_scene_object(raw: dict, path: Path) -> SceneObject:
     if not prefab:
         raise ValueError(f"Scene object missing prefab path in {path.name}")
     animation = str(raw.get("animation", "")).strip()
-    return SceneObject(prefab, int(raw.get("x", 0)), int(raw.get("y", 0)), animation)
+    z_index = int(raw.get("z_index", 0))
+    obj_id = str(raw.get("id", "")).strip()
+    return SceneObject(
+        prefab, int(raw.get("x", 0)), int(raw.get("y", 0)), animation, z_index, obj_id
+    )
 
 
 def _normalize_scene_objects(raw_objects: list[dict], path: Path) -> list[SceneObject]:
@@ -756,6 +764,8 @@ def save_scene(scene: Scene, path: Path, *, project_root: Path | None = None) ->
                 "x": inst.x,
                 "y": inst.y,
                 **({"animation": inst.animation} if inst.animation else {}),
+                **({"z_index": inst.z_index} if inst.z_index else {}),
+                **({"id": inst.id} if inst.id else {}),
             }
             for inst in scene.objects
         ],

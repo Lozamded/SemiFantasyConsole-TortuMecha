@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from enum import Enum
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from PyQt6.QtGui import QColor, QImage, QMouseEvent, QPainter, QPen, QWheelEvent
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -40,6 +42,7 @@ from tortuengine.gui_layer import (
 )
 from tortuengine.object import TortuObject, load_object
 from tortuengine.palette import TRANSPARENT_INDEX, load_palette, palette_path
+from tortuengine.project import load_project
 from tortuengine.sprite import Sprite, load_sprite
 from tortuengine.sprite_font import TortuSpriteFont, load_sprite_font, render_sprite_text_line
 from tortuengine.text_font import TortuFont, load_tortu_font, render_text_line
@@ -673,6 +676,40 @@ class GuiLayerEditorWidget(QWidget):
         self.show_grid.setChecked(True)
         self.show_grid.toggled.connect(self.canvas.set_show_grid)
 
+        # -- script ---------------------------------------
+        self.script_edit = QLineEdit()
+        self.script_edit.setPlaceholderText("scripts/my_hud.py")
+        self.script_edit.textChanged.connect(self._on_script_changed)
+        self.script_edit.textChanged.connect(self._refresh_script_row)
+
+        self.btn_browse_script = QPushButton("Browse…")
+        self.btn_browse_script.clicked.connect(self._browse_script)
+        self.btn_open_script = QPushButton("Open script")
+        self.btn_open_script.clicked.connect(self._open_script_in_editor)
+
+        self.btn_create_script = QPushButton("Create new")
+        self.btn_create_script.clicked.connect(self._create_script)
+        self.btn_assign_script = QPushButton("Assign existing…")
+        self.btn_assign_script.clicked.connect(self._browse_script)
+
+        self._script_container = QWidget()
+        _script_vbox = QVBoxLayout(self._script_container)
+        _script_vbox.setContentsMargins(0, 0, 0, 0)
+        _script_vbox.setSpacing(2)
+        self._script_empty_row = QWidget()
+        _script_empty_inner = QHBoxLayout(self._script_empty_row)
+        _script_empty_inner.setContentsMargins(0, 0, 0, 0)
+        _script_empty_inner.addWidget(self.btn_create_script)
+        _script_empty_inner.addWidget(self.btn_assign_script)
+        _script_vbox.addWidget(self._script_empty_row)
+        self._script_edit_row = QWidget()
+        _script_edit_inner = QHBoxLayout(self._script_edit_row)
+        _script_edit_inner.setContentsMargins(0, 0, 0, 0)
+        _script_edit_inner.addWidget(self.script_edit, stretch=1)
+        _script_edit_inner.addWidget(self.btn_browse_script)
+        _script_edit_inner.addWidget(self.btn_open_script)
+        _script_vbox.addWidget(self._script_edit_row)
+
         # -- target / mode / tool ---------------------------------------
         self.btn_target_tiles = QPushButton("Tiles")
         self.btn_target_objects = QPushButton("Objects")
@@ -784,6 +821,12 @@ class GuiLayerEditorWidget(QWidget):
         size_form.addRow(self.show_grid)
         size_section.content_layout().addLayout(size_form)
         side.addWidget(size_section)
+
+        script_section = CollapsibleSection("Script", expanded=False)
+        script_form = QFormLayout()
+        script_form.addRow("GUI layer script:", self._script_container)
+        script_section.content_layout().addLayout(script_form)
+        side.addWidget(script_section)
 
         tile_section = CollapsibleSection("Tile Layer", expanded=True)
         tile_form = QFormLayout()
@@ -1021,6 +1064,10 @@ class GuiLayerEditorWidget(QWidget):
         self.tile_layer_visible.blockSignals(True)
         self.tile_layer_visible.setChecked(self.gui_layer.tile_layer_visible)
         self.tile_layer_visible.blockSignals(False)
+        self.script_edit.blockSignals(True)
+        self.script_edit.setText(self.gui_layer.script)
+        self.script_edit.blockSignals(False)
+        self._refresh_script_row()
         self._sync_tileset_combo()
         self._sync_text_font_combo()
         self._load_active_tileset()
@@ -1208,10 +1255,79 @@ class GuiLayerEditorWidget(QWidget):
     def save(self) -> None:
         if not self.gui_layer or not self.file_path:
             return
+        self.gui_layer.script = self.script_edit.text().strip()
         save_gui_layer(self.gui_layer, self.file_path)
         self._dirty = False
         self._update_status()
         self.saved.emit(self.file_path)
+
+    def _on_script_changed(self) -> None:
+        if self.gui_layer is not None:
+            self.gui_layer.script = self.script_edit.text().strip()
+            self._mark_dirty()
+
+    def _refresh_script_row(self) -> None:
+        has_script = bool(self.script_edit.text().strip())
+        self._script_empty_row.setVisible(not has_script)
+        self._script_edit_row.setVisible(has_script)
+
+    def _create_script(self) -> None:
+        if not self.file_path:
+            return
+        scripts_dir = self.project_root / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        script_path = scripts_dir / f"{self.file_path.stem}.py"
+        if script_path.exists():
+            reply = QMessageBox.question(
+                self,
+                "Create Script",
+                f"Script already exists:\n{script_path}\n\nLink and open it?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+        else:
+            stem = self.file_path.stem
+            template = (
+                f'"""Script for GUI layer {stem}."""\n\n\n'
+                "def init(engine):\n    pass\n\n\n"
+                "def update(dt):\n    pass\n\n\n"
+                "def draw(engine):\n    pass\n"
+            )
+            script_path.write_text(template, encoding="utf-8")
+        rel = script_path.resolve().relative_to(self.project_root.resolve()).as_posix()
+        self.script_edit.setText(rel)
+        self._open_script_in_editor()
+
+    def _browse_script(self) -> None:
+        scripts_dir = self.project_root / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Choose Script",
+            str(scripts_dir),
+            "Python Scripts (*.py)",
+        )
+        if not path:
+            return
+        rel = Path(path).resolve().relative_to(self.project_root.resolve()).as_posix()
+        self.script_edit.setText(rel)
+
+    def _open_script_in_editor(self) -> None:
+        script = self.script_edit.text().strip()
+        if not script:
+            QMessageBox.information(self, "Open Script", "Set a script path first.")
+            return
+        path = (self.project_root / script).resolve()
+        if not path.is_file():
+            QMessageBox.warning(self, "Open Script", f"Script not found: {path}")
+            return
+        try:
+            project = load_project(self.project_root)
+            cmd = project.editor_command.format(file=path, line=1)
+            subprocess.Popen(cmd, shell=True)
+        except OSError as exc:
+            QMessageBox.warning(self, "Open Script", str(exc))
 
     def _rename_gui_layer(self) -> None:
         if not self.gui_layer or not self.file_path:

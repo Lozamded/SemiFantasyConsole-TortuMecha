@@ -74,6 +74,7 @@ class GuiLayer:
     tile_layer_visible: bool = True
     objects: list[GuiObject] = field(default_factory=list)
     text_labels: list[GuiTextLabel] = field(default_factory=list)
+    script: str = ""
 
     @classmethod
     def create(
@@ -230,9 +231,10 @@ def load_gui_layer(path: Path, *, project_root: Path | None = None) -> GuiLayer:
         )
         for raw in data.get("text_labels", [])
     ]
+    script = _normalize_asset_path(str(data.get("script", "")))
 
     gui_layer = GuiLayer(
-        width, height, palette, tileset, tiles, tile_layer_visible, objects, text_labels
+        width, height, palette, tileset, tiles, tile_layer_visible, objects, text_labels, script
     )
     gui_layer.ensure_tile_grid(tile_size_for_gui_layer(gui_layer, project_root))
     return gui_layer
@@ -265,5 +267,6 @@ def save_gui_layer(gui_layer: GuiLayer, path: Path) -> None:
             }
             for label in gui_layer.text_labels
         ],
+        **({"script": _normalize_asset_path(gui_layer.script)} if gui_layer.script else {}),
     }
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")

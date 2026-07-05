@@ -4811,6 +4811,18 @@
       "object": "assets/objects/robot.tortuobject",
       "x": 374,
       "y": 175
+    },
+    {
+      "object": "assets/objects/dialogue_icon.tortuobject",
+      "x": 120,
+      "y": 107,
+      "id": "diag_robo1"
+    },
+    {
+      "object": "assets/objects/dialogue_icon.tortuobject",
+      "x": 373,
+      "y": 155,
+      "id": "dialog_robo2"
     }
   ],
   "gui_layers": [

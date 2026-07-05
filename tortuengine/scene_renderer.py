@@ -681,7 +681,8 @@ class SceneRenderer:
                             continue
                         composite.blit(tile_surface, (px, py))
 
-        for index, inst in enumerate(scene.objects):
+        draw_order = sorted(enumerate(scene.objects), key=lambda pair: (pair[1].z_index, pair[0]))
+        for index, inst in draw_order:
             frame_index = 0
             if index < len(self._object_anim):
                 frame_index = self._object_anim[index].frame_index

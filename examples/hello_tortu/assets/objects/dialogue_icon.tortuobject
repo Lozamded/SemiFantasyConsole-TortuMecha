@@ -1,0 +1,25 @@
+{
+  "name": "dialogue_icon",
+  "default_animation": "default",
+  "animations": [
+    {
+      "name": "default",
+      "sprite": "assets/sprites/dialogue_icon.tortusprite"
+    }
+  ],
+  "solid": false,
+  "origin": {
+    "x": 7,
+    "y": 15
+  },
+  "colliders": [
+    {
+      "name": "main",
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0,
+      "active": true
+    }
+  ]
+}
