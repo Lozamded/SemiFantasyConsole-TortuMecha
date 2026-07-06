@@ -336,7 +336,7 @@ class MainWindow(QMainWindow):
         self.tree_names_only.toggled.connect(self._on_tree_names_only_toggled)
         tree_layout.addWidget(self.tree_names_only)
 
-        self.project_tree = DraggableProjectTree(drag_suffixes=(".tortusprite",))
+        self.project_tree = DraggableProjectTree(drag_suffixes=(".tortusprite", ".tortuobject"))
         self.project_tree.setHeaderLabel("Project")
         self.project_tree.setMinimumWidth(180)
         self.project_tree.itemDoubleClicked.connect(self._on_tree_double_click)

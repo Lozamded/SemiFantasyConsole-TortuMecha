@@ -38,8 +38,8 @@ from tortuengine.object import (
 )
 from tortuengine.palette import load_palette, palette_path
 from tortuengine.sprite import Sprite, load_sprite
-from tortustudio.asset_drag import SpriteDropCombo
-from tortustudio.scene_assets import list_sprite_paths
+from tortustudio.asset_drag import ObjectDropList, SpriteDropCombo
+from tortustudio.scene_assets import list_object_paths, list_sprite_paths
 
 # (x, y, w, h, active) — resolved pixel sizes (no 0-means-full convention)
 _ColliderTuple = tuple[int, int, int, int, bool]
@@ -596,6 +596,19 @@ class ObjectEditorWidget(QWidget):
         self.zoom_spin.setValue(4)
         self.zoom_spin.valueChanged.connect(self.preview.set_zoom)
 
+        self.spawnable_combo = QComboBox()
+        self.spawnable_combo.setToolTip(
+            "Other objects this one may spawn at runtime (e.g. bullets), "
+            "even if never placed in a scene"
+        )
+        self.btn_add_spawnable = QPushButton("Add")
+        self.btn_add_spawnable.clicked.connect(self._add_spawnable_object)
+        self.btn_remove_spawnable = QPushButton("Remove")
+        self.btn_remove_spawnable.clicked.connect(self._remove_spawnable_object)
+        self.spawnable_list = ObjectDropList()
+        self.spawnable_list.setMaximumHeight(90)
+        self.spawnable_list.object_dropped.connect(self._add_spawnable_object_path)
+
         self._build_layout()
 
     def _build_layout(self) -> None:
@@ -659,6 +672,13 @@ class ObjectEditorWidget(QWidget):
         form.addRow("Preview frame:", self.preview_frame)
         form.addRow("", self.preview_animate)
         form.addRow("Zoom:", self.zoom_spin)
+        form.addRow(QLabel("<b>Spawnable objects</b> (not required in scene)"))
+        spawnable_row = QHBoxLayout()
+        spawnable_row.addWidget(self.spawnable_combo, stretch=1)
+        spawnable_row.addWidget(self.btn_add_spawnable)
+        spawnable_row.addWidget(self.btn_remove_spawnable)
+        form.addRow(spawnable_row)
+        form.addRow(self.spawnable_list)
 
         side = QWidget()
         side_layout = QVBoxLayout(side)
@@ -945,6 +965,7 @@ class ObjectEditorWidget(QWidget):
         self.solid.blockSignals(False)
         self._refresh_script_row()
         self._sync_animation_controls()
+        self._sync_spawnable_controls()
         if self._load_sprite_asset():
             self._refresh_collider_controls()
             self._refresh_preview()
@@ -1128,6 +1149,57 @@ class ObjectEditorWidget(QWidget):
         self._mark_dirty()
         self._sync_collider_controls()
         self._refresh_preview()
+
+    # ── spawnable objects (not required in scene) ────────────────────────────
+
+    def _self_rel_path(self) -> str:
+        if not self.file_path:
+            return ""
+        try:
+            return self.file_path.resolve().relative_to(self.project_root.resolve()).as_posix()
+        except ValueError:
+            return ""
+
+    def _sync_spawnable_controls(self) -> None:
+        self.spawnable_list.clear()
+        self.spawnable_combo.blockSignals(True)
+        self.spawnable_combo.clear()
+        if not self.tortu_object:
+            self.spawnable_combo.blockSignals(False)
+            return
+        self_rel = self._self_rel_path()
+        for rel in list_object_paths(self.project_root):
+            if rel != self_rel:
+                self.spawnable_combo.addItem(rel, rel)
+        self.spawnable_combo.blockSignals(False)
+        for rel in self.tortu_object.spawnable_objects:
+            self.spawnable_list.addItem(rel)
+
+    def _add_spawnable_object(self) -> None:
+        rel = self.spawnable_combo.currentData()
+        if rel:
+            self._add_spawnable_object_path(str(rel))
+
+    def _add_spawnable_object_path(self, rel: str) -> None:
+        if not self.tortu_object or not rel:
+            return
+        if rel == self._self_rel_path() or rel in self.tortu_object.spawnable_objects:
+            return
+        self.tortu_object.spawnable_objects.append(rel)
+        self.spawnable_list.addItem(rel)
+        self._mark_dirty()
+
+    def _remove_spawnable_object(self) -> None:
+        if not self.tortu_object:
+            return
+        item = self.spawnable_list.currentItem()
+        if item is None:
+            return
+        rel = item.text()
+        if rel in self.tortu_object.spawnable_objects:
+            self.tortu_object.spawnable_objects.remove(rel)
+        self.spawnable_list.takeItem(self.spawnable_list.row(item))
+        self._mark_dirty()
 
     def _on_origin_changed(self) -> None:
         if not self.tortu_object:

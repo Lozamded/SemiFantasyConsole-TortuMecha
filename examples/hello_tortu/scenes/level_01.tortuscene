@@ -4805,24 +4805,38 @@
     {
       "object": "assets/objects/robot.tortuobject",
       "x": 119,
-      "y": 127
+      "y": 127,
+      "id": "robot1",
+      "links": [
+        "diag_robo1"
+      ]
     },
     {
       "object": "assets/objects/robot.tortuobject",
       "x": 374,
-      "y": 175
+      "y": 175,
+      "id": "robot2",
+      "links": [
+        "diag_robo1"
+      ]
     },
     {
       "object": "assets/objects/dialogue_icon.tortuobject",
-      "x": 120,
+      "x": 121,
       "y": 107,
-      "id": "diag_robo1"
+      "id": "diag_robo1",
+      "links": [
+        "robot1"
+      ]
     },
     {
       "object": "assets/objects/dialogue_icon.tortuobject",
       "x": 373,
       "y": 155,
-      "id": "dialog_robo2"
+      "id": "diag_robo2",
+      "links": [
+        "robot2"
+      ]
     }
   ],
   "gui_layers": [

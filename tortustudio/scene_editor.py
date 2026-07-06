@@ -80,14 +80,16 @@ class Tool(str, Enum):
 
 
 _OBJECT_MIME = "application/x-tortu-scene-object"
+_OBJECT_INDEX_MIME = "application/x-tortu-scene-object-index"
 
 
 class _DraggableObjectToggle(QToolButton):
     """Collapsible-card header button that also starts a drag carrying the object's key."""
 
-    def __init__(self, get_object_data, parent=None) -> None:
+    def __init__(self, get_object_data, get_object_index=None, parent=None) -> None:
         super().__init__(parent)
         self._get_object_data = get_object_data
+        self._get_object_index = get_object_index
         self._press_pos = None
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
@@ -108,6 +110,8 @@ class _DraggableObjectToggle(QToolButton):
                 drag = QDrag(self)
                 mime = QMimeData()
                 mime.setData(_OBJECT_MIME, QByteArray(data.encode()))
+                if self._get_object_index is not None:
+                    mime.setData(_OBJECT_INDEX_MIME, QByteArray(str(self._get_object_index()).encode()))
                 drag.setMimeData(mime)
                 drag.exec(Qt.DropAction.CopyAction)
                 return
@@ -118,6 +122,52 @@ class _DraggableObjectToggle(QToolButton):
         super().mouseReleaseEvent(event)
 
 
+class _LinksDropLineEdit(QLineEdit):
+    """Links field that accepts another object card dropped onto it, adding its ID."""
+
+    def __init__(self, own_index, resolve_object_id, parent=None) -> None:
+        super().__init__(parent)
+        self._own_index = own_index
+        self._resolve_object_id = resolve_object_id
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event) -> None:  # noqa: N802
+        if event.mimeData().hasFormat(_OBJECT_INDEX_MIME):
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event) -> None:  # noqa: N802
+        if event.mimeData().hasFormat(_OBJECT_INDEX_MIME):
+            event.acceptProposedAction()
+        else:
+            super().dragMoveEvent(event)
+
+    def dropEvent(self, event) -> None:  # noqa: N802
+        if not event.mimeData().hasFormat(_OBJECT_INDEX_MIME):
+            super().dropEvent(event)
+            return
+        raw = bytes(event.mimeData().data(_OBJECT_INDEX_MIME)).decode()
+        try:
+            dropped_index = int(raw)
+        except ValueError:
+            event.ignore()
+            return
+        if dropped_index == self._own_index():
+            event.ignore()
+            return
+        link_id = self._resolve_object_id(dropped_index)
+        if not link_id:
+            event.ignore()
+            return
+        existing = [part.strip() for part in self.text().split(",") if part.strip()]
+        if link_id not in existing:
+            existing.append(link_id)
+            self.setText(", ".join(existing))
+            self.editingFinished.emit()
+        event.acceptProposedAction()
+
+
 class _SceneObjectCard(QWidget):
     """Collapsible editor for one placed object instance in the scene."""
 
@@ -125,11 +175,11 @@ class _SceneObjectCard(QWidget):
     remove_requested = pyqtSignal()
     picked = pyqtSignal()
 
-    def __init__(self, get_object_data, parent=None) -> None:
+    def __init__(self, get_object_data, get_object_index=None, resolve_object_id=None, parent=None) -> None:
         super().__init__(parent)
         self._suspend = False
 
-        self.toggle = _DraggableObjectToggle(get_object_data, self)
+        self.toggle = _DraggableObjectToggle(get_object_data, get_object_index, parent=self)
         self.toggle.setCheckable(True)
         self.toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.toggle.setArrowType(Qt.ArrowType.RightArrow)
@@ -151,6 +201,12 @@ class _SceneObjectCard(QWidget):
 
         self.id_edit = QLineEdit()
         self.id_edit.setPlaceholderText("(optional, unique name)")
+        if get_object_index is not None and resolve_object_id is not None:
+            self.links_edit = _LinksDropLineEdit(get_object_index, resolve_object_id)
+        else:
+            self.links_edit = QLineEdit()
+        self.links_edit.setPlaceholderText("comma-separated IDs, or drag an object here")
+        self.links_edit.setToolTip("IDs of other objects in this scene that this one references")
         self.x_spin = QSpinBox()
         self.x_spin.setRange(-9999, 9999)
         self.y_spin = QSpinBox()
@@ -163,6 +219,7 @@ class _SceneObjectCard(QWidget):
         form = QFormLayout()
         form.setContentsMargins(20, 2, 0, 6)
         form.addRow("ID:", self.id_edit)
+        form.addRow("Links:", self.links_edit)
         form.addRow("X:", self.x_spin)
         form.addRow("Y:", self.y_spin)
         form.addRow("Z-index:", self.z_spin)
@@ -179,6 +236,7 @@ class _SceneObjectCard(QWidget):
         outer.addWidget(self.content)
 
         self.id_edit.editingFinished.connect(self._emit_changed)
+        self.links_edit.editingFinished.connect(self._emit_changed)
         self.x_spin.valueChanged.connect(self._emit_changed)
         self.y_spin.valueChanged.connect(self._emit_changed)
         self.z_spin.valueChanged.connect(self._emit_changed)
@@ -213,12 +271,17 @@ class _SceneObjectCard(QWidget):
             self.changed.emit()
 
     def sync(self, inst: SceneObject, tortu_object: TortuObject | None) -> None:
-        widgets = (self.id_edit, self.x_spin, self.y_spin, self.z_spin, self.anim_combo)
+        widgets = (
+            self.id_edit, self.links_edit, self.x_spin, self.y_spin, self.z_spin, self.anim_combo,
+        )
         self._suspend = True
         for widget in widgets:
             widget.blockSignals(True)
         if self.id_edit.text() != inst.id:
             self.id_edit.setText(inst.id)
+        links_text = ", ".join(inst.links)
+        if self.links_edit.text() != links_text:
+            self.links_edit.setText(links_text)
         self.x_spin.setValue(inst.x)
         self.y_spin.setValue(inst.y)
         self.z_spin.setValue(inst.z_index)
@@ -235,6 +298,9 @@ class _SceneObjectCard(QWidget):
 
     def read_into(self, inst: SceneObject) -> None:
         inst.id = self.id_edit.text().strip()
+        inst.links = [
+            link.strip() for link in self.links_edit.text().split(",") if link.strip()
+        ]
         inst.x = self.x_spin.value()
         inst.y = self.y_spin.value()
         inst.z_index = self.z_spin.value()
@@ -1482,8 +1548,8 @@ class SceneEditorWidget(QWidget):
         file_row.addWidget(self.btn_save)
         file_row.addWidget(self.status_label)
         file_row.addStretch()
-        file_row.addWidget(self.btn_toggle_side_panel)
         file_row.addWidget(self.btn_toggle_objects_panel)
+        file_row.addWidget(self.btn_toggle_side_panel)
         outer.addLayout(file_row)
 
         body = QSplitter(Qt.Orientation.Horizontal)
@@ -1593,14 +1659,6 @@ class SceneEditorWidget(QWidget):
 
         side.addStretch()
 
-        side_scroll = QScrollArea()
-        side_scroll.setWidgetResizable(True)
-        side_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        side_scroll.setWidget(side_widget)
-        side_scroll.setMinimumWidth(260)
-        body.addWidget(side_scroll)
-        self.side_scroll = side_scroll
-
         objects_panel = QWidget()
         objects_panel_layout = QVBoxLayout(objects_panel)
         objects_panel_layout.setContentsMargins(4, 4, 4, 4)
@@ -1615,10 +1673,18 @@ class SceneEditorWidget(QWidget):
         body.addWidget(objects_panel)
         self.objects_panel = objects_panel
 
+        side_scroll = QScrollArea()
+        side_scroll.setWidgetResizable(True)
+        side_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        side_scroll.setWidget(side_widget)
+        side_scroll.setMinimumWidth(260)
+        body.addWidget(side_scroll)
+        self.side_scroll = side_scroll
+
         body.setStretchFactor(0, 3)
         body.setStretchFactor(1, 2)
         body.setStretchFactor(2, 2)
-        body.setSizes([700, 320, 380])
+        body.setSizes([700, 380, 320])
 
         self.bottom_tabs = QTabWidget()
         tile_tab = QWidget()
@@ -2156,7 +2222,11 @@ class SceneEditorWidget(QWidget):
             card.deleteLater()
         self._object_cards = {}
         for i in visible_indices:
-            card = _SceneObjectCard(lambda idx=i: self._get_dragged_object_data(idx))
+            card = _SceneObjectCard(
+                lambda idx=i: self._get_dragged_object_data(idx),
+                get_object_index=lambda idx=i: idx,
+                resolve_object_id=lambda idx=i: self._ensure_object_id(idx),
+            )
             card.changed.connect(lambda idx=i: self._on_object_card_changed(idx))
             card.remove_requested.connect(lambda idx=i: self._remove_object(idx))
             card.picked.connect(lambda idx=i: self._on_object_card_picked(idx))
@@ -2767,6 +2837,25 @@ class SceneEditorWidget(QWidget):
         inst = self.scene.objects[obj_idx]
         prior_count = sum(1 for o in self.scene.objects[:obj_idx] if o.prefab == inst.prefab)
         return inst.prefab + (f"[{prior_count}]" if prior_count > 0 else "")
+
+    def _ensure_object_id(self, obj_idx: int) -> str:
+        """Return a stable ID for a scene object, auto-assigning one if it has none."""
+        if not self.scene or not (0 <= obj_idx < len(self.scene.objects)):
+            return ""
+        inst = self.scene.objects[obj_idx]
+        if inst.id:
+            return inst.id
+        existing_ids = {o.id for o in self.scene.objects if o.id}
+        base = Path(inst.prefab).stem or "object"
+        n = 1
+        candidate = f"{base}{n}"
+        while candidate in existing_ids:
+            n += 1
+            candidate = f"{base}{n}"
+        inst.id = candidate
+        self._mark_dirty()
+        self._refresh_objects_list()
+        return candidate
 
     def _refresh_camera_target_combo(self) -> None:
         self.camera_target_combo.blockSignals(True)

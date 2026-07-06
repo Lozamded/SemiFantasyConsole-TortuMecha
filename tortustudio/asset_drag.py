@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import Qt, QMimeData, pyqtSignal
 from PyQt6.QtGui import QDrag
-from PyQt6.QtWidgets import QComboBox, QTreeWidget
+from PyQt6.QtWidgets import QComboBox, QListWidget, QTreeWidget
 
 MIME_TORTU_ASSET = "application/x-tortu-asset-path"
 
@@ -90,4 +90,35 @@ class SpriteDropCombo(QComboBox):
             event.ignore()
             return
         self.sprite_dropped.emit(rel)
+        event.acceptProposedAction()
+
+
+class ObjectDropList(QListWidget):
+    """List widget that accepts .tortuobject paths dragged from the project tree."""
+
+    object_dropped = pyqtSignal(str)
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+        self.setToolTip("Pick from the list above, or drag a .tortuobject asset here")
+
+    def dragEnterEvent(self, event) -> None:  # noqa: N802
+        if mime_carries_suffix(event.mimeData(), ".tortuobject"):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event) -> None:  # noqa: N802
+        if mime_carries_suffix(event.mimeData(), ".tortuobject"):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event) -> None:  # noqa: N802
+        rel = asset_path_from_mime(event.mimeData())
+        if not rel or Path(rel).suffix.lower() != ".tortuobject":
+            event.ignore()
+            return
+        self.object_dropped.emit(rel)
         event.acceptProposedAction()

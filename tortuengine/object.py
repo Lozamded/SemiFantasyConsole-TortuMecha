@@ -59,6 +59,10 @@ class TortuObject:
     solid: bool = False
     origin: ObjectOrigin = field(default_factory=ObjectOrigin)
     colliders: list[ObjectCollider] = field(default_factory=lambda: [ObjectCollider("main")])
+    # Other .tortuobject prefabs this object may spawn at runtime (e.g. bullets)
+    # even though they are never placed in a scene — keeps the export pipeline
+    # from missing their assets.
+    spawnable_objects: list[str] = field(default_factory=list)
 
     @property
     def default_sprite(self) -> str:
@@ -93,7 +97,21 @@ class TortuObject:
             self.solid,
             self.origin.copy(),
             [c.copy() for c in self.colliders],
+            list(self.spawnable_objects),
         )
+
+
+def _normalize_asset_path(path: str) -> str:
+    return path.replace("\\", "/")
+
+
+def _normalize_spawnable_objects(raw: list) -> list[str]:
+    result: list[str] = []
+    for entry in raw:
+        path = _normalize_asset_path(str(entry)).strip()
+        if path and path not in result:
+            result.append(path)
+    return result
 
 
 def _load_origin(raw: dict | None) -> ObjectOrigin:
@@ -160,6 +178,9 @@ def load_object(path: Path) -> TortuObject:
     if not colliders:
         colliders = [ObjectCollider("main")]
 
+    spawnable_raw = data.get("spawnable_objects", [])
+    spawnable_objects = _normalize_spawnable_objects(spawnable_raw) if isinstance(spawnable_raw, list) else []
+
     return TortuObject(
         name=name,
         animations=animations,
@@ -168,6 +189,7 @@ def load_object(path: Path) -> TortuObject:
         solid=bool(data.get("solid", False)),
         origin=_load_origin(data.get("origin")),
         colliders=colliders,
+        spawnable_objects=spawnable_objects,
     )
 
 
@@ -192,4 +214,6 @@ def save_object(obj: TortuObject, path: Path) -> None:
         {"name": c.name, "x": c.x, "y": c.y, "w": c.w, "h": c.h, "active": c.active}
         for c in obj.colliders
     ]
+    if obj.spawnable_objects:
+        data["spawnable_objects"] = [_normalize_asset_path(p) for p in obj.spawnable_objects]
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")

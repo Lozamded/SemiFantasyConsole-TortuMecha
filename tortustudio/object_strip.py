@@ -110,7 +110,7 @@ class ObjectStripCanvas(QWidget):
     def _display_offset(self) -> tuple[int, int, int, int]:
         disp_w = self._cols * self.cell_size
         disp_h = self._rows * self.cell_size
-        ox = max(4, (self.width() - disp_w) // 2)
+        ox = 4
         oy = max(4, (self.height() - disp_h) // 2)
         return ox, oy, disp_w, disp_h
 

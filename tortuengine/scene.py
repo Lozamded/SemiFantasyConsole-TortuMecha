@@ -50,9 +50,14 @@ class SceneObject:
     animation: str = ""
     z_index: int = 0
     id: str = ""
+    # IDs of other object instances in this scene that this one references
+    # (e.g. a switch linking to the door it opens).
+    links: list[str] = field(default_factory=list)
 
     def copy(self) -> SceneObject:
-        return SceneObject(self.prefab, self.x, self.y, self.animation, self.z_index, self.id)
+        return SceneObject(
+            self.prefab, self.x, self.y, self.animation, self.z_index, self.id, list(self.links)
+        )
 
 
 @dataclass
@@ -630,8 +635,10 @@ def _normalize_scene_object(raw: dict, path: Path) -> SceneObject:
     animation = str(raw.get("animation", "")).strip()
     z_index = int(raw.get("z_index", 0))
     obj_id = str(raw.get("id", "")).strip()
+    links_raw = raw.get("links", [])
+    links = [str(link).strip() for link in links_raw if str(link).strip()] if isinstance(links_raw, list) else []
     return SceneObject(
-        prefab, int(raw.get("x", 0)), int(raw.get("y", 0)), animation, z_index, obj_id
+        prefab, int(raw.get("x", 0)), int(raw.get("y", 0)), animation, z_index, obj_id, links
     )
 
 
@@ -766,6 +773,7 @@ def save_scene(scene: Scene, path: Path, *, project_root: Path | None = None) ->
                 **({"animation": inst.animation} if inst.animation else {}),
                 **({"z_index": inst.z_index} if inst.z_index else {}),
                 **({"id": inst.id} if inst.id else {}),
+                **({"links": list(inst.links)} if inst.links else {}),
             }
             for inst in scene.objects
         ],

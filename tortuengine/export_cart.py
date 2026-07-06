@@ -22,7 +22,7 @@ from tortuengine.cart_manifest import (
     cart_scene_key,
     tileset_manifest_key,
 )
-from tortuengine.object import load_object
+from tortuengine.object import TortuObject, load_object
 from tortuengine.palette import load_palette, palette_path
 from tortuengine.project import Project
 from tortuengine.scene import Scene, load_scene, save_scene
@@ -67,7 +67,7 @@ def _collect_scene_assets(project: Project, scene: Scene, scene_rel: str, plan: 
             plan.objects.add(inst.prefab)
 
 
-def _collect_object_sprites(project: Project, object_path: str, plan: _ExportPlan) -> None:
+def _collect_object_sprites(project: Project, object_path: str, plan: _ExportPlan) -> TortuObject:
     path = (project.root / object_path).resolve()
     if not path.is_file():
         raise FileNotFoundError(f"Object not found for export: {object_path}")
@@ -75,6 +75,21 @@ def _collect_object_sprites(project: Project, object_path: str, plan: _ExportPla
     for anim in tortu_object.animations:
         if anim.sprite:
             plan.sprites.add(anim.sprite)
+    return tortu_object
+
+
+def _collect_object_dependencies(project: Project, plan: _ExportPlan) -> None:
+    """Pull in objects a prefab may spawn at runtime (e.g. bullets) though never placed."""
+    queue = list(plan.objects)
+    seen = set(plan.objects)
+    while queue:
+        object_path = queue.pop()
+        tortu_object = _collect_object_sprites(project, object_path, plan)
+        for dep in tortu_object.spawnable_objects:
+            if dep and dep not in seen:
+                seen.add(dep)
+                plan.objects.add(dep)
+                queue.append(dep)
 
 
 def build_export_plan(project: Project) -> _ExportPlan:
@@ -92,8 +107,7 @@ def build_export_plan(project: Project) -> _ExportPlan:
         scene = load_scene(scene_file, project_root=project.root)
         _collect_scene_assets(project, scene, scene_rel, plan)
 
-    for object_path in sorted(plan.objects):
-        _collect_object_sprites(project, object_path, plan)
+    _collect_object_dependencies(project, plan)
 
     return plan
 
@@ -232,6 +246,7 @@ def _export_object(project: Project, object_rel: str, manifest_objects: dict[str
             for c in tortu_object.colliders
         ],
         "script": tortu_object.script,
+        "spawnable_objects": list(tortu_object.spawnable_objects),
     }
 
 
