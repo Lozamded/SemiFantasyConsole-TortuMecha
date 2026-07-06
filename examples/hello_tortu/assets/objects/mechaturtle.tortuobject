@@ -23,7 +23,7 @@
       "sprite": "assets/sprites/mechaturtle_attack.tortusprite"
     },
     {
-      "name": "damge",
+      "name": "damage",
       "sprite": "assets/sprites/mechaturtle_damage.tortusprite"
     },
     {

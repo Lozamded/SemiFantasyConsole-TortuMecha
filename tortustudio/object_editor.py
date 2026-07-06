@@ -37,6 +37,7 @@ from tortuengine.object import (
     save_object,
 )
 from tortuengine.palette import load_palette, palette_path
+from tortuengine.script_codegen import write_object_auto_script
 from tortuengine.sprite import Sprite, load_sprite
 from tortustudio.asset_drag import ObjectDropList, SpriteDropCombo
 from tortustudio.scene_assets import list_object_paths, list_sprite_paths
@@ -1402,6 +1403,7 @@ class ObjectEditorWidget(QWidget):
             QMessageBox.warning(self, "Save Object", "Add at least one animation before saving.")
             return
         save_object(self.tortu_object, self.file_path)
+        write_object_auto_script(self.tortu_object, self.project_root)
         self._dirty = False
         self._update_status()
         self.saved.emit(self.file_path)

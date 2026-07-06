@@ -9,6 +9,7 @@ import pygame
 from tortuengine.bake import bake_sprite_frame
 from tortuengine import instance_api
 from tortuengine.object import load_object
+from . import mechaturtle_player_auto as auto
 from tortuengine.palette import load_palette, palette_path
 from tortuengine.scene import load_scene
 from tortuengine.scene_renderer import SceneRenderer
@@ -55,8 +56,8 @@ _px, _py = 34.0, 191.0
 _vx, _vy = 0.0, 0.0
 _facing = 1          # 1 = right, -1 = left
 _on_ground = False
-_state = "idle"
-_prev_state = "idle"
+_state = auto.DEFAULT_ANIMATION
+_prev_state = auto.DEFAULT_ANIMATION
 _anim_frame = 0
 _anim_elapsed = 0.0
 _attack_timer = 0.0
@@ -82,11 +83,16 @@ def set_camera(cam) -> None:
     _camera = cam
 
 _ANIM_FPS: dict[str, int] = {
-    "idle": 8, "walk": 8, "jump": 6, "fall": 8,
-    "attack": 5, "air_attack": 5, "crouch": 3,
+    auto.ANIM_IDLE: 8, auto.ANIM_WALK: 8, auto.ANIM_JUMP: 6, auto.ANIM_FALL: 8,
+    auto.ANIM_ATTACK: 5, auto.ANIM_AIR_ATTACK: 5, auto.ANIM_CROUCH: 3,
 }
-_ANIM_NOLOOP: frozenset[str] = frozenset({"jump", "attack", "air_attack", "crouch"})
-_ANIMS = ("idle", "walk", "jump", "fall", "attack", "air_attack", "crouch")
+_ANIM_NOLOOP: frozenset[str] = frozenset({
+    auto.ANIM_JUMP, auto.ANIM_ATTACK, auto.ANIM_AIR_ATTACK, auto.ANIM_CROUCH,
+})
+_ANIMS = (
+    auto.ANIM_IDLE, auto.ANIM_WALK, auto.ANIM_JUMP, auto.ANIM_FALL,
+    auto.ANIM_ATTACK, auto.ANIM_AIR_ATTACK, auto.ANIM_CROUCH,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -284,7 +290,7 @@ def init(engine) -> None:
     _px, _py = 34.0, 191.0
     _vx, _vy = 0.0, 0.0
     _facing, _on_ground = 1, False
-    _state = _prev_state = "idle"
+    _state = _prev_state = auto.DEFAULT_ANIMATION
     _anim_frame, _anim_elapsed = 0, 0.0
     _attack_timer, _coyote_timer, _jump_buffer_timer = 0.0, 0.0, 0.0
     _prev_jump, _prev_attack = False, False
@@ -330,8 +336,8 @@ def init(engine) -> None:
                 max(y + h for x, y, w, h in res) - oy,
             )
 
-        stand = _bounds({"body", "head"})
-        crouch = _bounds({"body"})
+        stand = _bounds({auto.COLLIDER_BODY, auto.COLLIDER_HEAD})
+        crouch = _bounds({auto.COLLIDER_BODY})
         if stand:
             STAND_HB_L, STAND_HB_R, STAND_HB_T, STAND_HB_B = stand
         if crouch:
@@ -463,15 +469,15 @@ def update(dt: float) -> None:
     # Animation state
     new_state: str
     if _crouching:
-        new_state = "crouch"
+        new_state = auto.ANIM_CROUCH
     elif attacking:
-        new_state = "attack" if _on_ground else "air_attack"
+        new_state = auto.ANIM_ATTACK if _on_ground else auto.ANIM_AIR_ATTACK
     elif not _on_ground:
-        new_state = "fall" if _vy >= 0 else "jump"
+        new_state = auto.ANIM_FALL if _vy >= 0 else auto.ANIM_JUMP
     elif _vx != 0:
-        new_state = "walk"
+        new_state = auto.ANIM_WALK
     else:
-        new_state = "idle"
+        new_state = auto.ANIM_IDLE
 
     if new_state != _prev_state:
         _anim_frame = 0
@@ -513,8 +519,8 @@ def draw(engine) -> None:
         pool = flipped if _facing == -1 else normal
         fi = _anim_frame % len(pool)
         surf = pool[fi]
-        screen_x = int(_px - 18 - cam_x)
-        screen_y = int(_py - 31)
+        screen_x = int(_px - auto.ORIGIN[0] - cam_x)
+        screen_y = int(_py - auto.ORIGIN[1])
         engine.blit(surf, (screen_x, screen_y))
 
     engine.text(f"{_state}", 4, 4, (200, 220, 255), 8)

@@ -39,6 +39,7 @@ from tortuengine.background import Background, load_background
 from tortuengine.constants import SCREEN_HEIGHT, SCREEN_WIDTH, SPRITE_BLOCK, TILE_BLOCK
 from tortuengine.palette import TRANSPARENT_INDEX, load_palette, palette_path
 from tortuengine.object import TortuObject, load_object
+from tortuengine.script_codegen import write_scene_auto_script
 from tortuengine.scene import (
     DEFAULT_SCENE_HEIGHT,
     DEFAULT_SCENE_WIDTH,
@@ -2788,6 +2789,7 @@ class SceneEditorWidget(QWidget):
         self.scene.camera_script = self.camera_script_edit.text().strip()
         self.scene.camera_target = self.camera_target_combo.currentData() or ""
         save_scene(self.scene, self.file_path, project_root=self.project_root)
+        write_scene_auto_script(self.scene, self.project_root)
         self._dirty = False
         self._update_status()
         self.saved.emit(self.file_path)

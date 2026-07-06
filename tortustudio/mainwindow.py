@@ -42,6 +42,7 @@ from tortuengine.game_settings import MAX_GAME_FPS, MIN_GAME_FPS, slugify_cart_n
 from tortuengine.background import save_background
 from tortuengine.gui_layer import save_gui_layer
 from tortuengine.object import save_object
+from tortuengine.script_codegen import write_object_auto_script, write_scene_auto_script
 from tortuengine.project import Project, create_project, load_project, save_project
 from tortuengine.scene import save_scene
 from tortuengine.sprite import save_sprite
@@ -1657,6 +1658,7 @@ class MainWindow(QMainWindow):
             scene_path,
             project_root=self.project.root,
         )
+        write_scene_auto_script(self.scene_editor.scene, self.project.root)
         self.scene_editor._dirty = False
         self._populate_tree()
         self._open_scene(scene_path)
@@ -1854,6 +1856,7 @@ class MainWindow(QMainWindow):
         if not self.object_editor.tortu_object:
             return
         save_object(self.object_editor.tortu_object, object_path)
+        write_object_auto_script(self.object_editor.tortu_object, self.project.root)
         self.object_editor._dirty = False
         self._populate_tree()
         self._open_object(object_path)

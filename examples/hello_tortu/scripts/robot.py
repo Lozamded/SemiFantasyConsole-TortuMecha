@@ -8,7 +8,7 @@ icon set up in the scene editor's object link list.
 
 from tortuengine import instance_api
 
-PROXIMITY_RANGE = 40.0
+PROXIMITY_RANGE = 45.0
 
 
 def init(engine):
