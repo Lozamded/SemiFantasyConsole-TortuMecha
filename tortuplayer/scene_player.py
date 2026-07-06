@@ -85,7 +85,7 @@ class CartScenePlayer:
                 engine = self._engine
                 if hasattr(game, "update"):
                     game.update(dt)
-                self.renderer.tick(self.scene, dt)
+                self.renderer.tick(self.scene, dt, engine)
                 frame = self.renderer.render(
                     self.scene,
                     camera_x=self.camera_x,

@@ -23,6 +23,8 @@ from tortuengine.cart_manifest import CartManifest, tileset_manifest_key
 from tortuengine.constants import SCREEN_HEIGHT, SCREEN_WIDTH
 from tortuengine.gui_layer import GuiLayer, GuiTextLabel, load_gui_layer
 from tortuengine.image import load_image
+from tortuengine import instance_api
+from tortuengine.instance_scripts import InstanceScript, load_instance_script
 from tortuengine.object import TortuObject, load_object
 from tortuengine.palette import load_palette, palette_path
 from tortuengine.scene import EMPTY_TILE, Scene, SceneObject, tile_size_for_tile_layer
@@ -78,6 +80,8 @@ class SceneRenderer:
         self._text_fonts: dict[str, TortuFont] = {}
         self._sprite_fonts: dict[str, TortuSpriteFont] = {}
         self._object_anim: list[_ObjectAnimState] = []
+        self._instance_scripts: list[InstanceScript | None] = []
+        self._instance_keys: list[tuple[str, str]] = []
         # Baked surface caches: LRU-bounded to prevent unbounded RAM growth.
         # Source-asset dicts above are bounded by project size and don't need eviction.
         self._sprite_frame_cache: _LRUCache = _LRUCache(256)
@@ -117,6 +121,8 @@ class SceneRenderer:
 
     def reset_animations(self) -> None:
         self._object_anim = []
+        self._instance_scripts = []
+        self._instance_keys = []
 
     def _animation_for(self, inst: SceneObject) -> str:
         tortu_object = self._tortu_object(inst.prefab)
@@ -145,10 +151,42 @@ class SceneRenderer:
                 synced.append(_ObjectAnimState(animation))
         self._object_anim = synced
 
-    def tick(self, scene: Scene, dt: float) -> None:
-        """Advance sprite frame playback for placed objects."""
+    def _sync_instance_scripts(self, scene: Scene, engine) -> None:
+        synced: list[InstanceScript | None] = []
+        synced_keys: list[tuple[str, str]] = []
+        for index, inst in enumerate(scene.objects):
+            key = (inst.prefab, inst.id)
+            if index < len(self._instance_keys) and self._instance_keys[index] == key:
+                synced.append(self._instance_scripts[index])
+            else:
+                script = self._load_instance_script(inst)
+                if script is not None:
+                    script.init(engine)
+                synced.append(script)
+            synced_keys.append(key)
+        self._instance_scripts = synced
+        self._instance_keys = synced_keys
+
+    def _load_instance_script(self, inst: SceneObject) -> InstanceScript | None:
+        if self._cart_mode():
+            return None  # instance scripts aren't part of the baked cart manifest yet
+        tortu_object = self._tortu_object(inst.prefab)
+        if tortu_object is None or not tortu_object.script:
+            return None
+        script_path = (self.project_root / tortu_object.script).resolve()
+        return load_instance_script(script_path, self_id=inst.id, links=inst.links)
+
+    def tick(self, scene: Scene, dt: float, engine=None) -> None:
+        """Advance sprite frame playback and object-instance scripts for placed objects."""
         if dt <= 0:
             return
+
+        instance_api.bind_scene(scene)
+        self._sync_instance_scripts(scene, engine)
+        for script in self._instance_scripts:
+            if script is not None:
+                script.update(dt)
+
         self._sync_anim_states(scene)
         for index, inst in enumerate(scene.objects):
             if index >= len(self._object_anim):
@@ -683,6 +721,8 @@ class SceneRenderer:
 
         draw_order = sorted(enumerate(scene.objects), key=lambda pair: (pair[1].z_index, pair[0]))
         for index, inst in draw_order:
+            if not inst.visible:
+                continue
             frame_index = 0
             if index < len(self._object_anim):
                 frame_index = self._object_anim[index].frame_index

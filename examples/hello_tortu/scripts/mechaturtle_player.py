@@ -7,6 +7,7 @@ from pathlib import Path
 import pygame
 
 from tortuengine.bake import bake_sprite_frame
+from tortuengine import instance_api
 from tortuengine.object import load_object
 from tortuengine.palette import load_palette, palette_path
 from tortuengine.scene import load_scene
@@ -73,6 +74,7 @@ _sfx_attack: pygame.mixer.Sound | None = None
 
 _camera = None
 _is_camera_target: bool = True
+_engine = None
 
 
 def set_camera(cam) -> None:
@@ -276,7 +278,9 @@ def init(engine) -> None:
     global STAND_HB_L, STAND_HB_R, STAND_HB_T, STAND_HB_B
     global CROUCH_HB_L, CROUCH_HB_R, CROUCH_HB_T, CROUCH_HB_B
     global _sfx_jump, _sfx_shell, _sfx_attack, _is_camera_target
+    global _engine
 
+    _engine = engine
     _px, _py = 34.0, 191.0
     _vx, _vy = 0.0, 0.0
     _facing, _on_ground = 1, False
@@ -490,8 +494,9 @@ def update(dt: float) -> None:
 
     if _camera and _is_camera_target:
         _camera.update(dt, _px, _py)
+    instance_api.set_player_position(_px, _py)
     if _renderer and _scene:
-        _renderer.tick(_scene, dt)
+        _renderer.tick(_scene, dt, _engine)
 
 
 def draw(engine) -> None:

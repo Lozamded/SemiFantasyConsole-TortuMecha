@@ -4817,7 +4817,7 @@
       "y": 175,
       "id": "robot2",
       "links": [
-        "diag_robo1"
+        "diag_robo2"
       ]
     },
     {
