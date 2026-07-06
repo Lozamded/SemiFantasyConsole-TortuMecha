@@ -1162,6 +1162,17 @@ class SceneEditorWidget(QWidget):
         self.btn_open = QPushButton("Open Scene…")
         self.btn_open.clicked.connect(self.open_scene_requested.emit)
 
+        self.btn_toggle_side_panel = QPushButton("Panel")
+        self.btn_toggle_side_panel.setCheckable(True)
+        self.btn_toggle_side_panel.setChecked(True)
+        self.btn_toggle_side_panel.setToolTip("Show/hide the Scripts/Backgrounds/Layers panel")
+        self.btn_toggle_side_panel.toggled.connect(self._on_toggle_side_panel)
+        self.btn_toggle_objects_panel = QPushButton("Objects")
+        self.btn_toggle_objects_panel.setCheckable(True)
+        self.btn_toggle_objects_panel.setChecked(True)
+        self.btn_toggle_objects_panel.setToolTip("Show/hide the Objects in Scene panel")
+        self.btn_toggle_objects_panel.toggled.connect(self._on_toggle_objects_panel)
+
         self.status_label = QLabel("No scene open")
         self.map_size_label = QLabel("—")
 
@@ -1471,9 +1482,12 @@ class SceneEditorWidget(QWidget):
         file_row.addWidget(self.btn_save)
         file_row.addWidget(self.status_label)
         file_row.addStretch()
+        file_row.addWidget(self.btn_toggle_side_panel)
+        file_row.addWidget(self.btn_toggle_objects_panel)
         outer.addLayout(file_row)
 
         body = QSplitter(Qt.Orientation.Horizontal)
+        self.body_splitter = body
         outer.addWidget(body, stretch=1)
 
         self.map_group = QGroupBox("Map — DRAW MODE  ·  Paint")
@@ -1585,6 +1599,7 @@ class SceneEditorWidget(QWidget):
         side_scroll.setWidget(side_widget)
         side_scroll.setMinimumWidth(260)
         body.addWidget(side_scroll)
+        self.side_scroll = side_scroll
 
         objects_panel = QWidget()
         objects_panel_layout = QVBoxLayout(objects_panel)
@@ -1598,6 +1613,7 @@ class SceneEditorWidget(QWidget):
         objects_panel_layout.addWidget(self.chk_click_origin)
         objects_panel.setMinimumWidth(260)
         body.addWidget(objects_panel)
+        self.objects_panel = objects_panel
 
         body.setStretchFactor(0, 3)
         body.setStretchFactor(1, 2)
@@ -1637,6 +1653,12 @@ class SceneEditorWidget(QWidget):
         outer.addLayout(mode_row)
 
         outer.addWidget(self.bottom_tabs)
+
+    def _on_toggle_side_panel(self, visible: bool) -> None:
+        self.side_scroll.setVisible(visible)
+
+    def _on_toggle_objects_panel(self, visible: bool) -> None:
+        self.objects_panel.setVisible(visible)
 
     def _active_tile_layer_index(self) -> int:
         if not self.scene or self.tile_layer_combo.count() == 0:
