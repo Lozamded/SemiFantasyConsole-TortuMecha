@@ -38,13 +38,11 @@ COYOTE_TIME = 0.1
 JUMP_BUFFER = 0.1
 ATTACK_DUR = 0.4
 
-# Hitbox offsets from the character origin.  Loaded from mechaturtle.tortuobject
-# at init() from the "body"+"head" colliders (stand) and "body" only (crouch).
-# These fallback values match those colliders exactly.
-STAND_HB_L, STAND_HB_R = -7, 9
-STAND_HB_T, STAND_HB_B = -26, 1
-CROUCH_HB_L, CROUCH_HB_R = -7, 8
-CROUCH_HB_T, CROUCH_HB_B = -13, 1
+# Hitbox offsets from the character origin. Resolved in init() from the
+# auto.COLLIDER_BODY + auto.COLLIDER_HEAD colliders (stand) and
+# auto.COLLIDER_BODY alone (crouch) — see mechaturtle.tortuobject in TortuStudio.
+STAND_HB_L = STAND_HB_R = STAND_HB_T = STAND_HB_B = 0
+CROUCH_HB_L = CROUCH_HB_R = CROUCH_HB_T = CROUCH_HB_B = 0
 
 _scene = None
 _collision_tileset = None
@@ -319,31 +317,31 @@ def init(engine) -> None:
     pal = load_palette(palette_path(ROOT, idle_spr.palette))
     sw, sh = idle_spr.pixel_width, idle_spr.pixel_height
 
-    # Load hitbox offsets from the object's colliders
-    try:
-        obj = load_object(ROOT / "assets/objects/mechaturtle.tortuobject")
-        ox, oy = obj.origin.x, obj.origin.y
+    # Resolve hitbox offsets from the object's colliders — auto.COLLIDER_BODY /
+    # auto.COLLIDER_HEAD are the source of truth, not hand-copied numbers, so
+    # renaming or resizing a collider in TortuStudio can't silently go stale here.
+    obj = load_object(ROOT / "assets/objects/mechaturtle.tortuobject")
+    ox, oy = auto.ORIGIN
 
-        def _bounds(names: set[str]) -> tuple[int, int, int, int] | None:
-            cols = [c for c in obj.colliders if c.name in names]
-            if not cols:
-                return None
-            res = [c.resolved(sw, sh) for c in cols]
-            return (
-                min(x for x, y, w, h in res) - ox,
-                max(x + w for x, y, w, h in res) - ox,
-                min(y for x, y, w, h in res) - oy,
-                max(y + h for x, y, w, h in res) - oy,
+    def _bounds(names: set[str]) -> tuple[int, int, int, int]:
+        cols = [c for c in obj.colliders if c.name in names]
+        if not cols:
+            raise ValueError(
+                f"mechaturtle.tortuobject is missing collider(s) {sorted(names)!r} "
+                "expected by mechaturtle_player.py — check the collider names in TortuStudio."
             )
+        res = [c.resolved(sw, sh) for c in cols]
+        return (
+            min(x for x, y, w, h in res) - ox,
+            max(x + w for x, y, w, h in res) - ox,
+            min(y for x, y, w, h in res) - oy,
+            max(y + h for x, y, w, h in res) - oy,
+        )
 
-        stand = _bounds({auto.COLLIDER_BODY, auto.COLLIDER_HEAD})
-        crouch = _bounds({auto.COLLIDER_BODY})
-        if stand:
-            STAND_HB_L, STAND_HB_R, STAND_HB_T, STAND_HB_B = stand
-        if crouch:
-            CROUCH_HB_L, CROUCH_HB_R, CROUCH_HB_T, CROUCH_HB_B = crouch
-    except Exception:
-        pass  # fall back to module-level defaults
+    STAND_HB_L, STAND_HB_R, STAND_HB_T, STAND_HB_B = _bounds(
+        {auto.COLLIDER_BODY, auto.COLLIDER_HEAD}
+    )
+    CROUCH_HB_L, CROUCH_HB_R, CROUCH_HB_T, CROUCH_HB_B = _bounds({auto.COLLIDER_BODY})
 
     _frames.clear()
     for anim in _ANIMS:
