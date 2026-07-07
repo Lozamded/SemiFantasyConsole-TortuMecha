@@ -4843,6 +4843,10 @@
     {
       "name": "gui_layer_0",
       "gui_layer": "assets/gui/hud.tortuguilayer"
+    },
+    {
+      "name": "gui_layer_1",
+      "gui_layer": "assets/gui/dialog.tortuguilayer"
     }
   ]
 }

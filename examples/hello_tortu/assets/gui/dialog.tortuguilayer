@@ -1,0 +1,14 @@
+{
+  "width": 264,
+  "height": 198,
+  "palette": "default",
+  "tile_layer_visible": true,
+  "objects": [
+    {
+      "object": "assets/objects/dialoguebox.tortuobject",
+      "x": 64,
+      "y": 161
+    }
+  ],
+  "text_labels": []
+}

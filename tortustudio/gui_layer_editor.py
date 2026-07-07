@@ -372,7 +372,7 @@ class GuiLayerCanvas(QWidget):
                 ly = py * self.zoom
                 painter.drawLine(0, ly, sw, ly)
 
-        if self.target == GuiLayerTarget.OBJECTS and self.selected_object_index >= 0:
+        if self.selected_object_index >= 0:
             objects = self.gui_layer.objects
             if self.selected_object_index < len(objects):
                 inst = objects[self.selected_object_index]
@@ -399,7 +399,7 @@ class GuiLayerCanvas(QWidget):
                     painter.drawLine(int(lx - 8), int(ly), int(lx + 8), int(ly))
                     painter.drawLine(int(lx), int(ly - 8), int(lx), int(ly + 8))
 
-        if self.target == GuiLayerTarget.TEXT and self.selected_text_index >= 0:
+        if self.selected_text_index >= 0:
             labels = self.gui_layer.text_labels
             if self.selected_text_index < len(labels):
                 label = labels[self.selected_text_index]
@@ -529,26 +529,34 @@ class GuiLayerCanvas(QWidget):
         if event.button() != Qt.MouseButton.LeftButton:
             return
 
+        if self.edit_mode:
+            pos = self._event_to_pixel(event)
+            if not pos:
+                return
+            obj_index = self._find_object_at_pixel(*pos)
+            if obj_index is not None:
+                self._dragging_object_index = obj_index
+                self._dragging_text_index = -1
+                self.object_selected.emit(obj_index)
+                return
+            text_index = self._find_text_at_pixel(*pos)
+            if text_index is not None:
+                self._dragging_text_index = text_index
+                self._dragging_object_index = -1
+                self.text_label_selected.emit(text_index)
+                return
+            self._dragging_object_index = -1
+            self._dragging_text_index = -1
+            self.object_selected.emit(-1)
+            self.text_label_selected.emit(-1)
+            return
+
         if self.target == GuiLayerTarget.TILES:
             pos = self._event_to_tile(event)
             if pos:
                 self._drawing = True
                 self._apply_tile_tool(*pos)
                 self.changed.emit()
-            return
-
-        if self.edit_mode:
-            pos = self._event_to_pixel(event)
-            if not pos:
-                return
-            if self.target == GuiLayerTarget.OBJECTS:
-                index = self._find_object_at_pixel(*pos)
-                self._dragging_object_index = index if index is not None else -1
-                self.object_selected.emit(self._dragging_object_index)
-            else:
-                index = self._find_text_at_pixel(*pos)
-                self._dragging_text_index = index if index is not None else -1
-                self.text_label_selected.emit(self._dragging_text_index)
             return
 
         pos = self._event_to_pixel(event)
@@ -566,12 +574,12 @@ class GuiLayerCanvas(QWidget):
                 pos = self._event_to_pixel(event)
                 if not pos:
                     return
-                if self.target == GuiLayerTarget.OBJECTS and 0 <= self._dragging_object_index < len(self.gui_layer.objects):
+                if 0 <= self._dragging_object_index < len(self.gui_layer.objects):
                     inst = self.gui_layer.objects[self._dragging_object_index]
                     inst.x, inst.y = pos
                     self._refresh()
                     self.changed.emit()
-                elif self.target == GuiLayerTarget.TEXT and 0 <= self._dragging_text_index < len(self.gui_layer.text_labels):
+                elif 0 <= self._dragging_text_index < len(self.gui_layer.text_labels):
                     label = self.gui_layer.text_labels[self._dragging_text_index]
                     label.x, label.y = pos
                     self._refresh()
@@ -776,6 +784,7 @@ class GuiLayerEditorWidget(QWidget):
         self._selected_tile = 0
 
         self._build_layout()
+        self._set_editor_mode(True)
 
     # -- layout -----------------------------------------------------
 
@@ -795,13 +804,13 @@ class GuiLayerEditorWidget(QWidget):
         body = QHBoxLayout()
         outer.addLayout(body, stretch=1)
 
-        canvas_group = QGroupBox("GUI Layer")
-        canvas_layout = QVBoxLayout(canvas_group)
+        self.canvas_group = QGroupBox("GUI Layer")
+        canvas_layout = QVBoxLayout(self.canvas_group)
         canvas_scroll = QScrollArea()
         canvas_scroll.setWidgetResizable(False)
         canvas_scroll.setWidget(self.canvas)
         canvas_layout.addWidget(canvas_scroll)
-        body.addWidget(canvas_group, stretch=1)
+        body.addWidget(self.canvas_group, stretch=1)
 
         side_widget = QWidget()
         side = QVBoxLayout(side_widget)
@@ -906,10 +915,19 @@ class GuiLayerEditorWidget(QWidget):
             self._set_tool(Tool.PAINT)
         self._refresh_canvas()
 
+    def _gui_group_title(self) -> str:
+        if self._edit_mode:
+            return "GUI Layer — EDIT MODE"
+        names = {Tool.PAINT: "Paint", Tool.ERASE: "Erase", Tool.EYEDROPPER: "Eyedropper"}
+        return f"GUI Layer — DRAW MODE  ·  {names.get(self.canvas.tool, '')}"
+
     def _set_editor_mode(self, edit: bool) -> None:
         self._edit_mode = edit
         self.btn_draw_mode.setChecked(not edit)
         self.btn_edit_mode.setChecked(edit)
+        for btn in (self.btn_paint, self.btn_erase, self.btn_dropper):
+            btn.setEnabled(not edit)
+        self.canvas_group.setTitle(self._gui_group_title())
         self._refresh_canvas()
 
     def _set_tool(self, tool: Tool) -> None:
@@ -917,6 +935,7 @@ class GuiLayerEditorWidget(QWidget):
         self.btn_erase.setChecked(tool == Tool.ERASE)
         self.btn_dropper.setChecked(tool == Tool.EYEDROPPER)
         self.canvas.set_tool(tool)
+        self.canvas_group.setTitle(self._gui_group_title())
         self._refresh_canvas()
 
     # -- dirty / status -----------------------------------------------------
@@ -1124,11 +1143,17 @@ class GuiLayerEditorWidget(QWidget):
 
     def _on_canvas_object_selected(self, index: int) -> None:
         self._selected_object_index = index
+        if index >= 0:
+            self._selected_text_index = -1
+            self._refresh_text_labels_list()
         self._refresh_objects_list()
         self._refresh_canvas()
 
     def _on_objects_list_selection_changed(self, row: int) -> None:
         self._selected_object_index = row
+        if row >= 0:
+            self._selected_text_index = -1
+            self._refresh_text_labels_list()
         self.btn_remove_selected_object.setEnabled(row >= 0)
         self._refresh_canvas()
 
@@ -1146,6 +1171,9 @@ class GuiLayerEditorWidget(QWidget):
 
     def _on_canvas_text_selected(self, index: int) -> None:
         self._selected_text_index = index
+        if index >= 0:
+            self._selected_object_index = -1
+            self._refresh_objects_list()
         if self.gui_layer and 0 <= index < len(self.gui_layer.text_labels):
             label = self.gui_layer.text_labels[index]
             self.text_content_edit.blockSignals(True)
