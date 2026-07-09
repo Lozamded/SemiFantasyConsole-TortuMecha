@@ -8,6 +8,7 @@
     }
   ],
   "solid": false,
+  "script": "scripts/dialoguebox.py",
   "colliders": [
     {
       "name": "main",
