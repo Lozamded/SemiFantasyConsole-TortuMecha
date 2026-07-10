@@ -54,3 +54,15 @@ def set_visible(instance_id: str, visible: bool) -> None:
     inst = _find(instance_id)
     if inst is not None:
         inst.visible = visible
+
+
+def is_enabled(instance_id: str) -> bool:
+    """False means the instance is off — skip it in collision checks too, not just rendering."""
+    inst = _find(instance_id)
+    return inst.enabled if inst else False
+
+
+def set_enabled(instance_id: str, enabled: bool) -> None:
+    inst = _find(instance_id)
+    if inst is not None:
+        inst.enabled = enabled

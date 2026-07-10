@@ -990,14 +990,14 @@
         22,
         -1,
         -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
+        16,
+        17,
+        17,
+        17,
+        17,
+        17,
+        17,
+        18,
         -1,
         -1,
         -1,
@@ -4837,6 +4837,23 @@
       "links": [
         "robot2"
       ]
+    },
+    {
+      "object": "assets/objects/red_slime.tortuobject",
+      "x": 520,
+      "y": 175
+    },
+    {
+      "object": "assets/objects/enemycollider.tortuobject",
+      "x": 440,
+      "y": 184,
+      "visible": false
+    },
+    {
+      "object": "assets/objects/enemycollider.tortuobject",
+      "x": 585,
+      "y": 185,
+      "visible": false
     }
   ],
   "gui_layers": [

@@ -669,6 +669,12 @@ class _GuiObjectCard(QWidget):
         self.scale_spin.setSingleStep(0.1)
         self.scale_spin.setValue(1.0)
         self.scale_spin.setToolTip("Uniform size multiplier for this object instance")
+        self.visible_check = QCheckBox("Visible at play")
+        self.visible_check.setChecked(True)
+        self.visible_check.setToolTip("Whether this object instance is drawn when the scene runs")
+        self.enabled_check = QCheckBox("Enabled at scene start")
+        self.enabled_check.setChecked(True)
+        self.enabled_check.setToolTip("Unchecked: the instance starts off entirely and isn't drawn")
 
         form = QFormLayout()
         form.setContentsMargins(20, 2, 0, 6)
@@ -676,6 +682,8 @@ class _GuiObjectCard(QWidget):
         form.addRow("Y:", self.y_spin)
         form.addRow("Scale:", self.scale_spin)
         form.addRow("Animation:", self.anim_combo)
+        form.addRow("", self.visible_check)
+        form.addRow("", self.enabled_check)
 
         self.content = QWidget()
         self.content.setLayout(form)
@@ -691,6 +699,8 @@ class _GuiObjectCard(QWidget):
         self.y_spin.valueChanged.connect(self._emit_changed)
         self.scale_spin.valueChanged.connect(self._emit_changed)
         self.anim_combo.currentIndexChanged.connect(self._emit_changed)
+        self.visible_check.toggled.connect(self._emit_changed)
+        self.enabled_check.toggled.connect(self._emit_changed)
 
     def _on_toggle_clicked(self) -> None:
         self.set_expanded(self.toggle.isChecked())
@@ -721,13 +731,18 @@ class _GuiObjectCard(QWidget):
             self.changed.emit()
 
     def sync(self, inst: GuiObject, tortu_object: TortuObject | None) -> None:
-        widgets = (self.x_spin, self.y_spin, self.scale_spin, self.anim_combo)
+        widgets = (
+            self.x_spin, self.y_spin, self.scale_spin, self.anim_combo,
+            self.visible_check, self.enabled_check,
+        )
         self._suspend = True
         for widget in widgets:
             widget.blockSignals(True)
         self.x_spin.setValue(inst.x)
         self.y_spin.setValue(inst.y)
         self.scale_spin.setValue(inst.scale)
+        self.visible_check.setChecked(inst.visible)
+        self.enabled_check.setChecked(inst.enabled)
         self.anim_combo.clear()
         self.anim_combo.addItem("(default)", "")
         if tortu_object is not None:
@@ -744,6 +759,8 @@ class _GuiObjectCard(QWidget):
         inst.y = self.y_spin.value()
         inst.scale = self.scale_spin.value()
         inst.animation = self.anim_combo.currentData() or ""
+        inst.visible = self.visible_check.isChecked()
+        inst.enabled = self.enabled_check.isChecked()
 
 
 class _GuiTextLabelCard(QWidget):
@@ -783,6 +800,12 @@ class _GuiTextLabelCard(QWidget):
         self.x_spin.setRange(-9999, 9999)
         self.y_spin = QSpinBox()
         self.y_spin.setRange(-9999, 9999)
+        self.visible_check = QCheckBox("Visible at play")
+        self.visible_check.setChecked(True)
+        self.visible_check.setToolTip("Whether this label is drawn when the scene runs")
+        self.enabled_check = QCheckBox("Enabled at scene start")
+        self.enabled_check.setChecked(True)
+        self.enabled_check.setToolTip("Unchecked: the label starts off entirely and isn't drawn")
 
         form = QFormLayout()
         form.setContentsMargins(20, 2, 0, 6)
@@ -790,6 +813,8 @@ class _GuiTextLabelCard(QWidget):
         form.addRow("Font:", self.font_combo)
         form.addRow("X:", self.x_spin)
         form.addRow("Y:", self.y_spin)
+        form.addRow("", self.visible_check)
+        form.addRow("", self.enabled_check)
 
         self.content = QWidget()
         self.content.setLayout(form)
@@ -805,6 +830,8 @@ class _GuiTextLabelCard(QWidget):
         self.font_combo.currentIndexChanged.connect(self._emit_changed)
         self.x_spin.valueChanged.connect(self._emit_changed)
         self.y_spin.valueChanged.connect(self._emit_changed)
+        self.visible_check.toggled.connect(self._emit_changed)
+        self.enabled_check.toggled.connect(self._emit_changed)
 
     def _on_toggle_clicked(self) -> None:
         self.set_expanded(self.toggle.isChecked())
@@ -835,7 +862,10 @@ class _GuiTextLabelCard(QWidget):
             self.changed.emit()
 
     def sync(self, label: GuiTextLabel, font_choices: list[str]) -> None:
-        widgets = (self.text_edit, self.font_combo, self.x_spin, self.y_spin)
+        widgets = (
+            self.text_edit, self.font_combo, self.x_spin, self.y_spin,
+            self.visible_check, self.enabled_check,
+        )
         self._suspend = True
         for widget in widgets:
             widget.blockSignals(True)
@@ -849,6 +879,8 @@ class _GuiTextLabelCard(QWidget):
         self.font_combo.setCurrentIndex(found if found >= 0 else 0)
         self.x_spin.setValue(label.x)
         self.y_spin.setValue(label.y)
+        self.visible_check.setChecked(label.visible)
+        self.enabled_check.setChecked(label.enabled)
         for widget in widgets:
             widget.blockSignals(False)
         self._suspend = False
@@ -858,6 +890,8 @@ class _GuiTextLabelCard(QWidget):
         label.font = self.font_combo.currentData() or ""
         label.x = self.x_spin.value()
         label.y = self.y_spin.value()
+        label.visible = self.visible_check.isChecked()
+        label.enabled = self.enabled_check.isChecked()
 
 
 class GuiLayerEditorWidget(QWidget):

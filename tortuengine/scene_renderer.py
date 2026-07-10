@@ -184,14 +184,19 @@ class SceneRenderer:
 
         instance_api.bind_scene(scene)
         self._sync_instance_scripts(scene, engine)
-        for script in self._instance_scripts:
-            if script is not None:
-                script.update(dt)
+        for index, script in enumerate(self._instance_scripts):
+            if script is None:
+                continue
+            if index < len(scene.objects) and not scene.objects[index].enabled:
+                continue
+            script.update(dt)
 
         self._sync_anim_states(scene)
         for index, inst in enumerate(scene.objects):
             if index >= len(self._object_anim):
                 break
+            if not inst.enabled:
+                continue
             sprite = self._sprite_for_instance(inst)
             if sprite is None or sprite.frame_count <= 1:
                 continue
@@ -625,6 +630,8 @@ class SceneRenderer:
                             target.blit(tile_surface, (ox + px, oy + py))
 
         for inst in gui_layer.objects:
+            if not inst.visible or not inst.enabled:
+                continue
             surface = self._object_surface(inst)
             if surface is None:
                 continue
@@ -636,6 +643,8 @@ class SceneRenderer:
             target.blit(surface, (round(draw_x), round(draw_y)))
 
         for label in gui_layer.text_labels:
+            if not label.visible or not label.enabled:
+                continue
             surface = self._gui_label_surface(label)
             if surface is not None:
                 target.blit(surface, (ox + label.x, oy + label.y))
@@ -766,7 +775,7 @@ class SceneRenderer:
         for z_index, kind, index, payload in draw_items:
             if kind == 0:
                 inst = payload
-                if not inst.visible:
+                if not inst.visible or not inst.enabled:
                     continue
                 frame_index = 0
                 if index < len(self._object_anim):
@@ -831,7 +840,7 @@ class SceneRenderer:
         for _z_index, kind, index, payload in draw_items:
             if kind == 0:
                 inst = payload
-                if not inst.visible:
+                if not inst.visible or not inst.enabled:
                     continue
                 frame_index = 0
                 if index < len(self._object_anim):

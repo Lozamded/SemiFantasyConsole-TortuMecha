@@ -55,11 +55,13 @@ class SceneObject:
     links: list[str] = field(default_factory=list)
     visible: bool = True
     scale: float = 1.0
+    # Off at scene start: not drawn, instance script stops ticking, queryable via instance_api.is_enabled.
+    enabled: bool = True
 
     def copy(self) -> SceneObject:
         return SceneObject(
             self.prefab, self.x, self.y, self.animation, self.z_index, self.id,
-            list(self.links), self.visible, self.scale,
+            list(self.links), self.visible, self.scale, self.enabled,
         )
 
 
@@ -651,8 +653,10 @@ def _normalize_scene_object(raw: dict, path: Path) -> SceneObject:
     links = [str(link).strip() for link in links_raw if str(link).strip()] if isinstance(links_raw, list) else []
     visible = bool(raw.get("visible", True))
     scale = float(raw.get("scale", 1.0))
+    enabled = bool(raw.get("enabled", True))
     return SceneObject(
-        prefab, int(raw.get("x", 0)), int(raw.get("y", 0)), animation, z_index, obj_id, links, visible, scale
+        prefab, int(raw.get("x", 0)), int(raw.get("y", 0)), animation, z_index, obj_id, links, visible, scale,
+        enabled,
     )
 
 
@@ -790,6 +794,7 @@ def save_scene(scene: Scene, path: Path, *, project_root: Path | None = None) ->
                 **({"links": list(inst.links)} if inst.links else {}),
                 **({"visible": False} if not inst.visible else {}),
                 **({"scale": inst.scale} if inst.scale != 1.0 else {}),
+                **({"enabled": False} if not inst.enabled else {}),
             }
             for inst in scene.objects
         ],

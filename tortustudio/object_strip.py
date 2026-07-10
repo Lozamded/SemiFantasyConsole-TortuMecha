@@ -7,12 +7,13 @@ from pathlib import Path
 
 import pygame
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QImage, QMouseEvent, QPainter, QPen
-from PyQt6.QtWidgets import QWidget
+from PyQt6.QtGui import QColor, QDrag, QImage, QMouseEvent, QPainter, QPen, QPixmap
+from PyQt6.QtWidgets import QApplication, QWidget
 
 from tortuengine.object import TortuObject, load_object
 from tortuengine.palette import load_palette, palette_path
 from tortuengine.sprite import Sprite, load_sprite
+from tortustudio.asset_drag import make_asset_mime
 
 
 class ObjectStripCanvas(QWidget):
@@ -38,6 +39,8 @@ class ObjectStripCanvas(QWidget):
         self._rows = 0
         self.setMinimumHeight(self.cell_size + 8)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._press_pos = None
+        self._press_index: int | None = None
 
     def set_project(self, project_root: Path | None, prefab_paths: list[str]) -> None:
         self.project_root = project_root
@@ -193,3 +196,34 @@ class ObjectStripCanvas(QWidget):
             self.selected_index = index
             self.update()
             self.object_clicked.emit(index)
+            self._press_pos = event.position().toPoint()
+            self._press_index = index
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if (
+            self._press_pos is not None
+            and event.buttons() & Qt.MouseButton.LeftButton
+            and (event.position().toPoint() - self._press_pos).manhattanLength()
+            > QApplication.startDragDistance()
+        ):
+            index = self._press_index
+            self._press_pos = None
+            self._press_index = None
+            if index is not None and 0 <= index < len(self.prefab_paths):
+                drag = QDrag(self)
+                drag.setMimeData(make_asset_mime(self.prefab_paths[index]))
+                thumb = self._thumbnails[index]
+                if thumb is not None:
+                    drag.setPixmap(
+                        QPixmap.fromImage(thumb).scaled(
+                            self.cell_size,
+                            self.cell_size,
+                            Qt.AspectRatioMode.KeepAspectRatio,
+                            Qt.TransformationMode.SmoothTransformation,
+                        )
+                    )
+                drag.exec(Qt.DropAction.CopyAction)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        self._press_pos = None
+        self._press_index = None

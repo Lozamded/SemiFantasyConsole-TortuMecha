@@ -32,6 +32,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from tortustudio.asset_drag import asset_path_from_mime, mime_carries_suffix
 from tortustudio.collapsible import CollapsibleSection
 from tortuengine.project import load_project
 
@@ -221,6 +222,15 @@ class _SceneObjectCard(QWidget):
         self.scale_spin.setSingleStep(0.1)
         self.scale_spin.setValue(1.0)
         self.scale_spin.setToolTip("Uniform size multiplier for this object instance")
+        self.visible_check = QCheckBox("Visible at play")
+        self.visible_check.setChecked(True)
+        self.visible_check.setToolTip("Whether this object instance is drawn when the scene runs")
+        self.enabled_check = QCheckBox("Enabled at scene start")
+        self.enabled_check.setChecked(True)
+        self.enabled_check.setToolTip(
+            "Unchecked: the instance starts off entirely — not drawn, its script doesn't"
+            " run, and instance_api.is_enabled() reports False for other scripts' collision checks"
+        )
 
         form = QFormLayout()
         form.setContentsMargins(20, 2, 0, 6)
@@ -231,6 +241,8 @@ class _SceneObjectCard(QWidget):
         form.addRow("Z-index:", self.z_spin)
         form.addRow("Scale:", self.scale_spin)
         form.addRow("Animation:", self.anim_combo)
+        form.addRow("", self.visible_check)
+        form.addRow("", self.enabled_check)
 
         self.content = QWidget()
         self.content.setLayout(form)
@@ -249,6 +261,8 @@ class _SceneObjectCard(QWidget):
         self.z_spin.valueChanged.connect(self._emit_changed)
         self.scale_spin.valueChanged.connect(self._emit_changed)
         self.anim_combo.currentIndexChanged.connect(self._emit_changed)
+        self.visible_check.toggled.connect(self._emit_changed)
+        self.enabled_check.toggled.connect(self._emit_changed)
 
     def _on_toggle_clicked(self) -> None:
         self.set_expanded(self.toggle.isChecked())
@@ -281,7 +295,7 @@ class _SceneObjectCard(QWidget):
     def sync(self, inst: SceneObject, tortu_object: TortuObject | None) -> None:
         widgets = (
             self.id_edit, self.links_edit, self.x_spin, self.y_spin, self.z_spin,
-            self.scale_spin, self.anim_combo,
+            self.scale_spin, self.anim_combo, self.visible_check, self.enabled_check,
         )
         self._suspend = True
         for widget in widgets:
@@ -295,6 +309,8 @@ class _SceneObjectCard(QWidget):
         self.y_spin.setValue(inst.y)
         self.z_spin.setValue(inst.z_index)
         self.scale_spin.setValue(inst.scale)
+        self.visible_check.setChecked(inst.visible)
+        self.enabled_check.setChecked(inst.enabled)
         self.anim_combo.clear()
         self.anim_combo.addItem("(default)", "")
         if tortu_object is not None:
@@ -316,6 +332,8 @@ class _SceneObjectCard(QWidget):
         inst.z_index = self.z_spin.value()
         inst.scale = self.scale_spin.value()
         inst.animation = self.anim_combo.currentData() or ""
+        inst.visible = self.visible_check.isChecked()
+        inst.enabled = self.enabled_check.isChecked()
 
 
 class _DroppableTargetCombo(QComboBox):
@@ -408,6 +426,7 @@ class SceneMapCanvas(QWidget):
         self._frame: QImage | None = None
         self.resize(200, 200)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setAcceptDrops(True)
 
     def set_context(
         self,
@@ -1216,6 +1235,36 @@ class SceneMapCanvas(QWidget):
             self.set_zoom(self.zoom + 1)
         elif delta < 0:
             self.set_zoom(self.zoom - 1)
+
+    def dragEnterEvent(self, event) -> None:  # noqa: N802
+        if self.scene and mime_carries_suffix(event.mimeData(), ".tortuobject"):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event) -> None:  # noqa: N802
+        if self.scene and mime_carries_suffix(event.mimeData(), ".tortuobject"):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event) -> None:  # noqa: N802
+        rel = asset_path_from_mime(event.mimeData())
+        if not rel or not self.scene:
+            event.ignore()
+            return
+        pos = self._event_to_map_pixel(event)
+        if pos is None:
+            event.ignore()
+            return
+        try:
+            self.scene.add_object(rel, *pos)
+        except ValueError:
+            event.ignore()
+            return
+        self._refresh()
+        self.changed.emit()
+        event.acceptProposedAction()
 
 
 class SceneEditorWidget(QWidget):

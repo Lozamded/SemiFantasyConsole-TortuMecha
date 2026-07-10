@@ -45,9 +45,14 @@ class GuiObject:
     y: int
     animation: str = ""
     scale: float = 1.0
+    visible: bool = True
+    # Off at scene start: not drawn.
+    enabled: bool = True
 
     def copy(self) -> GuiObject:
-        return GuiObject(self.prefab, self.x, self.y, self.animation, self.scale)
+        return GuiObject(
+            self.prefab, self.x, self.y, self.animation, self.scale, self.visible, self.enabled
+        )
 
 
 @dataclass
@@ -58,9 +63,12 @@ class GuiTextLabel:
     x: int
     y: int
     font: str = ""
+    visible: bool = True
+    # Off at scene start: not drawn.
+    enabled: bool = True
 
     def copy(self) -> GuiTextLabel:
-        return GuiTextLabel(self.text, self.x, self.y, self.font)
+        return GuiTextLabel(self.text, self.x, self.y, self.font, self.visible, self.enabled)
 
 
 @dataclass
@@ -222,6 +230,8 @@ def load_gui_layer(path: Path, *, project_root: Path | None = None) -> GuiLayer:
             int(raw.get("y", 0)),
             str(raw.get("animation", "")),
             float(raw.get("scale", 1.0)),
+            bool(raw.get("visible", True)),
+            bool(raw.get("enabled", True)),
         )
         for raw in data.get("objects", [])
         if raw.get("object", raw.get("prefab", ""))
@@ -232,6 +242,8 @@ def load_gui_layer(path: Path, *, project_root: Path | None = None) -> GuiLayer:
             int(raw.get("x", 0)),
             int(raw.get("y", 0)),
             _normalize_asset_path(str(raw.get("font", ""))),
+            bool(raw.get("visible", True)),
+            bool(raw.get("enabled", True)),
         )
         for raw in data.get("text_labels", [])
     ]
@@ -260,6 +272,8 @@ def save_gui_layer(gui_layer: GuiLayer, path: Path) -> None:
                 "y": obj.y,
                 **({"animation": obj.animation} if obj.animation else {}),
                 **({"scale": obj.scale} if obj.scale != 1.0 else {}),
+                **({"visible": False} if not obj.visible else {}),
+                **({"enabled": False} if not obj.enabled else {}),
             }
             for obj in gui_layer.objects
         ],
@@ -269,6 +283,8 @@ def save_gui_layer(gui_layer: GuiLayer, path: Path) -> None:
                 "x": label.x,
                 "y": label.y,
                 **({"font": _normalize_asset_path(label.font)} if label.font else {}),
+                **({"visible": False} if not label.visible else {}),
+                **({"enabled": False} if not label.enabled else {}),
             }
             for label in gui_layer.text_labels
         ],
