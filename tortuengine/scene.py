@@ -54,11 +54,12 @@ class SceneObject:
     # (e.g. a switch linking to the door it opens).
     links: list[str] = field(default_factory=list)
     visible: bool = True
+    scale: float = 1.0
 
     def copy(self) -> SceneObject:
         return SceneObject(
             self.prefab, self.x, self.y, self.animation, self.z_index, self.id,
-            list(self.links), self.visible,
+            list(self.links), self.visible, self.scale,
         )
 
 
@@ -180,9 +181,10 @@ class SceneGuiLayer:
 
     name: str
     gui_layer: str = ""
+    z_index: int = 0
 
     def copy(self) -> SceneGuiLayer:
-        return SceneGuiLayer(self.name, self.gui_layer)
+        return SceneGuiLayer(self.name, self.gui_layer, self.z_index)
 
 
 @dataclass
@@ -249,10 +251,11 @@ class Scene:
         animation: str = "",
         z_index: int = 0,
         obj_id: str = "",
+        scale: float = 1.0,
     ) -> int:
         if len(self.objects) >= MAX_SCENE_OBJECTS:
             raise ValueError(f"Scene cannot have more than {MAX_SCENE_OBJECTS} objects")
-        self.objects.append(SceneObject(prefab, x, y, animation, z_index, obj_id))
+        self.objects.append(SceneObject(prefab, x, y, animation, z_index, obj_id, scale=scale))
         return len(self.objects) - 1
 
     def remove_object(self, object_index: int) -> None:
@@ -619,7 +622,8 @@ def _normalize_scene_bg_layers(raw_scene_bg_layers: list[dict]) -> list[SceneBgL
 def _normalize_gui_layer(raw: dict, gui_layer_index: int) -> SceneGuiLayer:
     name = str(raw.get("name", DEFAULT_SCENE_GUI_LAYER_NAMES[gui_layer_index]))
     gui_layer = _normalize_asset_path(str(raw.get("gui_layer", "")))
-    return SceneGuiLayer(name, gui_layer)
+    z_index = int(raw.get("z_index", 0))
+    return SceneGuiLayer(name, gui_layer, z_index)
 
 
 def _normalize_gui_layers(raw_gui_layers: list[dict]) -> list[SceneGuiLayer]:
@@ -640,8 +644,9 @@ def _normalize_scene_object(raw: dict, path: Path) -> SceneObject:
     links_raw = raw.get("links", [])
     links = [str(link).strip() for link in links_raw if str(link).strip()] if isinstance(links_raw, list) else []
     visible = bool(raw.get("visible", True))
+    scale = float(raw.get("scale", 1.0))
     return SceneObject(
-        prefab, int(raw.get("x", 0)), int(raw.get("y", 0)), animation, z_index, obj_id, links, visible
+        prefab, int(raw.get("x", 0)), int(raw.get("y", 0)), animation, z_index, obj_id, links, visible, scale
     )
 
 
@@ -778,6 +783,7 @@ def save_scene(scene: Scene, path: Path, *, project_root: Path | None = None) ->
                 **({"id": inst.id} if inst.id else {}),
                 **({"links": list(inst.links)} if inst.links else {}),
                 **({"visible": False} if not inst.visible else {}),
+                **({"scale": inst.scale} if inst.scale != 1.0 else {}),
             }
             for inst in scene.objects
         ],
@@ -789,6 +795,7 @@ def save_scene(scene: Scene, path: Path, *, project_root: Path | None = None) ->
                     if gui_layer.gui_layer
                     else {}
                 ),
+                **({"z_index": gui_layer.z_index} if gui_layer.z_index else {}),
             }
             for gui_layer in scene.gui_layers
         ],

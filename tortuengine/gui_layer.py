@@ -44,9 +44,10 @@ class GuiObject:
     x: int
     y: int
     animation: str = ""
+    scale: float = 1.0
 
     def copy(self) -> GuiObject:
-        return GuiObject(self.prefab, self.x, self.y, self.animation)
+        return GuiObject(self.prefab, self.x, self.y, self.animation, self.scale)
 
 
 @dataclass
@@ -139,10 +140,12 @@ class GuiLayer:
         cols = self.grid_columns(tile_size)
         self.tiles[y * cols + x] = tile_index
 
-    def add_object(self, prefab: str, x: int, y: int, *, animation: str = "") -> int:
+    def add_object(
+        self, prefab: str, x: int, y: int, *, animation: str = "", scale: float = 1.0
+    ) -> int:
         if len(self.objects) >= MAX_GUI_OBJECTS:
             raise ValueError(f"GUI layer cannot have more than {MAX_GUI_OBJECTS} objects")
-        self.objects.append(GuiObject(prefab, x, y, animation))
+        self.objects.append(GuiObject(prefab, x, y, animation, scale))
         return len(self.objects) - 1
 
     def remove_object(self, index: int) -> None:
@@ -218,6 +221,7 @@ def load_gui_layer(path: Path, *, project_root: Path | None = None) -> GuiLayer:
             int(raw.get("x", 0)),
             int(raw.get("y", 0)),
             str(raw.get("animation", "")),
+            float(raw.get("scale", 1.0)),
         )
         for raw in data.get("objects", [])
         if raw.get("object", raw.get("prefab", ""))
@@ -255,6 +259,7 @@ def save_gui_layer(gui_layer: GuiLayer, path: Path) -> None:
                 "x": obj.x,
                 "y": obj.y,
                 **({"animation": obj.animation} if obj.animation else {}),
+                **({"scale": obj.scale} if obj.scale != 1.0 else {}),
             }
             for obj in gui_layer.objects
         ],

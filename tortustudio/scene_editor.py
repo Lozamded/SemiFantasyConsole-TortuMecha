@@ -216,6 +216,11 @@ class _SceneObjectCard(QWidget):
         self.z_spin.setRange(-1000, 1000)
         self.z_spin.setToolTip("Draw order: higher values draw on top")
         self.anim_combo = QComboBox()
+        self.scale_spin = QDoubleSpinBox()
+        self.scale_spin.setRange(0.1, 10.0)
+        self.scale_spin.setSingleStep(0.1)
+        self.scale_spin.setValue(1.0)
+        self.scale_spin.setToolTip("Uniform size multiplier for this object instance")
 
         form = QFormLayout()
         form.setContentsMargins(20, 2, 0, 6)
@@ -224,6 +229,7 @@ class _SceneObjectCard(QWidget):
         form.addRow("X:", self.x_spin)
         form.addRow("Y:", self.y_spin)
         form.addRow("Z-index:", self.z_spin)
+        form.addRow("Scale:", self.scale_spin)
         form.addRow("Animation:", self.anim_combo)
 
         self.content = QWidget()
@@ -241,6 +247,7 @@ class _SceneObjectCard(QWidget):
         self.x_spin.valueChanged.connect(self._emit_changed)
         self.y_spin.valueChanged.connect(self._emit_changed)
         self.z_spin.valueChanged.connect(self._emit_changed)
+        self.scale_spin.valueChanged.connect(self._emit_changed)
         self.anim_combo.currentIndexChanged.connect(self._emit_changed)
 
     def _on_toggle_clicked(self) -> None:
@@ -273,7 +280,8 @@ class _SceneObjectCard(QWidget):
 
     def sync(self, inst: SceneObject, tortu_object: TortuObject | None) -> None:
         widgets = (
-            self.id_edit, self.links_edit, self.x_spin, self.y_spin, self.z_spin, self.anim_combo,
+            self.id_edit, self.links_edit, self.x_spin, self.y_spin, self.z_spin,
+            self.scale_spin, self.anim_combo,
         )
         self._suspend = True
         for widget in widgets:
@@ -286,6 +294,7 @@ class _SceneObjectCard(QWidget):
         self.x_spin.setValue(inst.x)
         self.y_spin.setValue(inst.y)
         self.z_spin.setValue(inst.z_index)
+        self.scale_spin.setValue(inst.scale)
         self.anim_combo.clear()
         self.anim_combo.addItem("(default)", "")
         if tortu_object is not None:
@@ -305,6 +314,7 @@ class _SceneObjectCard(QWidget):
         inst.x = self.x_spin.value()
         inst.y = self.y_spin.value()
         inst.z_index = self.z_spin.value()
+        inst.scale = self.scale_spin.value()
         inst.animation = self.anim_combo.currentData() or ""
 
 
@@ -729,21 +739,13 @@ class SceneMapCanvas(QWidget):
         palette = self._sprite_palette(sprite.palette)
         if palette is None:
             return None
-        return sprite.to_surface(palette, frame_index=0)
-
-    def _draw_scene_objects(self, composite: pygame.Surface) -> None:
-        if not self.scene or not self.show_objects:
-            return
-        for inst in sorted(self.scene.objects, key=lambda o: o.z_index):
-            surface = self._object_instance_surface(inst)
-            if surface is None:
-                continue
-            tortu_object = self._get_tortu_object(inst.prefab)
-            if tortu_object is None:
-                continue
-            draw_x = inst.x - tortu_object.origin.x
-            draw_y = inst.y - tortu_object.origin.y
-            composite.blit(surface, (draw_x, draw_y))
+        surface = sprite.to_surface(palette, frame_index=0)
+        scale = getattr(inst, "scale", 1.0)
+        if scale != 1.0:
+            width = max(1, round(surface.get_width() * scale))
+            height = max(1, round(surface.get_height() * scale))
+            surface = pygame.transform.scale(surface, (width, height))
+        return surface
 
     def _get_gui_layer_asset(self, rel_path: str) -> GuiLayer | None:
         if not rel_path:
@@ -847,26 +849,51 @@ class SceneMapCanvas(QWidget):
             tortu_object = self._get_tortu_object(inst.prefab)
             if tortu_object is None:
                 continue
-            draw_x = ox + inst.x - tortu_object.origin.x
-            draw_y = oy + inst.y - tortu_object.origin.y
-            composite.blit(surface, (draw_x, draw_y))
+            draw_x = ox + inst.x - tortu_object.origin.x * inst.scale
+            draw_y = oy + inst.y - tortu_object.origin.y * inst.scale
+            composite.blit(surface, (round(draw_x), round(draw_y)))
 
         for label in gui_layer.text_labels:
             surface = self._gui_label_surface(label)
             if surface is not None:
                 composite.blit(surface, (ox + label.x, oy + label.y))
 
-    def _draw_scene_gui_layers(self, composite: pygame.Surface) -> None:
-        if not self.scene or not self.show_gui_layers:
+    def _draw_scene_objects_and_gui_layers(self, composite: pygame.Surface) -> None:
+        # Objects and GUI layers share one z-ordered draw pass so a GUI layer's
+        # z_index can place it behind or in front of objects (z_index 0), not just
+        # behind/in front of other GUI layers. Ties put the object before the GUI
+        # layer, so a default (z_index 0) GUI layer still draws on top of default
+        # objects, matching the runtime renderer.
+        if not self.scene:
             return
         cx, cy, _view_w, _view_h = self._clamped_camera()
-        for scene_gui in self.scene.gui_layers:
-            if not scene_gui.gui_layer:
-                continue
-            gui_layer = self._get_gui_layer_asset(scene_gui.gui_layer)
-            if gui_layer is None:
-                continue
-            self._draw_gui_layer(composite, gui_layer, cx, cy)
+        draw_items: list[tuple[int, int, int, object]] = []
+        if self.show_objects:
+            draw_items += [(inst.z_index, 0, i, inst) for i, inst in enumerate(self.scene.objects)]
+        if self.show_gui_layers:
+            draw_items += [(g.z_index, 1, i, g) for i, g in enumerate(self.scene.gui_layers)]
+        draw_items.sort(key=lambda item: item[:3])
+
+        for _z_index, kind, _index, payload in draw_items:
+            if kind == 0:
+                inst = payload
+                surface = self._object_instance_surface(inst)
+                if surface is None:
+                    continue
+                tortu_object = self._get_tortu_object(inst.prefab)
+                if tortu_object is None:
+                    continue
+                draw_x = inst.x - tortu_object.origin.x * inst.scale
+                draw_y = inst.y - tortu_object.origin.y * inst.scale
+                composite.blit(surface, (round(draw_x), round(draw_y)))
+            else:
+                scene_gui = payload
+                if not scene_gui.gui_layer:
+                    continue
+                gui_layer = self._get_gui_layer_asset(scene_gui.gui_layer)
+                if gui_layer is None:
+                    continue
+                self._draw_gui_layer(composite, gui_layer, cx, cy)
 
     def _refresh(self) -> None:
         if not self.scene:
@@ -934,8 +961,7 @@ class SceneMapCanvas(QWidget):
                         continue
                     composite.blit(tile_surface, (px, py))
 
-        self._draw_scene_objects(composite)
-        self._draw_scene_gui_layers(composite)
+        self._draw_scene_objects_and_gui_layers(composite)
 
         data = pygame.image.tobytes(composite, "RGBA")
         self._frame = QImage(data, map_w, map_h, map_w * 4, QImage.Format.Format_RGBA8888)
@@ -1013,10 +1039,10 @@ class SceneMapCanvas(QWidget):
                 painter.setPen(pen)
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 if sprite and tortu_object:
-                    rx = ox + (inst.x - tortu_object.origin.x) * self.zoom
-                    ry = oy + (inst.y - tortu_object.origin.y) * self.zoom
-                    rw = sprite.pixel_width * self.zoom
-                    rh = sprite.pixel_height * self.zoom
+                    rx = ox + (inst.x - tortu_object.origin.x * inst.scale) * self.zoom
+                    ry = oy + (inst.y - tortu_object.origin.y * inst.scale) * self.zoom
+                    rw = sprite.pixel_width * inst.scale * self.zoom
+                    rh = sprite.pixel_height * inst.scale * self.zoom
                     painter.drawRect(int(rx), int(ry), int(rw), int(rh))
                 else:
                     lx = ox + inst.x * self.zoom
@@ -1104,10 +1130,10 @@ class SceneMapCanvas(QWidget):
             sprite = self._get_object_sprite(sprite_path)
             if sprite is None:
                 continue
-            x0 = inst.x - tortu_object.origin.x
-            y0 = inst.y - tortu_object.origin.y
-            x1 = x0 + sprite.pixel_width
-            y1 = y0 + sprite.pixel_height
+            x0 = inst.x - tortu_object.origin.x * inst.scale
+            y0 = inst.y - tortu_object.origin.y * inst.scale
+            x1 = x0 + sprite.pixel_width * inst.scale
+            y1 = y0 + sprite.pixel_height * inst.scale
             if x0 <= px < x1 and y0 <= py < y1:
                 dist = (inst.x - px) ** 2 + (inst.y - py) ** 2
                 if dist < best_dist:
@@ -1356,6 +1382,11 @@ class SceneEditorWidget(QWidget):
         self.gui_layer_asset_combo = QComboBox()
         self.gui_layer_asset_combo.setToolTip("GUI layer asset for the active scene GUI layer slot")
         self.gui_layer_asset_combo.currentIndexChanged.connect(self._on_gui_layer_asset_changed)
+
+        self.gui_layer_z_spin = QSpinBox()
+        self.gui_layer_z_spin.setRange(-1000, 1000)
+        self.gui_layer_z_spin.setToolTip("Draw order among GUI layers: higher values draw on top")
+        self.gui_layer_z_spin.valueChanged.connect(self._on_gui_layer_z_changed)
 
         self.gui_layer_size_label = QLabel("—")
 
@@ -1610,6 +1641,7 @@ class SceneEditorWidget(QWidget):
         gui_form = QFormLayout()
         gui_form.addRow("Active GUI layer:", self.gui_layer_combo)
         gui_form.addRow("GUI layer asset:", self.gui_layer_asset_combo)
+        gui_form.addRow("Z-index:", self.gui_layer_z_spin)
         gui_form.addRow("Size:", self.gui_layer_size_label)
         gui_layer_btns = QHBoxLayout()
         gui_layer_btns.addWidget(self.btn_add_gui_layer)
@@ -2055,20 +2087,32 @@ class SceneEditorWidget(QWidget):
         self.gui_layer_combo.blockSignals(True)
         self.gui_layer_combo.clear()
         for i, gui_layer in enumerate(self.scene.gui_layers):
-            self.gui_layer_combo.addItem(f"{i}: {gui_layer.name}", i)
+            suffix = f"  z={gui_layer.z_index}" if gui_layer.z_index else ""
+            self.gui_layer_combo.addItem(f"{i}: {gui_layer.name}{suffix}", i)
         if self.scene.gui_layer_count == 0:
             self.gui_layer_asset_combo.setEnabled(False)
+            self.gui_layer_z_spin.setEnabled(False)
+            self.gui_layer_z_spin.blockSignals(True)
+            self.gui_layer_z_spin.setValue(0)
+            self.gui_layer_z_spin.blockSignals(False)
             self.gui_layer_size_label.setText("—")
         else:
             self.gui_layer_asset_combo.setEnabled(True)
+            self.gui_layer_z_spin.setEnabled(True)
             active = max(0, self.gui_layer_combo.currentIndex())
             self.gui_layer_combo.setCurrentIndex(min(active, self.scene.gui_layer_count - 1))
             gui_layer = self.scene.gui_layers[self.gui_layer_combo.currentIndex()]
             self._sync_gui_layer_asset_combo()
+            self._sync_gui_layer_z_spin(gui_layer)
             self._update_gui_layer_size_label(gui_layer)
         self.gui_layer_combo.blockSignals(False)
         self.btn_add_gui_layer.setEnabled(self.scene.gui_layer_count < MAX_SCENE_GUI_LAYERS)
         self.btn_remove_gui_layer.setEnabled(self.scene.gui_layer_count > 0)
+
+    def _sync_gui_layer_z_spin(self, gui_layer: SceneGuiLayer) -> None:
+        self.gui_layer_z_spin.blockSignals(True)
+        self.gui_layer_z_spin.setValue(gui_layer.z_index)
+        self.gui_layer_z_spin.blockSignals(False)
 
     def _sync_gui_layer_asset_combo(self) -> None:
         self.gui_layer_asset_combo.blockSignals(True)
@@ -2363,7 +2407,25 @@ class SceneEditorWidget(QWidget):
             return
         gui_layer = self.scene.gui_layers[index]
         self._sync_gui_layer_asset_combo()
+        self._sync_gui_layer_z_spin(gui_layer)
         self._update_gui_layer_size_label(gui_layer)
+
+    def _on_gui_layer_z_changed(self, value: int) -> None:
+        if not self.scene:
+            return
+        gui_layer_index = self._active_gui_layer_index()
+        if gui_layer_index < 0:
+            return
+        gui_layer = self.scene.gui_layers[gui_layer_index]
+        if gui_layer.z_index == value:
+            return
+        gui_layer.z_index = value
+        self._mark_dirty()
+        suffix = f"  z={gui_layer.z_index}" if gui_layer.z_index else ""
+        self.gui_layer_combo.blockSignals(True)
+        self.gui_layer_combo.setItemText(gui_layer_index, f"{gui_layer_index}: {gui_layer.name}{suffix}")
+        self.gui_layer_combo.blockSignals(False)
+        self._refresh_map()
 
     def _on_gui_layer_asset_changed(self, index: int) -> None:
         if not self.scene or index < 0:

@@ -6,9 +6,17 @@
   "objects": [
     {
       "object": "assets/objects/dialoguebox.tortuobject",
-      "x": 64,
-      "y": 161
+      "x": 4,
+      "y": 140,
+      "scale": 2.0
     }
   ],
-  "text_labels": []
+  "text_labels": [
+    {
+      "text": "Text",
+      "x": 14,
+      "y": 149,
+      "font": "assets/fonts/dialog.tortufont"
+    }
+  ]
 }

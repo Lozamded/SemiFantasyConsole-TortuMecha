@@ -4813,8 +4813,8 @@
     },
     {
       "object": "assets/objects/robot.tortuobject",
-      "x": 374,
-      "y": 175,
+      "x": 373,
+      "y": 176,
       "id": "robot2",
       "links": [
         "diag_robo2"
@@ -4842,11 +4842,13 @@
   "gui_layers": [
     {
       "name": "gui_layer_0",
-      "gui_layer": "assets/gui/hud.tortuguilayer"
+      "gui_layer": "assets/gui/hud.tortuguilayer",
+      "z_index": -1
     },
     {
       "name": "gui_layer_1",
-      "gui_layer": "assets/gui/dialog.tortuguilayer"
+      "gui_layer": "assets/gui/dialog.tortuguilayer",
+      "z_index": 1
     }
   ]
 }

@@ -12,6 +12,7 @@ from PyQt6.QtGui import QColor, QImage, QMouseEvent, QPainter, QPen, QWheelEvent
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QGroupBox,
@@ -25,6 +26,7 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QSpinBox,
     QTabWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -237,7 +239,12 @@ class GuiLayerCanvas(QWidget):
         palette = self._sprite_palette(sprite.palette)
         if palette is None:
             return None
-        return sprite.to_surface(palette, frame_index=0)
+        surface = sprite.to_surface(palette, frame_index=0)
+        if inst.scale != 1.0:
+            width = max(1, round(surface.get_width() * inst.scale))
+            height = max(1, round(surface.get_height() * inst.scale))
+            surface = pygame.transform.scale(surface, (width, height))
+        return surface
 
     def _get_text_font(self, rel_path: str) -> TortuFont | None:
         if not rel_path:
@@ -333,7 +340,9 @@ class GuiLayerCanvas(QWidget):
             tortu_object = self._get_tortu_object(inst.prefab)
             if tortu_object is None:
                 continue
-            composite.blit(surface, (inst.x - tortu_object.origin.x, inst.y - tortu_object.origin.y))
+            draw_x = inst.x - tortu_object.origin.x * inst.scale
+            draw_y = inst.y - tortu_object.origin.y * inst.scale
+            composite.blit(surface, (round(draw_x), round(draw_y)))
 
         for label in self.gui_layer.text_labels:
             surface = self._label_surface(label)
@@ -388,11 +397,11 @@ class GuiLayerCanvas(QWidget):
                 painter.setPen(pen)
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 if sprite and tortu_object:
-                    rx = (inst.x - tortu_object.origin.x) * self.zoom
-                    ry = (inst.y - tortu_object.origin.y) * self.zoom
+                    rx = (inst.x - tortu_object.origin.x * inst.scale) * self.zoom
+                    ry = (inst.y - tortu_object.origin.y * inst.scale) * self.zoom
                     painter.drawRect(
-                        int(rx), int(ry), int(sprite.pixel_width * self.zoom),
-                        int(sprite.pixel_height * self.zoom),
+                        int(rx), int(ry), int(sprite.pixel_width * inst.scale * self.zoom),
+                        int(sprite.pixel_height * inst.scale * self.zoom),
                     )
                 else:
                     lx, ly = inst.x * self.zoom, inst.y * self.zoom
@@ -470,9 +479,9 @@ class GuiLayerCanvas(QWidget):
             sprite = self._get_object_sprite(sprite_path)
             if sprite is None:
                 continue
-            x0 = inst.x - tortu_object.origin.x
-            y0 = inst.y - tortu_object.origin.y
-            x1, y1 = x0 + sprite.pixel_width, y0 + sprite.pixel_height
+            x0 = inst.x - tortu_object.origin.x * inst.scale
+            y0 = inst.y - tortu_object.origin.y * inst.scale
+            x1, y1 = x0 + sprite.pixel_width * inst.scale, y0 + sprite.pixel_height * inst.scale
             if x0 <= px < x1 and y0 <= py < y1:
                 dist = (inst.x - px) ** 2 + (inst.y - py) ** 2
                 if dist < best_dist:
@@ -619,6 +628,238 @@ class GuiLayerCanvas(QWidget):
             self.set_zoom(self.zoom - 1)
 
 
+class _GuiObjectCard(QWidget):
+    """Collapsible editor for one placed object instance in a GUI layer."""
+
+    changed = pyqtSignal()
+    remove_requested = pyqtSignal()
+    picked = pyqtSignal()
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._suspend = False
+
+        self.toggle = QToolButton()
+        self.toggle.setCheckable(True)
+        self.toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.toggle.setArrowType(Qt.ArrowType.RightArrow)
+        self.toggle.setStyleSheet(
+            "QToolButton { border: none; font-weight: 600; padding: 4px; text-align: left; }"
+            "QToolButton:hover { background-color: rgba(255, 255, 255, 24); }"
+        )
+        self.toggle.clicked.connect(self._on_toggle_clicked)
+
+        self.btn_remove = QPushButton("✕")
+        self.btn_remove.setFixedWidth(22)
+        self.btn_remove.setToolTip("Remove this object")
+        self.btn_remove.clicked.connect(self.remove_requested.emit)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.addWidget(self.toggle, stretch=1)
+        header.addWidget(self.btn_remove)
+
+        self.x_spin = QSpinBox()
+        self.x_spin.setRange(-9999, 9999)
+        self.y_spin = QSpinBox()
+        self.y_spin.setRange(-9999, 9999)
+        self.anim_combo = QComboBox()
+        self.scale_spin = QDoubleSpinBox()
+        self.scale_spin.setRange(0.1, 10.0)
+        self.scale_spin.setSingleStep(0.1)
+        self.scale_spin.setValue(1.0)
+        self.scale_spin.setToolTip("Uniform size multiplier for this object instance")
+
+        form = QFormLayout()
+        form.setContentsMargins(20, 2, 0, 6)
+        form.addRow("X:", self.x_spin)
+        form.addRow("Y:", self.y_spin)
+        form.addRow("Scale:", self.scale_spin)
+        form.addRow("Animation:", self.anim_combo)
+
+        self.content = QWidget()
+        self.content.setLayout(form)
+        self.content.setVisible(False)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addLayout(header)
+        outer.addWidget(self.content)
+
+        self.x_spin.valueChanged.connect(self._emit_changed)
+        self.y_spin.valueChanged.connect(self._emit_changed)
+        self.scale_spin.valueChanged.connect(self._emit_changed)
+        self.anim_combo.currentIndexChanged.connect(self._emit_changed)
+
+    def _on_toggle_clicked(self) -> None:
+        self.set_expanded(self.toggle.isChecked())
+        self.picked.emit()
+
+    def is_expanded(self) -> bool:
+        return self.toggle.isChecked()
+
+    def set_expanded(self, expanded: bool) -> None:
+        self.toggle.setChecked(expanded)
+        self.content.setVisible(expanded)
+        self.toggle.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
+
+    def set_header_text(self, text: str) -> None:
+        self.toggle.setText(text)
+
+    def set_highlighted(self, on: bool) -> None:
+        weight = "700" if on else "600"
+        color = " color: #4da3ff;" if on else ""
+        self.toggle.setStyleSheet(
+            f"QToolButton {{ border: none; font-weight: {weight};{color} padding: 4px;"
+            " text-align: left; }"
+            "QToolButton:hover { background-color: rgba(255, 255, 255, 24); }"
+        )
+
+    def _emit_changed(self) -> None:
+        if not self._suspend:
+            self.changed.emit()
+
+    def sync(self, inst: GuiObject, tortu_object: TortuObject | None) -> None:
+        widgets = (self.x_spin, self.y_spin, self.scale_spin, self.anim_combo)
+        self._suspend = True
+        for widget in widgets:
+            widget.blockSignals(True)
+        self.x_spin.setValue(inst.x)
+        self.y_spin.setValue(inst.y)
+        self.scale_spin.setValue(inst.scale)
+        self.anim_combo.clear()
+        self.anim_combo.addItem("(default)", "")
+        if tortu_object is not None:
+            for anim in tortu_object.animations:
+                self.anim_combo.addItem(anim.name, anim.name)
+        found = self.anim_combo.findData(inst.animation)
+        self.anim_combo.setCurrentIndex(found if found >= 0 else 0)
+        for widget in widgets:
+            widget.blockSignals(False)
+        self._suspend = False
+
+    def read_into(self, inst: GuiObject) -> None:
+        inst.x = self.x_spin.value()
+        inst.y = self.y_spin.value()
+        inst.scale = self.scale_spin.value()
+        inst.animation = self.anim_combo.currentData() or ""
+
+
+class _GuiTextLabelCard(QWidget):
+    """Collapsible editor for one placed text label instance in a GUI layer."""
+
+    changed = pyqtSignal()
+    remove_requested = pyqtSignal()
+    picked = pyqtSignal()
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._suspend = False
+
+        self.toggle = QToolButton()
+        self.toggle.setCheckable(True)
+        self.toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.toggle.setArrowType(Qt.ArrowType.RightArrow)
+        self.toggle.setStyleSheet(
+            "QToolButton { border: none; font-weight: 600; padding: 4px; text-align: left; }"
+            "QToolButton:hover { background-color: rgba(255, 255, 255, 24); }"
+        )
+        self.toggle.clicked.connect(self._on_toggle_clicked)
+
+        self.btn_remove = QPushButton("✕")
+        self.btn_remove.setFixedWidth(22)
+        self.btn_remove.setToolTip("Remove this label")
+        self.btn_remove.clicked.connect(self.remove_requested.emit)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.addWidget(self.toggle, stretch=1)
+        header.addWidget(self.btn_remove)
+
+        self.text_edit = QLineEdit()
+        self.font_combo = QComboBox()
+        self.x_spin = QSpinBox()
+        self.x_spin.setRange(-9999, 9999)
+        self.y_spin = QSpinBox()
+        self.y_spin.setRange(-9999, 9999)
+
+        form = QFormLayout()
+        form.setContentsMargins(20, 2, 0, 6)
+        form.addRow("Text:", self.text_edit)
+        form.addRow("Font:", self.font_combo)
+        form.addRow("X:", self.x_spin)
+        form.addRow("Y:", self.y_spin)
+
+        self.content = QWidget()
+        self.content.setLayout(form)
+        self.content.setVisible(False)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addLayout(header)
+        outer.addWidget(self.content)
+
+        self.text_edit.textChanged.connect(self._emit_changed)
+        self.font_combo.currentIndexChanged.connect(self._emit_changed)
+        self.x_spin.valueChanged.connect(self._emit_changed)
+        self.y_spin.valueChanged.connect(self._emit_changed)
+
+    def _on_toggle_clicked(self) -> None:
+        self.set_expanded(self.toggle.isChecked())
+        self.picked.emit()
+
+    def is_expanded(self) -> bool:
+        return self.toggle.isChecked()
+
+    def set_expanded(self, expanded: bool) -> None:
+        self.toggle.setChecked(expanded)
+        self.content.setVisible(expanded)
+        self.toggle.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
+
+    def set_header_text(self, text: str) -> None:
+        self.toggle.setText(text)
+
+    def set_highlighted(self, on: bool) -> None:
+        weight = "700" if on else "600"
+        color = " color: #4da3ff;" if on else ""
+        self.toggle.setStyleSheet(
+            f"QToolButton {{ border: none; font-weight: {weight};{color} padding: 4px;"
+            " text-align: left; }"
+            "QToolButton:hover { background-color: rgba(255, 255, 255, 24); }"
+        )
+
+    def _emit_changed(self) -> None:
+        if not self._suspend:
+            self.changed.emit()
+
+    def sync(self, label: GuiTextLabel, font_choices: list[str]) -> None:
+        widgets = (self.text_edit, self.font_combo, self.x_spin, self.y_spin)
+        self._suspend = True
+        for widget in widgets:
+            widget.blockSignals(True)
+        if self.text_edit.text() != label.text:
+            self.text_edit.setText(label.text)
+        self.font_combo.clear()
+        self.font_combo.addItem("(none)", "")
+        for rel in font_choices:
+            self.font_combo.addItem(rel, rel)
+        found = self.font_combo.findData(label.font)
+        self.font_combo.setCurrentIndex(found if found >= 0 else 0)
+        self.x_spin.setValue(label.x)
+        self.y_spin.setValue(label.y)
+        for widget in widgets:
+            widget.blockSignals(False)
+        self._suspend = False
+
+    def read_into(self, label: GuiTextLabel) -> None:
+        label.text = self.text_edit.text()
+        label.font = self.font_combo.currentData() or ""
+        label.x = self.x_spin.value()
+        label.y = self.y_spin.value()
+
+
 class GuiLayerEditorWidget(QWidget):
     saved = pyqtSignal(Path)
     renamed = pyqtSignal(Path, Path)  # (old_path, new_path)
@@ -755,27 +996,54 @@ class GuiLayerEditorWidget(QWidget):
         self.tile_layer_visible.toggled.connect(self._on_tile_layer_visible_toggled)
 
         # -- objects panel ---------------------------------------
-        self.objects_list = QListWidget()
-        self.objects_list.setMaximumHeight(120)
-        self.objects_list.currentRowChanged.connect(self._on_objects_list_selection_changed)
-        self.btn_remove_selected_object = QPushButton("Remove selected object")
-        self.btn_remove_selected_object.setEnabled(False)
-        self.btn_remove_selected_object.clicked.connect(self._remove_selected_object)
+        self.objects_search = QLineEdit()
+        self.objects_search.setPlaceholderText("Filter objects…")
+        self.objects_search.textChanged.connect(self._refresh_objects_list)
+
+        self._objects_list_indices: list[int] = []
+        self._object_cards: dict[int, _GuiObjectCard] = {}
+
+        self.objects_container = QWidget()
+        self.objects_container_layout = QVBoxLayout(self.objects_container)
+        self.objects_container_layout.setContentsMargins(0, 0, 0, 0)
+        self.objects_container_layout.setSpacing(2)
+        self.objects_container_layout.addStretch(1)
+
+        self.objects_scroll = QScrollArea()
+        self.objects_scroll.setWidgetResizable(True)
+        self.objects_scroll.setWidget(self.objects_container)
+        self.objects_scroll.setMinimumHeight(160)
 
         # -- text labels panel ---------------------------------------
         self.text_content_edit = QLineEdit()
-        self.text_content_edit.setPlaceholderText("Text to place / edit selected label…")
+        self.text_content_edit.setPlaceholderText("New label text…")
         self.text_content_edit.textChanged.connect(self._on_text_fields_changed)
+        self.text_content_edit.returnPressed.connect(self._add_text_label)
 
         self.text_font_combo = QComboBox()
         self.text_font_combo.currentIndexChanged.connect(self._on_text_fields_changed)
 
-        self.text_labels_list = QListWidget()
-        self.text_labels_list.setMaximumHeight(120)
-        self.text_labels_list.currentRowChanged.connect(self._on_text_labels_list_selection_changed)
-        self.btn_remove_selected_text = QPushButton("Remove selected label")
-        self.btn_remove_selected_text.setEnabled(False)
-        self.btn_remove_selected_text.clicked.connect(self._remove_selected_text_label)
+        self.btn_add_text_label = QPushButton("Add label")
+        self.btn_add_text_label.setToolTip("Create a new text label using the text and font above")
+        self.btn_add_text_label.clicked.connect(self._add_text_label)
+
+        self.text_labels_search = QLineEdit()
+        self.text_labels_search.setPlaceholderText("Filter labels…")
+        self.text_labels_search.textChanged.connect(self._refresh_text_labels_list)
+
+        self._text_labels_list_indices: list[int] = []
+        self._text_label_cards: dict[int, _GuiTextLabelCard] = {}
+
+        self.text_labels_container = QWidget()
+        self.text_labels_container_layout = QVBoxLayout(self.text_labels_container)
+        self.text_labels_container_layout.setContentsMargins(0, 0, 0, 0)
+        self.text_labels_container_layout.setSpacing(2)
+        self.text_labels_container_layout.addStretch(1)
+
+        self.text_labels_scroll = QScrollArea()
+        self.text_labels_scroll.setWidgetResizable(True)
+        self.text_labels_scroll.setWidget(self.text_labels_container)
+        self.text_labels_scroll.setMinimumHeight(160)
 
         self._selected_object_index = -1
         self._selected_text_index = -1
@@ -845,17 +1113,18 @@ class GuiLayerEditorWidget(QWidget):
         side.addWidget(tile_section)
 
         objects_section = CollapsibleSection("Objects", expanded=True)
-        objects_section.content_layout().addWidget(self.objects_list)
-        objects_section.content_layout().addWidget(self.btn_remove_selected_object)
+        objects_section.content_layout().addWidget(self.objects_search)
+        objects_section.content_layout().addWidget(self.objects_scroll)
         side.addWidget(objects_section)
 
         text_section = CollapsibleSection("Text Labels", expanded=True)
         text_form = QFormLayout()
-        text_form.addRow("Text:", self.text_content_edit)
-        text_form.addRow("Font:", self.text_font_combo)
+        text_form.addRow("New label text:", self.text_content_edit)
+        text_form.addRow("New label font:", self.text_font_combo)
         text_section.content_layout().addLayout(text_form)
-        text_section.content_layout().addWidget(self.text_labels_list)
-        text_section.content_layout().addWidget(self.btn_remove_selected_text)
+        text_section.content_layout().addWidget(self.btn_add_text_label)
+        text_section.content_layout().addWidget(self.text_labels_search)
+        text_section.content_layout().addWidget(self.text_labels_scroll)
         side.addWidget(text_section)
 
         side.addStretch()
@@ -1026,28 +1295,159 @@ class GuiLayerEditorWidget(QWidget):
         self.object_strip.set_project(self.project_root, paths)
 
     def _refresh_objects_list(self) -> None:
-        self.objects_list.blockSignals(True)
-        self.objects_list.clear()
-        if self.gui_layer:
-            for i, inst in enumerate(self.gui_layer.objects):
-                name = Path(inst.prefab).stem if inst.prefab else "(unassigned)"
-                self.objects_list.addItem(f"{i}: {name} @ ({inst.x}, {inst.y})")
-        if 0 <= self._selected_object_index < self.objects_list.count():
-            self.objects_list.setCurrentRow(self._selected_object_index)
-        self.objects_list.blockSignals(False)
-        self.btn_remove_selected_object.setEnabled(self._selected_object_index >= 0)
+        if not self.gui_layer:
+            self._rebuild_object_cards([])
+            self._objects_list_indices = []
+            self._selected_object_index = -1
+            return
+        if self._selected_object_index >= len(self.gui_layer.objects):
+            self._selected_object_index = -1
+        query = self.objects_search.text().strip().lower()
+        visible_indices: list[int] = []
+        for i, inst in enumerate(self.gui_layer.objects):
+            name = Path(inst.prefab).stem if inst.prefab else "(unassigned)"
+            if query and query not in name.lower():
+                continue
+            visible_indices.append(i)
+        if visible_indices != self._objects_list_indices:
+            self._rebuild_object_cards(visible_indices)
+            self._objects_list_indices = visible_indices
+        for i in visible_indices:
+            inst = self.gui_layer.objects[i]
+            card = self._object_cards[i]
+            tortu_object = self.canvas._get_tortu_object(inst.prefab)
+            card.sync(inst, tortu_object)
+            name = Path(inst.prefab).stem if inst.prefab else "(unassigned)"
+            suffix = f"  scale={inst.scale:g}" if inst.scale != 1.0 else ""
+            card.set_header_text(f"#{i}  {name}{suffix}")
+            card.toggle.setToolTip(f"{name}{suffix}  @ ({inst.x}, {inst.y})")
+            card.set_highlighted(i == self._selected_object_index)
+
+    def _rebuild_object_cards(self, visible_indices: list[int]) -> None:
+        for card in self._object_cards.values():
+            card.setParent(None)
+            card.deleteLater()
+        self._object_cards = {}
+        for i in visible_indices:
+            card = _GuiObjectCard()
+            card.changed.connect(lambda idx=i: self._on_object_card_changed(idx))
+            card.remove_requested.connect(lambda idx=i: self._remove_object(idx))
+            card.picked.connect(lambda idx=i: self._on_object_card_picked(idx))
+            self.objects_container_layout.insertWidget(
+                self.objects_container_layout.count() - 1, card
+            )
+            self._object_cards[i] = card
+
+    def _on_object_card_changed(self, obj_idx: int) -> None:
+        if not self.gui_layer or not (0 <= obj_idx < len(self.gui_layer.objects)):
+            return
+        card = self._object_cards.get(obj_idx)
+        if card is None:
+            return
+        card.read_into(self.gui_layer.objects[obj_idx])
+        self._mark_dirty()
+        self._refresh_canvas()
+        self._refresh_objects_list()
+
+    def _on_object_card_picked(self, obj_idx: int) -> None:
+        self._selected_object_index = obj_idx
+        self._selected_text_index = -1
+        self.canvas.selected_object_index = obj_idx
+        self.canvas.selected_text_index = -1
+        self.canvas.update()
+        self._refresh_text_labels_list()
+        for idx, card in self._object_cards.items():
+            card.set_highlighted(idx == self._selected_object_index)
+
+    def _remove_object(self, obj_idx: int) -> None:
+        if not self.gui_layer or not (0 <= obj_idx < len(self.gui_layer.objects)):
+            return
+        self.gui_layer.remove_object(obj_idx)
+        if self._selected_object_index == obj_idx:
+            self._selected_object_index = -1
+        elif self._selected_object_index > obj_idx:
+            self._selected_object_index -= 1
+        self._mark_dirty()
+        self._refresh_objects_list()
+        self._refresh_canvas()
+
+    def _font_choices(self) -> list[str]:
+        return list_text_font_paths(self.project_root) + list_sprite_font_paths(self.project_root)
 
     def _refresh_text_labels_list(self) -> None:
-        self.text_labels_list.blockSignals(True)
-        self.text_labels_list.clear()
-        if self.gui_layer:
-            for i, label in enumerate(self.gui_layer.text_labels):
-                preview = label.text if len(label.text) <= 20 else label.text[:20] + "…"
-                self.text_labels_list.addItem(f'{i}: "{preview}" @ ({label.x}, {label.y})')
-        if 0 <= self._selected_text_index < self.text_labels_list.count():
-            self.text_labels_list.setCurrentRow(self._selected_text_index)
-        self.text_labels_list.blockSignals(False)
-        self.btn_remove_selected_text.setEnabled(self._selected_text_index >= 0)
+        if not self.gui_layer:
+            self._rebuild_text_label_cards([])
+            self._text_labels_list_indices = []
+            self._selected_text_index = -1
+            return
+        if self._selected_text_index >= len(self.gui_layer.text_labels):
+            self._selected_text_index = -1
+        query = self.text_labels_search.text().strip().lower()
+        visible_indices: list[int] = []
+        for i, label in enumerate(self.gui_layer.text_labels):
+            if query and query not in label.text.lower():
+                continue
+            visible_indices.append(i)
+        if visible_indices != self._text_labels_list_indices:
+            self._rebuild_text_label_cards(visible_indices)
+            self._text_labels_list_indices = visible_indices
+        font_choices = self._font_choices()
+        for i in visible_indices:
+            label = self.gui_layer.text_labels[i]
+            card = self._text_label_cards[i]
+            card.sync(label, font_choices)
+            preview = label.text if len(label.text) <= 20 else label.text[:20] + "…"
+            card.set_header_text(f'#{i}  "{preview}"')
+            card.toggle.setToolTip(f'"{preview}"  @ ({label.x}, {label.y})')
+            card.set_highlighted(i == self._selected_text_index)
+
+    def _rebuild_text_label_cards(self, visible_indices: list[int]) -> None:
+        for card in self._text_label_cards.values():
+            card.setParent(None)
+            card.deleteLater()
+        self._text_label_cards = {}
+        for i in visible_indices:
+            card = _GuiTextLabelCard()
+            card.changed.connect(lambda idx=i: self._on_text_label_card_changed(idx))
+            card.remove_requested.connect(lambda idx=i: self._remove_text_label(idx))
+            card.picked.connect(lambda idx=i: self._on_text_label_card_picked(idx))
+            self.text_labels_container_layout.insertWidget(
+                self.text_labels_container_layout.count() - 1, card
+            )
+            self._text_label_cards[i] = card
+
+    def _on_text_label_card_changed(self, label_idx: int) -> None:
+        if not self.gui_layer or not (0 <= label_idx < len(self.gui_layer.text_labels)):
+            return
+        card = self._text_label_cards.get(label_idx)
+        if card is None:
+            return
+        card.read_into(self.gui_layer.text_labels[label_idx])
+        self._mark_dirty()
+        self._refresh_canvas()
+        self._refresh_text_labels_list()
+
+    def _on_text_label_card_picked(self, label_idx: int) -> None:
+        self._selected_text_index = label_idx
+        self._selected_object_index = -1
+        self.canvas.selected_text_index = label_idx
+        self.canvas.selected_object_index = -1
+        self.canvas.update()
+        self._refresh_objects_list()
+        for idx, card in self._text_label_cards.items():
+            card.set_highlighted(idx == self._selected_text_index)
+
+    def _remove_text_label(self, label_idx: int) -> None:
+        if not self.gui_layer or not (0 <= label_idx < len(self.gui_layer.text_labels)):
+            return
+        self.gui_layer.remove_text_label(label_idx)
+        if self._selected_text_index == label_idx:
+            self._selected_text_index = -1
+        elif self._selected_text_index > label_idx:
+            self._selected_text_index -= 1
+        self._mark_dirty()
+        self._refresh_text_labels_list()
+        self._refresh_canvas()
 
     # -- canvas refresh -----------------------------------------------------
 
@@ -1147,26 +1547,10 @@ class GuiLayerEditorWidget(QWidget):
             self._selected_text_index = -1
             self._refresh_text_labels_list()
         self._refresh_objects_list()
-        self._refresh_canvas()
-
-    def _on_objects_list_selection_changed(self, row: int) -> None:
-        self._selected_object_index = row
-        if row >= 0:
-            self._selected_text_index = -1
-            self._refresh_text_labels_list()
-        self.btn_remove_selected_object.setEnabled(row >= 0)
-        self._refresh_canvas()
-
-    def _remove_selected_object(self) -> None:
-        if not self.gui_layer or self._selected_object_index < 0:
-            return
-        try:
-            self.gui_layer.remove_object(self._selected_object_index)
-        except IndexError:
-            return
-        self._selected_object_index = -1
-        self._mark_dirty()
-        self._refresh_objects_list()
+        card = self._object_cards.get(index)
+        if card is not None:
+            card.set_expanded(True)
+            self.objects_scroll.ensureWidgetVisible(card)
         self._refresh_canvas()
 
     def _on_canvas_text_selected(self, index: int) -> None:
@@ -1174,42 +1558,41 @@ class GuiLayerEditorWidget(QWidget):
         if index >= 0:
             self._selected_object_index = -1
             self._refresh_objects_list()
-        if self.gui_layer and 0 <= index < len(self.gui_layer.text_labels):
-            label = self.gui_layer.text_labels[index]
-            self.text_content_edit.blockSignals(True)
-            self.text_content_edit.setText(label.text)
-            self.text_content_edit.blockSignals(False)
-            font_index = self.text_font_combo.findData(label.font)
-            self.text_font_combo.blockSignals(True)
-            self.text_font_combo.setCurrentIndex(font_index if font_index >= 0 else 0)
-            self.text_font_combo.blockSignals(False)
         self._refresh_text_labels_list()
+        card = self._text_label_cards.get(index)
+        if card is not None:
+            card.set_expanded(True)
+            self.text_labels_scroll.ensureWidgetVisible(card)
         self._refresh_canvas()
-
-    def _on_text_labels_list_selection_changed(self, row: int) -> None:
-        self._on_canvas_text_selected(row)
-        self.btn_remove_selected_text.setEnabled(row >= 0)
 
     def _on_text_fields_changed(self) -> None:
-        if self.gui_layer and self._edit_mode and 0 <= self._selected_text_index < len(self.gui_layer.text_labels):
-            label = self.gui_layer.text_labels[self._selected_text_index]
-            label.text = self.text_content_edit.text()
-            font = self.text_font_combo.currentData()
-            label.font = str(font) if font else ""
-            self._mark_dirty()
-            self._refresh_text_labels_list()
         self._refresh_canvas()
 
-    def _remove_selected_text_label(self) -> None:
-        if not self.gui_layer or self._selected_text_index < 0:
+    def _add_text_label(self) -> None:
+        if not self.gui_layer:
             return
+        text = self.text_content_edit.text().strip()
+        if not text:
+            QMessageBox.information(self, "Add Label", "Enter text for the new label first.")
+            return
+        font = self.text_font_combo.currentData() or ""
+        x = min(8, max(0, self.gui_layer.width - 1))
+        y = min(8, max(0, self.gui_layer.height - 1))
         try:
-            self.gui_layer.remove_text_label(self._selected_text_index)
-        except IndexError:
+            index = self.gui_layer.add_text_label(text, x, y, font=str(font))
+        except ValueError as exc:
+            QMessageBox.warning(self, "Add Label", str(exc))
             return
-        self._selected_text_index = -1
         self._mark_dirty()
+        self.text_content_edit.clear()
+        self._selected_text_index = index
+        self._selected_object_index = -1
+        self._refresh_objects_list()
         self._refresh_text_labels_list()
+        card = self._text_label_cards.get(index)
+        if card is not None:
+            card.set_expanded(True)
+            self.text_labels_scroll.ensureWidgetVisible(card)
         self._refresh_canvas()
 
     # -- resize -----------------------------------------------------

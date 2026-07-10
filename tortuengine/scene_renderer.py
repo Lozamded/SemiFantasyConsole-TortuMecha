@@ -90,6 +90,7 @@ class SceneRenderer:
         self._bg_tiled_cache: _LRUCache = _LRUCache(16)
         self._bg_band_cache: _LRUCache = _LRUCache(32)
         self._png_cache: _LRUCache = _LRUCache(128)
+        self._scaled_frame_cache: _LRUCache = _LRUCache(128)
 
     @classmethod
     def from_cart(cls, cart_root: Path, manifest: CartManifest) -> SceneRenderer:
@@ -526,7 +527,22 @@ class SceneRenderer:
             return None
         if frame_index < 0 or frame_index >= sprite.frame_count:
             frame_index = 0
-        return self._baked_sprite_frame(sprite_path, sprite, frame_index)
+        base = self._baked_sprite_frame(sprite_path, sprite, frame_index)
+        if base is None or inst.scale == 1.0:
+            return base
+        return self._scaled_surface(base, (sprite_path, frame_index, round(inst.scale, 3)), inst.scale)
+
+    def _scaled_surface(
+        self, surface: pygame.Surface, cache_key: tuple, scale: float
+    ) -> pygame.Surface:
+        cached = self._scaled_frame_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        width = max(1, round(surface.get_width() * scale))
+        height = max(1, round(surface.get_height() * scale))
+        scaled = pygame.transform.scale(surface, (width, height))
+        self._scaled_frame_cache[cache_key] = scaled
+        return scaled
 
     def _gui_layer(self, rel_path: str) -> GuiLayer | None:
         if not rel_path or self._cart_mode():
@@ -583,7 +599,9 @@ class SceneRenderer:
             return None
         return render_text_line(text_font, label.text, colors)
 
-    def _draw_gui_layer(self, target: pygame.Surface, gui_layer: GuiLayer) -> None:
+    def _draw_gui_layer(
+        self, target: pygame.Surface, gui_layer: GuiLayer, *, ox: int = 0, oy: int = 0
+    ) -> None:
         if gui_layer.tile_layer_visible and gui_layer.tileset:
             tileset = self._tileset(gui_layer.tileset, palette_name=gui_layer.palette)
             palette = self._palette(gui_layer.palette)
@@ -604,7 +622,7 @@ class SceneRenderer:
                             gui_layer.tileset, tileset, tile_index, gui_layer.palette, palette
                         )
                         if tile_surface is not None:
-                            target.blit(tile_surface, (px, py))
+                            target.blit(tile_surface, (ox + px, oy + py))
 
         for inst in gui_layer.objects:
             surface = self._object_surface(inst)
@@ -613,14 +631,14 @@ class SceneRenderer:
             tortu_object = self._tortu_object(inst.prefab)
             if tortu_object is None:
                 continue
-            draw_x = inst.x - tortu_object.origin.x
-            draw_y = inst.y - tortu_object.origin.y
-            target.blit(surface, (draw_x, draw_y))
+            draw_x = ox + inst.x - tortu_object.origin.x * inst.scale
+            draw_y = oy + inst.y - tortu_object.origin.y * inst.scale
+            target.blit(surface, (round(draw_x), round(draw_y)))
 
         for label in gui_layer.text_labels:
             surface = self._gui_label_surface(label)
             if surface is not None:
-                target.blit(surface, (label.x, label.y))
+                target.blit(surface, (ox + label.x, oy + label.y))
 
     def render(
         self,
@@ -630,11 +648,23 @@ class SceneRenderer:
         camera_y: int = 0,
         view_width: int = SCREEN_WIDTH,
         view_height: int = SCREEN_HEIGHT,
+        z_max: int | None = None,
     ) -> pygame.Surface:
-        """Composite the scene and return the camera viewport."""
+        """Composite the scene and return the camera viewport.
+
+        `z_max`, if set, excludes objects and GUI layers with z_index above it.
+        Backgrounds and tile layers are unaffected — they have no z_index and
+        always form the base of the composite. Pair with `render_overlay()`
+        when a script draws something (e.g. a player sprite) between the
+        world and a foreground GUI layer, outside the normal object list.
+        """
         self._sync_anim_states(scene)
         map_w = scene.width
         map_h = scene.height
+        max_x = max(0, map_w - view_width)
+        max_y = max(0, map_h - view_height)
+        cx = max(0, min(camera_x, max_x))
+        cy = max(0, min(camera_y, max_y))
         composite = pygame.Surface((map_w, map_h))
         composite.fill(MAP_BG)
 
@@ -719,37 +749,109 @@ class SceneRenderer:
                             continue
                         composite.blit(tile_surface, (px, py))
 
-        draw_order = sorted(enumerate(scene.objects), key=lambda pair: (pair[1].z_index, pair[0]))
-        for index, inst in draw_order:
-            if not inst.visible:
-                continue
-            frame_index = 0
-            if index < len(self._object_anim):
-                frame_index = self._object_anim[index].frame_index
-            surface = self._object_surface(inst, frame_index=frame_index)
-            if surface is None:
-                continue
-            tortu_object = self._tortu_object(inst.prefab)
-            if tortu_object is None:
-                continue
-            draw_x = inst.x - tortu_object.origin.x
-            draw_y = inst.y - tortu_object.origin.y
-            composite.blit(surface, (draw_x, draw_y))
+        # Objects and GUI layers share one z-ordered draw pass onto the world-space
+        # composite, so a GUI layer's z_index can place it behind or in front of
+        # objects (z_index 0), not just behind/in front of other GUI layers. Ties
+        # put the object before the GUI layer, so a default (z_index 0) GUI layer
+        # still draws on top of default objects, preserving prior "always on top"
+        # behavior. GUI layers are offset by the clamped camera position so their
+        # camera-locked content lands at the same screen position after the final
+        # viewport crop below.
+        draw_items = [(inst.z_index, 0, i, inst) for i, inst in enumerate(scene.objects)]
+        draw_items += [(g.z_index, 1, i, g) for i, g in enumerate(scene.gui_layers)]
+        if z_max is not None:
+            draw_items = [item for item in draw_items if item[0] <= z_max]
+        draw_items.sort(key=lambda item: item[:3])
+
+        for z_index, kind, index, payload in draw_items:
+            if kind == 0:
+                inst = payload
+                if not inst.visible:
+                    continue
+                frame_index = 0
+                if index < len(self._object_anim):
+                    frame_index = self._object_anim[index].frame_index
+                surface = self._object_surface(inst, frame_index=frame_index)
+                if surface is None:
+                    continue
+                tortu_object = self._tortu_object(inst.prefab)
+                if tortu_object is None:
+                    continue
+                draw_x = inst.x - tortu_object.origin.x * inst.scale
+                draw_y = inst.y - tortu_object.origin.y * inst.scale
+                composite.blit(surface, (round(draw_x), round(draw_y)))
+            else:
+                scene_gui = payload
+                if not scene_gui.gui_layer:
+                    continue
+                gui_layer = self._gui_layer(scene_gui.gui_layer)
+                if gui_layer is None:
+                    continue
+                self._draw_gui_layer(composite, gui_layer, ox=cx, oy=cy)
 
         view = pygame.Surface((view_width, view_height))
         view.fill(MAP_BG)
-        max_x = max(0, map_w - view_width)
-        max_y = max(0, map_h - view_height)
-        cx = max(0, min(camera_x, max_x))
-        cy = max(0, min(camera_y, max_y))
         view.blit(composite, (0, 0), pygame.Rect(cx, cy, view_width, view_height))
 
-        for scene_gui in scene.gui_layers:
-            if not scene_gui.gui_layer:
-                continue
-            gui_layer = self._gui_layer(scene_gui.gui_layer)
-            if gui_layer is None:
-                continue
-            self._draw_gui_layer(view, gui_layer)
+        return view
+
+    def render_overlay(
+        self,
+        scene: Scene,
+        *,
+        camera_x: int = 0,
+        camera_y: int = 0,
+        view_width: int = SCREEN_WIDTH,
+        view_height: int = SCREEN_HEIGHT,
+        z_min: int,
+    ) -> pygame.Surface:
+        """Transparent, camera-locked overlay of objects/GUI layers with z_index >= z_min.
+
+        Pairs with `render(..., z_max=z_min - 1)`: draw that first, blit anything
+        the script itself controls (e.g. a manually-drawn player sprite) on top,
+        then blit this overlay last so foreground GUI layers land above it.
+        """
+        max_x = max(0, scene.width - view_width)
+        max_y = max(0, scene.height - view_height)
+        cx = max(0, min(camera_x, max_x))
+        cy = max(0, min(camera_y, max_y))
+
+        view = pygame.Surface((view_width, view_height), pygame.SRCALPHA)
+
+        draw_items = [
+            (inst.z_index, 0, i, inst)
+            for i, inst in enumerate(scene.objects)
+            if inst.z_index >= z_min
+        ]
+        draw_items += [
+            (g.z_index, 1, i, g) for i, g in enumerate(scene.gui_layers) if g.z_index >= z_min
+        ]
+        draw_items.sort(key=lambda item: item[:3])
+
+        for _z_index, kind, index, payload in draw_items:
+            if kind == 0:
+                inst = payload
+                if not inst.visible:
+                    continue
+                frame_index = 0
+                if index < len(self._object_anim):
+                    frame_index = self._object_anim[index].frame_index
+                surface = self._object_surface(inst, frame_index=frame_index)
+                if surface is None:
+                    continue
+                tortu_object = self._tortu_object(inst.prefab)
+                if tortu_object is None:
+                    continue
+                draw_x = inst.x - tortu_object.origin.x * inst.scale - cx
+                draw_y = inst.y - tortu_object.origin.y * inst.scale - cy
+                view.blit(surface, (round(draw_x), round(draw_y)))
+            else:
+                scene_gui = payload
+                if not scene_gui.gui_layer:
+                    continue
+                gui_layer = self._gui_layer(scene_gui.gui_layer)
+                if gui_layer is None:
+                    continue
+                self._draw_gui_layer(view, gui_layer)
 
         return view

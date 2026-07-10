@@ -506,7 +506,13 @@ def update(dt: float) -> None:
 def draw(engine) -> None:
     cam_x, cam_y = _camera.get() if _camera else (0.0, 0.0)
     if _renderer and _scene:
-        frame = _renderer.render(_scene, camera_x=int(cam_x), camera_y=int(cam_y))
+        # The player isn't in _scene.objects (see init()), so it can't take part
+        # in the renderer's normal z-ordered draw pass. Instead we render the
+        # world up through z_index 0 first, blit the player sprite by hand
+        # (implicitly z_index 0 — on top of same-z scene objects/GUI layers,
+        # same as any other z=0 item drawn last), then overlay whatever GUI
+        # layers are above it (e.g. a z_index 1 dialog box).
+        frame = _renderer.render(_scene, camera_x=int(cam_x), camera_y=int(cam_y), z_max=0)
         engine.blit(frame, (0, 0))
     else:
         engine.clear((12, 18, 32))
@@ -520,5 +526,11 @@ def draw(engine) -> None:
         screen_x = int(_px - auto.ORIGIN[0] - cam_x)
         screen_y = int(_py - auto.ORIGIN[1])
         engine.blit(surf, (screen_x, screen_y))
+
+    if _renderer and _scene:
+        overlay = _renderer.render_overlay(
+            _scene, camera_x=int(cam_x), camera_y=int(cam_y), z_min=1
+        )
+        engine.blit(overlay, (0, 0))
 
     engine.text(f"{_state}", 4, 4, (200, 220, 255), 8)
