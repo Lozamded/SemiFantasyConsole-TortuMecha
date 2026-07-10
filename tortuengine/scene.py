@@ -182,9 +182,14 @@ class SceneGuiLayer:
     name: str
     gui_layer: str = ""
     z_index: int = 0
+    visible: bool = True
+    # Editor-only preview toggle — never persisted to the .tortuscene file.
+    editor_visible: bool = True
 
     def copy(self) -> SceneGuiLayer:
-        return SceneGuiLayer(self.name, self.gui_layer, self.z_index)
+        return SceneGuiLayer(
+            self.name, self.gui_layer, self.z_index, self.visible, self.editor_visible
+        )
 
 
 @dataclass
@@ -623,7 +628,8 @@ def _normalize_gui_layer(raw: dict, gui_layer_index: int) -> SceneGuiLayer:
     name = str(raw.get("name", DEFAULT_SCENE_GUI_LAYER_NAMES[gui_layer_index]))
     gui_layer = _normalize_asset_path(str(raw.get("gui_layer", "")))
     z_index = int(raw.get("z_index", 0))
-    return SceneGuiLayer(name, gui_layer, z_index)
+    visible = bool(raw.get("visible", True))
+    return SceneGuiLayer(name, gui_layer, z_index, visible)
 
 
 def _normalize_gui_layers(raw_gui_layers: list[dict]) -> list[SceneGuiLayer]:
@@ -796,6 +802,7 @@ def save_scene(scene: Scene, path: Path, *, project_root: Path | None = None) ->
                     else {}
                 ),
                 **({"z_index": gui_layer.z_index} if gui_layer.z_index else {}),
+                **({"visible": False} if not gui_layer.visible else {}),
             }
             for gui_layer in scene.gui_layers
         ],

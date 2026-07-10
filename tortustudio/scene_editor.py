@@ -871,7 +871,11 @@ class SceneMapCanvas(QWidget):
         if self.show_objects:
             draw_items += [(inst.z_index, 0, i, inst) for i, inst in enumerate(self.scene.objects)]
         if self.show_gui_layers:
-            draw_items += [(g.z_index, 1, i, g) for i, g in enumerate(self.scene.gui_layers)]
+            draw_items += [
+                (g.z_index, 1, i, g)
+                for i, g in enumerate(self.scene.gui_layers)
+                if g.editor_visible
+            ]
         draw_items.sort(key=lambda item: item[:3])
 
         for _z_index, kind, _index, payload in draw_items:
@@ -1388,6 +1392,18 @@ class SceneEditorWidget(QWidget):
         self.gui_layer_z_spin.setToolTip("Draw order among GUI layers: higher values draw on top")
         self.gui_layer_z_spin.valueChanged.connect(self._on_gui_layer_z_changed)
 
+        self.gui_layer_editor_visible_check = QCheckBox("Visible in editor")
+        self.gui_layer_editor_visible_check.setToolTip(
+            "Show this GUI layer in the Scene Editor preview (does not affect gameplay)"
+        )
+        self.gui_layer_editor_visible_check.toggled.connect(self._on_gui_layer_editor_visible_toggled)
+
+        self.gui_layer_start_visible_check = QCheckBox("Visible at scene start")
+        self.gui_layer_start_visible_check.setToolTip(
+            "Whether this GUI layer is shown when the scene starts in-game"
+        )
+        self.gui_layer_start_visible_check.toggled.connect(self._on_gui_layer_start_visible_toggled)
+
         self.gui_layer_size_label = QLabel("—")
 
         self.btn_add_gui_layer = QPushButton("Add GUI layer")
@@ -1642,6 +1658,8 @@ class SceneEditorWidget(QWidget):
         gui_form.addRow("Active GUI layer:", self.gui_layer_combo)
         gui_form.addRow("GUI layer asset:", self.gui_layer_asset_combo)
         gui_form.addRow("Z-index:", self.gui_layer_z_spin)
+        gui_form.addRow(self.gui_layer_editor_visible_check)
+        gui_form.addRow(self.gui_layer_start_visible_check)
         gui_form.addRow("Size:", self.gui_layer_size_label)
         gui_layer_btns = QHBoxLayout()
         gui_layer_btns.addWidget(self.btn_add_gui_layer)
@@ -2095,15 +2113,21 @@ class SceneEditorWidget(QWidget):
             self.gui_layer_z_spin.blockSignals(True)
             self.gui_layer_z_spin.setValue(0)
             self.gui_layer_z_spin.blockSignals(False)
+            self.gui_layer_editor_visible_check.setEnabled(False)
+            self.gui_layer_start_visible_check.setEnabled(False)
+            self._set_gui_layer_visibility_checks(True, True)
             self.gui_layer_size_label.setText("—")
         else:
             self.gui_layer_asset_combo.setEnabled(True)
             self.gui_layer_z_spin.setEnabled(True)
+            self.gui_layer_editor_visible_check.setEnabled(True)
+            self.gui_layer_start_visible_check.setEnabled(True)
             active = max(0, self.gui_layer_combo.currentIndex())
             self.gui_layer_combo.setCurrentIndex(min(active, self.scene.gui_layer_count - 1))
             gui_layer = self.scene.gui_layers[self.gui_layer_combo.currentIndex()]
             self._sync_gui_layer_asset_combo()
             self._sync_gui_layer_z_spin(gui_layer)
+            self._set_gui_layer_visibility_checks(gui_layer.editor_visible, gui_layer.visible)
             self._update_gui_layer_size_label(gui_layer)
         self.gui_layer_combo.blockSignals(False)
         self.btn_add_gui_layer.setEnabled(self.scene.gui_layer_count < MAX_SCENE_GUI_LAYERS)
@@ -2113,6 +2137,14 @@ class SceneEditorWidget(QWidget):
         self.gui_layer_z_spin.blockSignals(True)
         self.gui_layer_z_spin.setValue(gui_layer.z_index)
         self.gui_layer_z_spin.blockSignals(False)
+
+    def _set_gui_layer_visibility_checks(self, editor_visible: bool, start_visible: bool) -> None:
+        self.gui_layer_editor_visible_check.blockSignals(True)
+        self.gui_layer_editor_visible_check.setChecked(editor_visible)
+        self.gui_layer_editor_visible_check.blockSignals(False)
+        self.gui_layer_start_visible_check.blockSignals(True)
+        self.gui_layer_start_visible_check.setChecked(start_visible)
+        self.gui_layer_start_visible_check.blockSignals(False)
 
     def _sync_gui_layer_asset_combo(self) -> None:
         self.gui_layer_asset_combo.blockSignals(True)
@@ -2408,6 +2440,7 @@ class SceneEditorWidget(QWidget):
         gui_layer = self.scene.gui_layers[index]
         self._sync_gui_layer_asset_combo()
         self._sync_gui_layer_z_spin(gui_layer)
+        self._set_gui_layer_visibility_checks(gui_layer.editor_visible, gui_layer.visible)
         self._update_gui_layer_size_label(gui_layer)
 
     def _on_gui_layer_z_changed(self, value: int) -> None:
@@ -2426,6 +2459,30 @@ class SceneEditorWidget(QWidget):
         self.gui_layer_combo.setItemText(gui_layer_index, f"{gui_layer_index}: {gui_layer.name}{suffix}")
         self.gui_layer_combo.blockSignals(False)
         self._refresh_map()
+
+    def _on_gui_layer_editor_visible_toggled(self, checked: bool) -> None:
+        if not self.scene:
+            return
+        gui_layer_index = self._active_gui_layer_index()
+        if gui_layer_index < 0:
+            return
+        gui_layer = self.scene.gui_layers[gui_layer_index]
+        if gui_layer.editor_visible == checked:
+            return
+        gui_layer.editor_visible = checked
+        self._refresh_map()
+
+    def _on_gui_layer_start_visible_toggled(self, checked: bool) -> None:
+        if not self.scene:
+            return
+        gui_layer_index = self._active_gui_layer_index()
+        if gui_layer_index < 0:
+            return
+        gui_layer = self.scene.gui_layers[gui_layer_index]
+        if gui_layer.visible == checked:
+            return
+        gui_layer.visible = checked
+        self._mark_dirty()
 
     def _on_gui_layer_asset_changed(self, index: int) -> None:
         if not self.scene or index < 0:

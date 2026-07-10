@@ -782,7 +782,7 @@ class SceneRenderer:
                 composite.blit(surface, (round(draw_x), round(draw_y)))
             else:
                 scene_gui = payload
-                if not scene_gui.gui_layer:
+                if not scene_gui.visible or not scene_gui.gui_layer:
                     continue
                 gui_layer = self._gui_layer(scene_gui.gui_layer)
                 if gui_layer is None:
@@ -847,7 +847,7 @@ class SceneRenderer:
                 view.blit(surface, (round(draw_x), round(draw_y)))
             else:
                 scene_gui = payload
-                if not scene_gui.gui_layer:
+                if not scene_gui.visible or not scene_gui.gui_layer:
                     continue
                 gui_layer = self._gui_layer(scene_gui.gui_layer)
                 if gui_layer is None:

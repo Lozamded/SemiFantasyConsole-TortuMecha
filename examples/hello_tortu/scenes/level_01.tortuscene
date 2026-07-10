@@ -4848,7 +4848,8 @@
     {
       "name": "gui_layer_1",
       "gui_layer": "assets/gui/dialog.tortuguilayer",
-      "z_index": 1
+      "z_index": 1,
+      "visible": false
     }
   ]
 }
