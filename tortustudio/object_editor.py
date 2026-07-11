@@ -1333,6 +1333,7 @@ class ObjectEditorWidget(QWidget):
         rel = script_path.resolve().relative_to(self.project_root.resolve()).as_posix()
         self.script_edit.setText(rel)
         self._on_fields_changed()
+        write_object_auto_script(self.tortu_object, self.project_root)
         self._open_script_in_editor()
 
     def _browse_script(self) -> None:

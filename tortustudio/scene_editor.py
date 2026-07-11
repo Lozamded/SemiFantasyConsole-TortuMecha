@@ -2998,6 +2998,8 @@ class SceneEditorWidget(QWidget):
             script_path.write_text(template, encoding="utf-8")
         rel = script_path.resolve().relative_to(self.project_root.resolve()).as_posix()
         self.script_edit.setText(rel)
+        if self.scene is not None:
+            write_scene_auto_script(self.scene, self.project_root)
         self._open_script_in_editor()
 
     def _get_dragged_object_data(self, obj_idx: int) -> str:
@@ -3015,17 +3017,10 @@ class SceneEditorWidget(QWidget):
         inst = self.scene.objects[obj_idx]
         if inst.id:
             return inst.id
-        existing_ids = {o.id for o in self.scene.objects if o.id}
-        base = Path(inst.prefab).stem or "object"
-        n = 1
-        candidate = f"{base}{n}"
-        while candidate in existing_ids:
-            n += 1
-            candidate = f"{base}{n}"
-        inst.id = candidate
+        inst.id = self.scene.unique_object_id(inst.prefab)
         self._mark_dirty()
         self._refresh_objects_list()
-        return candidate
+        return inst.id
 
     def _refresh_camera_target_combo(self) -> None:
         self.camera_target_combo.blockSignals(True)

@@ -8,6 +8,7 @@
     }
   ],
   "solid": true,
+  "script": "scripts/red_slime.py",
   "origin": {
     "x": 14,
     "y": 23

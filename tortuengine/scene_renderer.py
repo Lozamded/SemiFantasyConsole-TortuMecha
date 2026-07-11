@@ -182,7 +182,7 @@ class SceneRenderer:
         if dt <= 0:
             return
 
-        instance_api.bind_scene(scene)
+        instance_api.bind_scene(scene, self.project_root)
         self._sync_instance_scripts(scene, engine)
         for index, script in enumerate(self._instance_scripts):
             if script is None:

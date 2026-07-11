@@ -5,7 +5,6 @@
   "collision_tile_layer": 0,
   "script": "scripts/level_01.py",
   "camera_script": "scripts/camera_follow.py",
-  "camera_target": "assets/objects/mechaturtle.tortuobject",
   "bg_layers": [
     {
       "name": "scene_bg_0",
@@ -780,9 +779,9 @@
         -1,
         -1,
         -1,
-        -1,
-        -1,
-        -1,
+        4,
+        5,
+        6,
         -1,
         -1,
         -1,
@@ -853,11 +852,11 @@
         -1,
         -1,
         -1,
+        7,
         -1,
-        -1,
-        -1,
-        -1,
-        -1,
+        8,
+        9,
+        9,
         -1,
         -1,
         -1,
@@ -927,13 +926,13 @@
         -1,
         -1,
         -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
+        4,
+        5,
+        5,
+        5,
+        5,
+        5,
+        6,
         -1,
         -1,
         -1,
@@ -1002,13 +1001,13 @@
         -1,
         -1,
         -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
+        12,
+        13,
+        13,
+        13,
+        13,
+        13,
+        14,
         -1,
         -1,
         -1,
@@ -4798,11 +4797,6 @@
   ],
   "objects": [
     {
-      "object": "assets/objects/mechaturtle.tortuobject",
-      "x": 34,
-      "y": 191
-    },
-    {
       "object": "assets/objects/robot.tortuobject",
       "x": 119,
       "y": 127,
@@ -4840,8 +4834,9 @@
     },
     {
       "object": "assets/objects/red_slime.tortuobject",
-      "x": 520,
-      "y": 175
+      "x": 526,
+      "y": 169,
+      "id": "red_slime1"
     },
     {
       "object": "assets/objects/enemycollider.tortuobject",
@@ -4854,6 +4849,24 @@
       "x": 585,
       "y": 185,
       "visible": false
+    },
+    {
+      "object": "assets/objects/enemycollider.tortuobject",
+      "x": 632,
+      "y": 170,
+      "visible": false
+    },
+    {
+      "object": "assets/objects/enemycollider.tortuobject",
+      "x": 761,
+      "y": 169,
+      "visible": false
+    },
+    {
+      "object": "assets/objects/red_slime.tortuobject",
+      "x": 713,
+      "y": 117,
+      "id": "red_slime2"
     }
   ],
   "gui_layers": [

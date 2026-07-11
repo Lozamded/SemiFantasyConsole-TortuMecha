@@ -249,6 +249,17 @@ class Scene:
         ]
         return cls(palette, width, height, tile_layers, [], collision_tile_layer=0)
 
+    def unique_object_id(self, prefab: str) -> str:
+        """A scene-unique id derived from the prefab name (e.g. red_slime1, red_slime2)."""
+        existing_ids = {o.id for o in self.objects if o.id}
+        base = Path(prefab).stem or "object"
+        n = 1
+        candidate = f"{base}{n}"
+        while candidate in existing_ids:
+            n += 1
+            candidate = f"{base}{n}"
+        return candidate
+
     def add_object(
         self,
         prefab: str,
@@ -262,6 +273,7 @@ class Scene:
     ) -> int:
         if len(self.objects) >= MAX_SCENE_OBJECTS:
             raise ValueError(f"Scene cannot have more than {MAX_SCENE_OBJECTS} objects")
+        obj_id = obj_id or self.unique_object_id(prefab)
         self.objects.append(SceneObject(prefab, x, y, animation, z_index, obj_id, scale=scale))
         return len(self.objects) - 1
 

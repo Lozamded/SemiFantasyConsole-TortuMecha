@@ -9,7 +9,7 @@ import pygame
 from tortuengine.bake import bake_sprite_frame
 from tortuengine import instance_api
 from tortuengine.object import load_object
-from . import mechaturtle_player_auto as auto
+from scripts._generated import mechaturtle_player_auto as auto
 from tortuengine.palette import load_palette, palette_path
 from tortuengine.scene import load_scene
 from tortuengine.scene_renderer import SceneRenderer
