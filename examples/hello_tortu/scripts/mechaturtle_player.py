@@ -11,7 +11,7 @@ from tortuengine import instance_api
 from tortuengine.object import load_object
 from scripts._generated import mechaturtle_player_auto as auto
 from tortuengine.palette import load_palette, palette_path
-from tortuengine.scene import load_scene
+from tortuengine.scene import SceneObject, load_scene
 from tortuengine.scene_renderer import SceneRenderer
 from tortuengine.sprite import load_sprite
 from tortuengine.tileset import (
@@ -27,6 +27,8 @@ from tortuengine.tileset import (
 
 ROOT = Path(__file__).parent.parent
 _PREFAB_PATH = "assets/objects/mechaturtle.tortuobject"
+ATTACK_COLLIDER_PREFAB = "assets/objects/collider_mechaturtle_attack.tortuobject"
+ATTACK_COLLIDER_ID = "mechaturtle_attack_hitbox"
 
 SCREEN_W, SCREEN_H = 264, 198
 TILE_SIZE = 16
@@ -43,8 +45,12 @@ ATTACK_DUR = 0.4
 # auto.COLLIDER_BODY alone (crouch) — see mechaturtle.tortuobject in TortuStudio.
 STAND_HB_L = STAND_HB_R = STAND_HB_T = STAND_HB_B = 0
 CROUCH_HB_L = CROUCH_HB_R = CROUCH_HB_T = CROUCH_HB_B = 0
+ATK_HB_L = ATK_HB_R = ATK_HB_T = ATK_HB_B = 0
 
 _scene = None
+# Attack hitbox scene object — spawned once in init(), repositioned and
+# shown/hidden each frame in update() rather than added/removed per swing.
+_attack_obj: SceneObject | None = None
 _collision_tileset = None
 _renderer: SceneRenderer | None = None
 # _frames[anim] = (normal_list, flipped_list), pre-baked at init
@@ -181,6 +187,16 @@ def _scan_v(
     return False
 
 
+def _resolve_bounds(colliders, ox: int, oy: int, sw: int, sh: int) -> tuple[int, int, int, int]:
+    res = [c.resolved(sw, sh) for c in colliders]
+    return (
+        min(x for x, y, w, h in res) - ox,
+        max(x + w for x, y, w, h in res) - ox,
+        min(y for x, y, w, h in res) - oy,
+        max(y + h for x, y, w, h in res) - oy,
+    )
+
+
 def _can_uncrouch() -> bool:
     """True if the tiles in the head zone are clear enough to stand up."""
     if STAND_HB_T >= CROUCH_HB_T:
@@ -281,8 +297,9 @@ def init(engine) -> None:
     global _crouching, _prev_down
     global STAND_HB_L, STAND_HB_R, STAND_HB_T, STAND_HB_B
     global CROUCH_HB_L, CROUCH_HB_R, CROUCH_HB_T, CROUCH_HB_B
+    global ATK_HB_L, ATK_HB_R, ATK_HB_T, ATK_HB_B
     global _sfx_jump, _sfx_shell, _sfx_attack, _is_camera_target
-    global _engine
+    global _engine, _attack_obj
 
     _engine = engine
     _px, _py = 34.0, 191.0
@@ -330,18 +347,27 @@ def init(engine) -> None:
                 f"mechaturtle.tortuobject is missing collider(s) {sorted(names)!r} "
                 "expected by mechaturtle_player.py — check the collider names in TortuStudio."
             )
-        res = [c.resolved(sw, sh) for c in cols]
-        return (
-            min(x for x, y, w, h in res) - ox,
-            max(x + w for x, y, w, h in res) - ox,
-            min(y for x, y, w, h in res) - oy,
-            max(y + h for x, y, w, h in res) - oy,
-        )
+        return _resolve_bounds(cols, ox, oy, sw, sh)
 
     STAND_HB_L, STAND_HB_R, STAND_HB_T, STAND_HB_B = _bounds(
         {auto.COLLIDER_BODY, auto.COLLIDER_HEAD}
     )
     CROUCH_HB_L, CROUCH_HB_R, CROUCH_HB_T, CROUCH_HB_B = _bounds({auto.COLLIDER_BODY})
+
+    # Attack hitbox bounds, resolved from its own prefab the same way — and
+    # the hitbox scene object itself, spawned once and repositioned/shown
+    # per swing in update() rather than added/removed every attack.
+    atk_obj = load_object(ROOT / ATTACK_COLLIDER_PREFAB)
+    atk_sprite = load_sprite(ROOT / atk_obj.default_sprite)
+    ATK_HB_L, ATK_HB_R, ATK_HB_T, ATK_HB_B = _resolve_bounds(
+        atk_obj.colliders, atk_obj.origin.x, atk_obj.origin.y,
+        atk_sprite.pixel_width, atk_sprite.pixel_height,
+    )
+    atk_idx = _scene.add_object(
+        ATTACK_COLLIDER_PREFAB, 0, 0, z_index=1, obj_id=ATTACK_COLLIDER_ID
+    )
+    _attack_obj = _scene.objects[atk_idx]
+    _attack_obj.visible = False
 
     _frames.clear()
     for anim in _ANIMS:
@@ -463,6 +489,19 @@ def update(dt: float) -> None:
             _sfx_jump.play()
 
     _physics(dt, hb_l, hb_r, hb_t, hb_b)
+
+    if _attack_obj is not None:
+        # Stays invisible always — it's a hit-detection volume, not a drawn
+        # effect. `enabled` is the "is the swing currently active" signal
+        # red_slime.py checks via instance_api.is_enabled().
+        _attack_obj.enabled = attacking
+        if attacking:
+            if _facing == 1:
+                atk_x = _px + STAND_HB_R - ATK_HB_L
+            else:
+                atk_x = _px + STAND_HB_L - ATK_HB_R
+            atk_y = _py + (STAND_HB_T + STAND_HB_B) / 2 - (ATK_HB_T + ATK_HB_B) / 2
+            _attack_obj.x, _attack_obj.y = atk_x, atk_y
 
     # Animation state
     new_state: str

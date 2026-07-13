@@ -58,11 +58,24 @@ def set_position(instance_id: str, x: float, y: float) -> None:
         inst.x, inst.y = x, y
 
 
-def prefab_positions(prefab: str) -> list[tuple[float, float]]:
-    """World positions of every enabled scene object instancing the given prefab path."""
+def set_animation(instance_id: str, animation: str) -> None:
+    inst = _find(instance_id)
+    if inst is not None:
+        inst.animation = animation
+
+
+def prefab_positions(prefab: str, exclude_id: str = "") -> list[tuple[float, float]]:
+    """World positions of every enabled scene object instancing the given prefab path.
+
+    Pass `exclude_id` (typically SELF_ID) to leave out one instance — e.g. so a script
+    can find *other* instances of its own prefab without matching itself.
+    """
     if not _scene:
         return []
-    return [(inst.x, inst.y) for inst in _scene.objects if inst.prefab == prefab and inst.enabled]
+    return [
+        (inst.x, inst.y) for inst in _scene.objects
+        if inst.prefab == prefab and inst.enabled and (not exclude_id or inst.id != exclude_id)
+    ]
 
 
 def is_visible(instance_id: str) -> bool:

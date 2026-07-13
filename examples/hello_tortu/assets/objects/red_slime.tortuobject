@@ -5,6 +5,10 @@
     {
       "name": "idle",
       "sprite": "assets/sprites/red_sli.tortusprite"
+    },
+    {
+      "name": "defeat",
+      "sprite": "assets/sprites/red_sli_defeat.tortusprite"
     }
   ],
   "solid": true,

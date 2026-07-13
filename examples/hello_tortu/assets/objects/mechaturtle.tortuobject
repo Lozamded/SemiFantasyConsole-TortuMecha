@@ -58,5 +58,8 @@
       "h": 12,
       "active": true
     }
+  ],
+  "spawnable_objects": [
+    "assets/objects/collider_mechaturtle_attack.tortuobject"
   ]
 }
