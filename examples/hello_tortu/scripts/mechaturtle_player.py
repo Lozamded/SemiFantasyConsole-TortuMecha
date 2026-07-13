@@ -10,6 +10,7 @@ from tortuengine.bake import bake_sprite_frame
 from tortuengine import instance_api
 from tortuengine.object import load_object
 from scripts._generated import mechaturtle_player_auto as auto
+from scripts._generated import red_slime_auto as slime_auto
 from tortuengine.palette import load_palette, palette_path
 from tortuengine.scene import SceneObject, load_scene
 from tortuengine.scene_renderer import SceneRenderer
@@ -29,6 +30,7 @@ ROOT = Path(__file__).parent.parent
 _PREFAB_PATH = "assets/objects/mechaturtle.tortuobject"
 ATTACK_COLLIDER_PREFAB = "assets/objects/collider_mechaturtle_attack.tortuobject"
 ATTACK_COLLIDER_ID = "mechaturtle_attack_hitbox"
+SLIME_PREFAB = "assets/objects/red_slime.tortuobject"
 
 SCREEN_W, SCREEN_H = 264, 198
 TILE_SIZE = 16
@@ -39,6 +41,8 @@ JUMP_CUT = 0.35     # velocity multiplier on early jump-button release
 COYOTE_TIME = 0.1
 JUMP_BUFFER = 0.1
 ATTACK_DUR = 0.4
+HURT_DUR = 0.4
+KNOCKBACK_SPEED = 140.0
 
 # Hitbox offsets from the character origin. Resolved in init() from the
 # auto.COLLIDER_BODY + auto.COLLIDER_HEAD colliders (stand) and
@@ -46,6 +50,7 @@ ATTACK_DUR = 0.4
 STAND_HB_L = STAND_HB_R = STAND_HB_T = STAND_HB_B = 0
 CROUCH_HB_L = CROUCH_HB_R = CROUCH_HB_T = CROUCH_HB_B = 0
 ATK_HB_L = ATK_HB_R = ATK_HB_T = ATK_HB_B = 0
+SLIME_HB_L = SLIME_HB_R = SLIME_HB_T = SLIME_HB_B = 0
 
 _scene = None
 # Attack hitbox scene object — spawned once in init(), repositioned and
@@ -72,6 +77,8 @@ _prev_attack = False
 _was_on_ground = False
 _crouching = False
 _prev_down = False
+_hurt_timer = 0.0
+_knockback_dir = 1  # -1 = pushed left, 1 = pushed right; set when a hit lands
 
 _sfx_jump: pygame.mixer.Sound | None = None
 _sfx_shell: pygame.mixer.Sound | None = None
@@ -88,14 +95,14 @@ def set_camera(cam) -> None:
 
 _ANIM_FPS: dict[str, int] = {
     auto.ANIM_IDLE: 8, auto.ANIM_WALK: 8, auto.ANIM_JUMP: 6, auto.ANIM_FALL: 8,
-    auto.ANIM_ATTACK: 5, auto.ANIM_AIR_ATTACK: 5, auto.ANIM_CROUCH: 3,
+    auto.ANIM_ATTACK: 5, auto.ANIM_AIR_ATTACK: 5, auto.ANIM_CROUCH: 3, auto.ANIM_DAMAGE: 8,
 }
 _ANIM_NOLOOP: frozenset[str] = frozenset({
-    auto.ANIM_JUMP, auto.ANIM_ATTACK, auto.ANIM_AIR_ATTACK, auto.ANIM_CROUCH,
+    auto.ANIM_JUMP, auto.ANIM_ATTACK, auto.ANIM_AIR_ATTACK, auto.ANIM_CROUCH, auto.ANIM_DAMAGE,
 })
 _ANIMS = (
     auto.ANIM_IDLE, auto.ANIM_WALK, auto.ANIM_JUMP, auto.ANIM_FALL,
-    auto.ANIM_ATTACK, auto.ANIM_AIR_ATTACK, auto.ANIM_CROUCH,
+    auto.ANIM_ATTACK, auto.ANIM_AIR_ATTACK, auto.ANIM_CROUCH, auto.ANIM_DAMAGE,
 )
 
 
@@ -298,8 +305,9 @@ def init(engine) -> None:
     global STAND_HB_L, STAND_HB_R, STAND_HB_T, STAND_HB_B
     global CROUCH_HB_L, CROUCH_HB_R, CROUCH_HB_T, CROUCH_HB_B
     global ATK_HB_L, ATK_HB_R, ATK_HB_T, ATK_HB_B
+    global SLIME_HB_L, SLIME_HB_R, SLIME_HB_T, SLIME_HB_B
     global _sfx_jump, _sfx_shell, _sfx_attack, _is_camera_target
-    global _engine, _attack_obj
+    global _engine, _attack_obj, _hurt_timer, _knockback_dir
 
     _engine = engine
     _px, _py = 34.0, 191.0
@@ -311,6 +319,7 @@ def init(engine) -> None:
     _prev_jump, _prev_attack = False, False
     _was_on_ground = False
     _crouching, _prev_down = False, False
+    _hurt_timer, _knockback_dir = 0.0, 1
 
     scene_path = ROOT / "scenes/level_01.tortuscene"
     _scene = load_scene(scene_path, project_root=ROOT)
@@ -369,6 +378,15 @@ def init(engine) -> None:
     _attack_obj = _scene.objects[atk_idx]
     _attack_obj.visible = False
 
+    # Enemy contact hitbox — resolved from the red_slime prefab the same way,
+    # used to detect touch-damage against live (enabled) slime instances.
+    slime_obj = load_object(ROOT / SLIME_PREFAB)
+    slime_sprite = load_sprite(ROOT / slime_obj.default_sprite)
+    SLIME_HB_L, SLIME_HB_R, SLIME_HB_T, SLIME_HB_B = _resolve_bounds(
+        slime_obj.colliders, slime_obj.origin.x, slime_obj.origin.y,
+        slime_sprite.pixel_width, slime_sprite.pixel_height,
+    )
+
     _frames.clear()
     for anim in _ANIMS:
         sp = load_sprite(ROOT / f"assets/sprites/mechaturtle_{anim}.tortusprite")
@@ -406,6 +424,7 @@ def update(dt: float) -> None:
     global _attack_timer, _coyote_timer, _jump_buffer_timer
     global _prev_jump, _prev_attack, _was_on_ground
     global _crouching, _prev_down
+    global _hurt_timer, _knockback_dir
 
     keys = pygame.key.get_pressed()
     jump_held  = keys[pygame.K_z] or keys[pygame.K_SPACE] or keys[pygame.K_UP] or keys[pygame.K_w]
@@ -439,6 +458,29 @@ def update(dt: float) -> None:
     else:
         hb_l, hb_r, hb_t, hb_b = STAND_HB_L, STAND_HB_R, STAND_HB_T, STAND_HB_B
 
+    if _hurt_timer > 0:
+        _hurt_timer = max(0.0, _hurt_timer - dt)
+    hurt = _hurt_timer > 0
+
+    # Touch-damage: only look for a new hit while not already reeling from one.
+    # Crouching is immune — red_slime.py bounces off a crouched turtle instead
+    # (see its own player_hitbox()/player_is_crouching() check).
+    if not hurt and not _crouching and _scene is not None:
+        px_l, px_r = _px + hb_l, _px + hb_r
+        py_t, py_b = _py + hb_t, _py + hb_b
+        for inst in _scene.objects:
+            if inst.prefab != SLIME_PREFAB or not inst.enabled:
+                continue
+            if inst.animation == slime_auto.ANIM_DEFEAT:
+                continue  # already defeated, mid death-animation — harmless
+            s_l, s_r = inst.x + SLIME_HB_L, inst.x + SLIME_HB_R
+            s_t, s_b = inst.y + SLIME_HB_T, inst.y + SLIME_HB_B
+            if px_l < s_r and px_r > s_l and py_t < s_b and py_b > s_t:
+                _hurt_timer = HURT_DUR
+                hurt = True
+                _knockback_dir = -1 if _px < inst.x else 1
+                break
+
     if jump_released and _vy < 0:
         _vy *= JUMP_CUT
 
@@ -457,7 +499,7 @@ def update(dt: float) -> None:
         _attack_timer = max(0.0, _attack_timer - dt)
     attacking = _attack_timer > 0
 
-    if atk_pressed and not attacking and not _crouching:
+    if atk_pressed and not attacking and not _crouching and not hurt:
         _attack_timer = ATTACK_DUR
         attacking = True
         if _sfx_attack:
@@ -465,8 +507,11 @@ def update(dt: float) -> None:
         if _on_ground:
             _vx = 0.0
 
-    # Horizontal input — suppressed on ground while attacking or crouching
-    if not (attacking and _on_ground) and not _crouching:
+    # Horizontal input — knockback overrides input while hurt; otherwise
+    # suppressed on ground while attacking or crouching
+    if hurt:
+        _vx = _knockback_dir * KNOCKBACK_SPEED
+    elif not (attacking and _on_ground) and not _crouching:
         if right:
             _vx = WALK_SPEED
             _facing = 1
@@ -478,8 +523,8 @@ def update(dt: float) -> None:
     elif _crouching:
         _vx = 0.0
 
-    # Jump — not allowed while crouching
-    can_jump = (_on_ground or _coyote_timer > 0) and not _crouching
+    # Jump — not allowed while crouching or reeling from a hit
+    can_jump = (_on_ground or _coyote_timer > 0) and not _crouching and not hurt
     if can_jump and _jump_buffer_timer > 0:
         _vy = JUMP_VEL
         _on_ground = False
@@ -505,7 +550,9 @@ def update(dt: float) -> None:
 
     # Animation state
     new_state: str
-    if _crouching:
+    if hurt:
+        new_state = auto.ANIM_DAMAGE
+    elif _crouching:
         new_state = auto.ANIM_CROUCH
     elif attacking:
         new_state = auto.ANIM_ATTACK if _on_ground else auto.ANIM_AIR_ATTACK
@@ -538,6 +585,8 @@ def update(dt: float) -> None:
     if _camera and _is_camera_target:
         _camera.update(dt, _px, _py)
     instance_api.set_player_position(_px, _py)
+    instance_api.set_player_crouching(_crouching)
+    instance_api.set_player_hitbox(_px + hb_l, _px + hb_r, _py + hb_t, _py + hb_b)
     if _renderer and _scene:
         _renderer.tick(_scene, dt, _engine)
 

@@ -17,6 +17,10 @@ _scene: Scene | None = None
 _project_root: Path | None = None
 _player_x: float = 0.0
 _player_y: float = 0.0
+_player_crouching: bool = False
+# World-space (left, right, top, bottom) of the player's current active
+# hitbox — crouch-aware, since it swaps between stand/crouch bounds.
+_player_hitbox: tuple[float, float, float, float] | None = None
 _tileset_cache: dict[str, Tileset] = {}
 
 
@@ -36,6 +40,26 @@ def set_player_position(x: float, y: float) -> None:
 
 def player_position() -> tuple[float, float]:
     return _player_x, _player_y
+
+
+def set_player_crouching(crouching: bool) -> None:
+    """Call every frame from the player controller script."""
+    global _player_crouching
+    _player_crouching = crouching
+
+
+def player_is_crouching() -> bool:
+    return _player_crouching
+
+
+def set_player_hitbox(left: float, right: float, top: float, bottom: float) -> None:
+    """Call every frame from the player controller script with its current active hitbox."""
+    global _player_hitbox
+    _player_hitbox = (left, right, top, bottom)
+
+
+def player_hitbox() -> tuple[float, float, float, float] | None:
+    return _player_hitbox
 
 
 def _find(instance_id: str):

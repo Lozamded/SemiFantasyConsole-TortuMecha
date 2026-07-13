@@ -144,6 +144,13 @@ def update(dt: float) -> None:
             _direction *= -1
             break
 
+    if instance_api.player_is_crouching():
+        p_hb = instance_api.player_hitbox()
+        if p_hb is not None:
+            p_left, p_right, p_top, p_bottom = p_hb
+            if _overlaps(left, right, top, bottom, p_left, p_right, p_top, p_bottom):
+                _direction *= -1
+
     for ox, oy in instance_api.prefab_positions(SLIME_PREFAB, exclude_id=SELF_ID):
         other_left, other_right = ox + _hb_l, ox + _hb_r
         other_top, other_bottom = oy + _hb_t, oy + _hb_b
