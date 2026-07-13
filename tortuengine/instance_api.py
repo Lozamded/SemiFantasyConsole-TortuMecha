@@ -9,9 +9,13 @@ TortuPlayer, or an exported cart.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, Callable
 
 from tortuengine.scene import Scene
 from tortuengine.tileset import COLLISION_NONE, Tileset, load_tileset
+
+if TYPE_CHECKING:
+    from tortuengine.gui_layer import GuiLayer
 
 _scene: Scene | None = None
 _project_root: Path | None = None
@@ -22,6 +26,10 @@ _player_crouching: bool = False
 # hitbox — crouch-aware, since it swaps between stand/crouch bounds.
 _player_hitbox: tuple[float, float, float, float] | None = None
 _tileset_cache: dict[str, Tileset] = {}
+# Renderer-owned GuiLayer loader (rel_path -> live, cached GuiLayer), so
+# scripts can drive HUD elements (health bars, pip counters) without
+# instance_api duplicating gui-layer loading/caching itself.
+_gui_layer_loader: Callable[[str], "GuiLayer | None"] | None = None
 
 
 def bind_scene(scene: Scene, project_root: Path | None = None) -> None:
@@ -60,6 +68,48 @@ def set_player_hitbox(left: float, right: float, top: float, bottom: float) -> N
 
 def player_hitbox() -> tuple[float, float, float, float] | None:
     return _player_hitbox
+
+
+def bind_gui_layers(loader: Callable[[str], "GuiLayer | None"]) -> None:
+    """Call once per scene load with a callable(rel_path) -> GuiLayer | None."""
+    global _gui_layer_loader
+    _gui_layer_loader = loader
+
+
+def _find_gui_element(gui_layer_path: str, element_id: str, attr: str):
+    if _gui_layer_loader is None or not gui_layer_path or not element_id:
+        return None
+    layer = _gui_layer_loader(gui_layer_path)
+    if layer is None:
+        return None
+    for element in getattr(layer, attr):
+        if element.id == element_id:
+            return element
+    return None
+
+
+def set_gui_tiled_rect_value(gui_layer_path: str, rect_id: str, value: float) -> None:
+    """Set a `.tortuguilayer` tiled rect's fill fraction (0..1) — e.g. a health bar."""
+    rect = _find_gui_element(gui_layer_path, rect_id, "tiled_rects")
+    if rect is not None:
+        rect.value = max(0.0, min(1.0, value))
+
+
+def gui_tiled_rect_value(gui_layer_path: str, rect_id: str) -> float | None:
+    rect = _find_gui_element(gui_layer_path, rect_id, "tiled_rects")
+    return rect.value if rect is not None else None
+
+
+def set_gui_repeat_sprite_count(gui_layer_path: str, sprite_id: str, count: int) -> None:
+    """Set a `.tortuguilayer` repeat sprite's filled count — e.g. remaining life pips."""
+    rep = _find_gui_element(gui_layer_path, sprite_id, "repeat_sprites")
+    if rep is not None:
+        rep.count = max(0, count)
+
+
+def gui_repeat_sprite_count(gui_layer_path: str, sprite_id: str) -> int | None:
+    rep = _find_gui_element(gui_layer_path, sprite_id, "repeat_sprites")
+    return rep.count if rep is not None else None
 
 
 def _find(instance_id: str):

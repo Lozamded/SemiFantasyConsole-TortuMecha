@@ -14,6 +14,18 @@ DEFAULT_GUI_LAYER_HEIGHT = SCREEN_HEIGHT
 EMPTY_TILE = -1
 MAX_GUI_OBJECTS = 64
 MAX_GUI_TEXT_LABELS = 32
+MAX_GUI_TILED_RECTS = 16
+MAX_GUI_REPEAT_SPRITES = 16
+
+FILL_LEFT_TO_RIGHT = "left_to_right"
+FILL_RIGHT_TO_LEFT = "right_to_left"
+FILL_TOP_TO_BOTTOM = "top_to_bottom"
+FILL_BOTTOM_TO_TOP = "bottom_to_top"
+FILL_DIRECTIONS = (FILL_LEFT_TO_RIGHT, FILL_RIGHT_TO_LEFT, FILL_TOP_TO_BOTTOM, FILL_BOTTOM_TO_TOP)
+
+REPEAT_HORIZONTAL = "horizontal"
+REPEAT_VERTICAL = "vertical"
+REPEAT_DIRECTIONS = (REPEAT_HORIZONTAL, REPEAT_VERTICAL)
 
 
 def grid_columns(width_px: int, tile_size: int) -> int:
@@ -30,6 +42,16 @@ def grid_rows(height_px: int, tile_size: int) -> int:
 
 def _blank_tile_grid(cols: int, rows: int) -> list[int]:
     return [EMPTY_TILE] * (cols * rows)
+
+
+def _unique_element_id(existing_ids: set[str], base: str) -> str:
+    base = base or "element"
+    n = 1
+    candidate = f"{base}{n}"
+    while candidate in existing_ids:
+        n += 1
+        candidate = f"{base}{n}"
+    return candidate
 
 
 def _normalize_asset_path(path: str) -> str:
@@ -72,6 +94,65 @@ class GuiTextLabel:
 
 
 @dataclass
+class GuiTiledRect:
+    """Rect filled with a repeating sprite texture, cropped to `value` (0..1) along `fill_direction`.
+
+    Distinct from a stretched single image: the texture tiles to cover the
+    rect instead of scaling, so pixel-art patterns stay crisp at any bar
+    size. Typical use: a health/energy bar. `id` lets instance scripts find
+    and update it at runtime via instance_api.
+    """
+
+    id: str
+    texture: str
+    x: int
+    y: int
+    width: int
+    height: int
+    value: float = 1.0
+    fill_direction: str = FILL_LEFT_TO_RIGHT
+    visible: bool = True
+    enabled: bool = True
+
+    def copy(self) -> GuiTiledRect:
+        return GuiTiledRect(
+            self.id, self.texture, self.x, self.y, self.width, self.height,
+            self.value, self.fill_direction, self.visible, self.enabled,
+        )
+
+
+@dataclass
+class GuiRepeatSprite:
+    """A prefab drawn `count` times in a row/column — e.g. life pips or hearts.
+
+    Slots from `count` up to `max_count` draw `empty_animation` if set,
+    otherwise are simply skipped. `id` lets instance scripts find and update
+    it at runtime via instance_api.
+    """
+
+    id: str
+    prefab: str
+    x: int
+    y: int
+    count: int = 0
+    max_count: int = 0
+    spacing: int = 0
+    direction: str = REPEAT_HORIZONTAL
+    full_animation: str = ""
+    empty_animation: str = ""
+    scale: float = 1.0
+    visible: bool = True
+    enabled: bool = True
+
+    def copy(self) -> GuiRepeatSprite:
+        return GuiRepeatSprite(
+            self.id, self.prefab, self.x, self.y, self.count, self.max_count,
+            self.spacing, self.direction, self.full_animation, self.empty_animation,
+            self.scale, self.visible, self.enabled,
+        )
+
+
+@dataclass
 class GuiLayer:
     """Reusable GUI layer canvas: one tile layer + placed objects + text labels."""
 
@@ -83,6 +164,8 @@ class GuiLayer:
     tile_layer_visible: bool = True
     objects: list[GuiObject] = field(default_factory=list)
     text_labels: list[GuiTextLabel] = field(default_factory=list)
+    tiled_rects: list[GuiTiledRect] = field(default_factory=list)
+    repeat_sprites: list[GuiRepeatSprite] = field(default_factory=list)
     script: str = ""
 
     @classmethod
@@ -200,6 +283,96 @@ class GuiLayer:
                 best_index = index
         return best_index
 
+    def unique_tiled_rect_id(self, base: str = "bar") -> str:
+        return _unique_element_id({r.id for r in self.tiled_rects if r.id}, base)
+
+    def add_tiled_rect(
+        self,
+        texture: str,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        *,
+        rect_id: str = "",
+        value: float = 1.0,
+        fill_direction: str = FILL_LEFT_TO_RIGHT,
+    ) -> int:
+        if len(self.tiled_rects) >= MAX_GUI_TILED_RECTS:
+            raise ValueError(f"GUI layer cannot have more than {MAX_GUI_TILED_RECTS} tiled rects")
+        rect_id = rect_id or self.unique_tiled_rect_id()
+        self.tiled_rects.append(
+            GuiTiledRect(rect_id, texture, x, y, width, height, value, fill_direction)
+        )
+        return len(self.tiled_rects) - 1
+
+    def remove_tiled_rect(self, index: int) -> None:
+        if not (0 <= index < len(self.tiled_rects)):
+            raise IndexError(f"Tiled rect index out of range: {index}")
+        self.tiled_rects.pop(index)
+
+    def unique_repeat_sprite_id(self, base: str = "pips") -> str:
+        return _unique_element_id({s.id for s in self.repeat_sprites if s.id}, base)
+
+    def add_repeat_sprite(
+        self,
+        prefab: str,
+        x: int,
+        y: int,
+        *,
+        sprite_id: str = "",
+        count: int = 0,
+        max_count: int = 0,
+        spacing: int = 0,
+        direction: str = REPEAT_HORIZONTAL,
+        full_animation: str = "",
+        empty_animation: str = "",
+        scale: float = 1.0,
+    ) -> int:
+        if len(self.repeat_sprites) >= MAX_GUI_REPEAT_SPRITES:
+            raise ValueError(
+                f"GUI layer cannot have more than {MAX_GUI_REPEAT_SPRITES} repeat sprites"
+            )
+        sprite_id = sprite_id or self.unique_repeat_sprite_id()
+        self.repeat_sprites.append(
+            GuiRepeatSprite(
+                sprite_id, prefab, x, y, count, max_count, spacing, direction,
+                full_animation, empty_animation, scale,
+            )
+        )
+        return len(self.repeat_sprites) - 1
+
+    def remove_repeat_sprite(self, index: int) -> None:
+        if not (0 <= index < len(self.repeat_sprites)):
+            raise IndexError(f"Repeat sprite index out of range: {index}")
+        self.repeat_sprites.pop(index)
+
+    def find_tiled_rect_near(self, x: int, y: int, radius: int = 12) -> int | None:
+        radius_sq = radius * radius
+        best_index: int | None = None
+        best_dist = radius_sq + 1
+        for index, rect in enumerate(self.tiled_rects):
+            dx = rect.x - x
+            dy = rect.y - y
+            dist = dx * dx + dy * dy
+            if dist <= radius_sq and dist < best_dist:
+                best_dist = dist
+                best_index = index
+        return best_index
+
+    def find_repeat_sprite_near(self, x: int, y: int, radius: int = 12) -> int | None:
+        radius_sq = radius * radius
+        best_index: int | None = None
+        best_dist = radius_sq + 1
+        for index, rep in enumerate(self.repeat_sprites):
+            dx = rep.x - x
+            dy = rep.y - y
+            dist = dx * dx + dy * dy
+            if dist <= radius_sq and dist < best_dist:
+                best_dist = dist
+                best_index = index
+        return best_index
+
 
 def tile_size_for_gui_layer(gui_layer: GuiLayer, project_root: Path | None) -> int:
     if gui_layer.tileset and project_root is not None:
@@ -247,10 +420,46 @@ def load_gui_layer(path: Path, *, project_root: Path | None = None) -> GuiLayer:
         )
         for raw in data.get("text_labels", [])
     ]
+    tiled_rects = [
+        GuiTiledRect(
+            str(raw.get("id", "")).strip(),
+            _normalize_asset_path(str(raw.get("texture", ""))),
+            int(raw.get("x", 0)),
+            int(raw.get("y", 0)),
+            int(raw.get("width", 0)),
+            int(raw.get("height", 0)),
+            float(raw.get("value", 1.0)),
+            str(raw.get("fill_direction", FILL_LEFT_TO_RIGHT)),
+            bool(raw.get("visible", True)),
+            bool(raw.get("enabled", True)),
+        )
+        for raw in data.get("tiled_rects", [])
+        if raw.get("texture")
+    ]
+    repeat_sprites = [
+        GuiRepeatSprite(
+            str(raw.get("id", "")).strip(),
+            _normalize_asset_path(str(raw.get("object", raw.get("prefab", "")))),
+            int(raw.get("x", 0)),
+            int(raw.get("y", 0)),
+            int(raw.get("count", 0)),
+            int(raw.get("max_count", 0)),
+            int(raw.get("spacing", 0)),
+            str(raw.get("direction", REPEAT_HORIZONTAL)),
+            str(raw.get("full_animation", "")),
+            str(raw.get("empty_animation", "")),
+            float(raw.get("scale", 1.0)),
+            bool(raw.get("visible", True)),
+            bool(raw.get("enabled", True)),
+        )
+        for raw in data.get("repeat_sprites", [])
+        if raw.get("object", raw.get("prefab", ""))
+    ]
     script = _normalize_asset_path(str(data.get("script", "")))
 
     gui_layer = GuiLayer(
-        width, height, palette, tileset, tiles, tile_layer_visible, objects, text_labels, script
+        width, height, palette, tileset, tiles, tile_layer_visible, objects, text_labels,
+        tiled_rects, repeat_sprites, script,
     )
     gui_layer.ensure_tile_grid(tile_size_for_gui_layer(gui_layer, project_root))
     return gui_layer
@@ -287,6 +496,47 @@ def save_gui_layer(gui_layer: GuiLayer, path: Path) -> None:
                 **({"enabled": False} if not label.enabled else {}),
             }
             for label in gui_layer.text_labels
+        ],
+        "tiled_rects": [
+            {
+                "id": rect.id,
+                "texture": _normalize_asset_path(rect.texture),
+                "x": rect.x,
+                "y": rect.y,
+                "width": rect.width,
+                "height": rect.height,
+                **({"value": rect.value} if rect.value != 1.0 else {}),
+                **(
+                    {"fill_direction": rect.fill_direction}
+                    if rect.fill_direction != FILL_LEFT_TO_RIGHT
+                    else {}
+                ),
+                **({"visible": False} if not rect.visible else {}),
+                **({"enabled": False} if not rect.enabled else {}),
+            }
+            for rect in gui_layer.tiled_rects
+        ],
+        "repeat_sprites": [
+            {
+                "id": rep.id,
+                "object": _normalize_asset_path(rep.prefab),
+                "x": rep.x,
+                "y": rep.y,
+                "count": rep.count,
+                "max_count": rep.max_count,
+                **({"spacing": rep.spacing} if rep.spacing else {}),
+                **(
+                    {"direction": rep.direction}
+                    if rep.direction != REPEAT_HORIZONTAL
+                    else {}
+                ),
+                **({"full_animation": rep.full_animation} if rep.full_animation else {}),
+                **({"empty_animation": rep.empty_animation} if rep.empty_animation else {}),
+                **({"scale": rep.scale} if rep.scale != 1.0 else {}),
+                **({"visible": False} if not rep.visible else {}),
+                **({"enabled": False} if not rep.enabled else {}),
+            }
+            for rep in gui_layer.repeat_sprites
         ],
         **({"script": _normalize_asset_path(gui_layer.script)} if gui_layer.script else {}),
     }

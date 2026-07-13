@@ -21,7 +21,15 @@ from tortuengine.bake import (
 )
 from tortuengine.cart_manifest import CartManifest, tileset_manifest_key
 from tortuengine.constants import SCREEN_HEIGHT, SCREEN_WIDTH
-from tortuengine.gui_layer import GuiLayer, GuiTextLabel, load_gui_layer
+from tortuengine.gui_layer import (
+    FILL_BOTTOM_TO_TOP,
+    FILL_RIGHT_TO_LEFT,
+    FILL_TOP_TO_BOTTOM,
+    REPEAT_VERTICAL,
+    GuiLayer,
+    GuiTextLabel,
+    load_gui_layer,
+)
 from tortuengine.image import load_image
 from tortuengine import instance_api
 from tortuengine.instance_scripts import InstanceScript, load_instance_script
@@ -91,6 +99,7 @@ class SceneRenderer:
         self._bg_band_cache: _LRUCache = _LRUCache(32)
         self._png_cache: _LRUCache = _LRUCache(128)
         self._scaled_frame_cache: _LRUCache = _LRUCache(128)
+        self._gui_tile_cache: _LRUCache = _LRUCache(32)
 
     @classmethod
     def from_cart(cls, cart_root: Path, manifest: CartManifest) -> SceneRenderer:
@@ -118,6 +127,7 @@ class SceneRenderer:
         self._bg_cache.clear()
         self._bg_tiled_cache.clear()
         self._bg_band_cache.clear()
+        self._gui_tile_cache.clear()
         self._png_cache.clear()
 
     def reset_animations(self) -> None:
@@ -183,6 +193,7 @@ class SceneRenderer:
             return
 
         instance_api.bind_scene(scene, self.project_root)
+        instance_api.bind_gui_layers(self._gui_layer)
         self._sync_instance_scripts(scene, engine)
         for index, script in enumerate(self._instance_scripts):
             if script is None:
@@ -549,6 +560,21 @@ class SceneRenderer:
         self._scaled_frame_cache[cache_key] = scaled
         return scaled
 
+    def _tiled_gui_texture(
+        self, texture_path: str, sprite: Sprite, width: int, height: int
+    ) -> pygame.Surface | None:
+        """Pre-tile a GUI texture sprite to (width, height); cached per (path, size)."""
+        base = self._baked_sprite_frame(texture_path, sprite, 0)
+        if base is None:
+            return None
+        cache_key = (texture_path, width, height)
+        cached = self._gui_tile_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        tiled = build_tiled_surface(base, repeat_x=True, repeat_y=True, target_w=width, target_h=height)
+        self._gui_tile_cache[cache_key] = tiled
+        return tiled
+
     def _gui_layer(self, rel_path: str) -> GuiLayer | None:
         if not rel_path or self._cart_mode():
             return None
@@ -641,6 +667,79 @@ class SceneRenderer:
             draw_x = ox + inst.x - tortu_object.origin.x * inst.scale
             draw_y = oy + inst.y - tortu_object.origin.y * inst.scale
             target.blit(surface, (round(draw_x), round(draw_y)))
+
+        for rect in gui_layer.tiled_rects:
+            if not rect.visible or not rect.enabled or rect.width <= 0 or rect.height <= 0:
+                continue
+            sprite = self._sprite(rect.texture)
+            if sprite is None:
+                continue
+            tiled = self._tiled_gui_texture(rect.texture, sprite, rect.width, rect.height)
+            if tiled is None:
+                continue
+            value = max(0.0, min(1.0, rect.value))
+            if rect.fill_direction == FILL_RIGHT_TO_LEFT:
+                visible_w = round(rect.width * value)
+                src = pygame.Rect(rect.width - visible_w, 0, visible_w, rect.height)
+                dest = (ox + rect.x + rect.width - visible_w, oy + rect.y)
+            elif rect.fill_direction == FILL_TOP_TO_BOTTOM:
+                visible_h = round(rect.height * value)
+                src = pygame.Rect(0, 0, rect.width, visible_h)
+                dest = (ox + rect.x, oy + rect.y)
+            elif rect.fill_direction == FILL_BOTTOM_TO_TOP:
+                visible_h = round(rect.height * value)
+                src = pygame.Rect(0, rect.height - visible_h, rect.width, visible_h)
+                dest = (ox + rect.x, oy + rect.y + rect.height - visible_h)
+            else:  # left_to_right
+                visible_w = round(rect.width * value)
+                src = pygame.Rect(0, 0, visible_w, rect.height)
+                dest = (ox + rect.x, oy + rect.y)
+            if src.width > 0 and src.height > 0:
+                target.blit(tiled, dest, src)
+
+        for rep in gui_layer.repeat_sprites:
+            if not rep.visible or not rep.enabled:
+                continue
+            tortu_object = self._tortu_object(rep.prefab)
+            if tortu_object is None:
+                continue
+            full_anim = rep.full_animation or tortu_object.default_animation
+            full_sprite_path = tortu_object.sprite_for(full_anim) or tortu_object.default_sprite
+            full_sprite = self._sprite(full_sprite_path)
+            if full_sprite is None:
+                continue
+            empty_sprite_path = (
+                tortu_object.sprite_for(rep.empty_animation) if rep.empty_animation else ""
+            )
+            icon_size = (
+                full_sprite.pixel_height if rep.direction == REPEAT_VERTICAL
+                else full_sprite.pixel_width
+            )
+            step = round(icon_size * rep.scale) + rep.spacing
+            total = rep.max_count if rep.max_count > 0 else rep.count
+            for i in range(total):
+                if i < rep.count:
+                    sprite_path = full_sprite_path
+                elif empty_sprite_path:
+                    sprite_path = empty_sprite_path
+                else:
+                    continue
+                sprite = self._sprite(sprite_path)
+                if sprite is None:
+                    continue
+                base = self._baked_sprite_frame(sprite_path, sprite, 0)
+                if base is None:
+                    continue
+                surface = base if rep.scale == 1.0 else self._scaled_surface(
+                    base, (sprite_path, 0, round(rep.scale, 3)), rep.scale
+                )
+                if rep.direction == REPEAT_VERTICAL:
+                    draw_x = ox + rep.x - tortu_object.origin.x * rep.scale
+                    draw_y = oy + rep.y - tortu_object.origin.y * rep.scale + i * step
+                else:
+                    draw_x = ox + rep.x - tortu_object.origin.x * rep.scale + i * step
+                    draw_y = oy + rep.y - tortu_object.origin.y * rep.scale
+                target.blit(surface, (round(draw_x), round(draw_y)))
 
         for label in gui_layer.text_labels:
             if not label.visible or not label.enabled:

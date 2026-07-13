@@ -241,5 +241,16 @@
       "y": 4,
       "font": "assets/fonts/KiwiSoda.tortufont"
     }
-  ]
+  ],
+  "tiled_rects": [
+    {
+      "id": "bar1",
+      "texture": "assets/sprites/enemycollider.tortusprite",
+      "x": 2,
+      "y": 23,
+      "width": 40,
+      "height": 8
+    }
+  ],
+  "repeat_sprites": []
 }

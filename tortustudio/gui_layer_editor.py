@@ -36,9 +36,19 @@ from tortuengine.gui_layer import (
     DEFAULT_GUI_LAYER_HEIGHT,
     DEFAULT_GUI_LAYER_WIDTH,
     EMPTY_TILE,
+    FILL_BOTTOM_TO_TOP,
+    FILL_DIRECTIONS,
+    FILL_LEFT_TO_RIGHT,
+    FILL_RIGHT_TO_LEFT,
+    FILL_TOP_TO_BOTTOM,
+    REPEAT_DIRECTIONS,
+    REPEAT_HORIZONTAL,
+    REPEAT_VERTICAL,
     GuiLayer,
     GuiObject,
+    GuiRepeatSprite,
     GuiTextLabel,
+    GuiTiledRect,
     load_gui_layer,
     save_gui_layer,
 )
@@ -54,6 +64,7 @@ from tortustudio.object_strip import ObjectStripCanvas
 from tortustudio.scene_assets import (
     list_object_paths,
     list_sprite_font_paths,
+    list_sprite_paths,
     list_text_font_paths,
     list_tileset_paths,
 )
@@ -65,6 +76,8 @@ class GuiLayerTarget(str, Enum):
     TILES = "tiles"
     OBJECTS = "objects"
     TEXT = "text"
+    TILED_RECT = "tiled_rect"
+    REPEAT_SPRITE = "repeat_sprite"
 
 
 class GuiLayerCanvas(QWidget):
@@ -77,6 +90,8 @@ class GuiLayerCanvas(QWidget):
     changed = pyqtSignal()
     object_selected = pyqtSignal(int)
     text_label_selected = pyqtSignal(int)
+    tiled_rect_selected = pyqtSignal(int)
+    repeat_sprite_selected = pyqtSignal(int)
     tool_cycled = pyqtSignal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -103,10 +118,15 @@ class GuiLayerCanvas(QWidget):
         self.selected_object_prefab = ""
         self.pending_text = ""
         self.pending_font = ""
+        self.pending_texture = ""
         self.selected_object_index = -1
         self.selected_text_index = -1
+        self.selected_tiled_rect_index = -1
+        self.selected_repeat_sprite_index = -1
         self._dragging_object_index = -1
         self._dragging_text_index = -1
+        self._dragging_tiled_rect_index = -1
+        self._dragging_repeat_sprite_index = -1
 
         self.show_grid = True
         self.zoom = 2
@@ -132,6 +152,9 @@ class GuiLayerCanvas(QWidget):
         selected_object_index: int,
         selected_text_index: int,
         show_grid: bool = True,
+        pending_texture: str = "",
+        selected_tiled_rect_index: int = -1,
+        selected_repeat_sprite_index: int = -1,
     ) -> None:
         self.gui_layer = gui_layer
         self.project_root = project_root
@@ -144,8 +167,11 @@ class GuiLayerCanvas(QWidget):
         self.selected_object_prefab = selected_object_prefab
         self.pending_text = pending_text
         self.pending_font = pending_font
+        self.pending_texture = pending_texture
         self.selected_object_index = selected_object_index
         self.selected_text_index = selected_text_index
+        self.selected_tiled_rect_index = selected_tiled_rect_index
+        self.selected_repeat_sprite_index = selected_repeat_sprite_index
         self.show_grid = show_grid
         self._refresh()
 
@@ -246,6 +272,98 @@ class GuiLayerCanvas(QWidget):
             surface = pygame.transform.scale(surface, (width, height))
         return surface
 
+    def _tiled_rect_base_surface(self, rect: GuiTiledRect) -> pygame.Surface | None:
+        sprite = self._get_object_sprite(rect.texture)
+        if sprite is None:
+            return None
+        palette = self._sprite_palette(sprite.palette)
+        if palette is None:
+            return None
+        return sprite.to_surface(palette, frame_index=0)
+
+    def _tiled_rect_surface(self, rect: GuiTiledRect) -> pygame.Surface | None:
+        """Full width×height preview, tiled from the texture (no fill cropping)."""
+        if rect.width <= 0 or rect.height <= 0:
+            return None
+        base = self._tiled_rect_base_surface(rect)
+        if base is None or base.get_width() < 1 or base.get_height() < 1:
+            return None
+        bw, bh = base.get_width(), base.get_height()
+        tiled = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+        for ty in range(0, rect.height, bh):
+            for tx in range(0, rect.width, bw):
+                tiled.blit(base, (tx, ty))
+        return tiled
+
+    def _tiled_rect_fill_rect(self, rect: GuiTiledRect) -> pygame.Rect:
+        """Local (unclipped to rect.x/y) crop rect of the currently-filled portion."""
+        value = max(0.0, min(1.0, rect.value))
+        if rect.fill_direction == FILL_RIGHT_TO_LEFT:
+            visible_w = round(rect.width * value)
+            return pygame.Rect(rect.width - visible_w, 0, visible_w, rect.height)
+        if rect.fill_direction == FILL_TOP_TO_BOTTOM:
+            visible_h = round(rect.height * value)
+            return pygame.Rect(0, 0, rect.width, visible_h)
+        if rect.fill_direction == FILL_BOTTOM_TO_TOP:
+            visible_h = round(rect.height * value)
+            return pygame.Rect(0, rect.height - visible_h, rect.width, visible_h)
+        visible_w = round(rect.width * value)
+        return pygame.Rect(0, 0, visible_w, rect.height)
+
+    def _repeat_sprite_icon_size(self, rep: GuiRepeatSprite) -> tuple[int, int, int]:
+        """(step, icon_w, icon_h) for one icon slot, or (0, 0, 0) if unresolvable."""
+        tortu_object = self._get_tortu_object(rep.prefab)
+        if tortu_object is None:
+            return 0, 0, 0
+        full_anim = rep.full_animation or tortu_object.default_animation
+        sprite_path = tortu_object.sprite_for(full_anim) or tortu_object.default_sprite
+        sprite = self._get_object_sprite(sprite_path)
+        if sprite is None:
+            return 0, 0, 0
+        icon_w, icon_h = sprite.pixel_width, sprite.pixel_height
+        icon_size = icon_h if rep.direction == REPEAT_VERTICAL else icon_w
+        step = round(icon_size * rep.scale) + rep.spacing
+        return step, round(icon_w * rep.scale), round(icon_h * rep.scale)
+
+    def _repeat_sprite_icon_surface(
+        self, rep: GuiRepeatSprite, filled: bool
+    ) -> pygame.Surface | None:
+        tortu_object = self._get_tortu_object(rep.prefab)
+        if tortu_object is None:
+            return None
+        anim = (rep.full_animation if filled else rep.empty_animation) or ""
+        if not filled and not rep.empty_animation:
+            return None
+        anim = anim or tortu_object.default_animation
+        sprite_path = tortu_object.sprite_for(anim) or tortu_object.default_sprite
+        sprite = self._get_object_sprite(sprite_path)
+        if sprite is None:
+            return None
+        palette = self._sprite_palette(sprite.palette)
+        if palette is None:
+            return None
+        surface = sprite.to_surface(palette, frame_index=0)
+        if rep.scale != 1.0:
+            width = max(1, round(surface.get_width() * rep.scale))
+            height = max(1, round(surface.get_height() * rep.scale))
+            surface = pygame.transform.scale(surface, (width, height))
+        return surface
+
+    def _repeat_sprite_bounds(self, rep: GuiRepeatSprite) -> tuple[int, int, int, int]:
+        """(x0, y0, x1, y1) bounding box covering every icon slot."""
+        step, icon_w, icon_h = self._repeat_sprite_icon_size(rep)
+        total = max(rep.max_count, rep.count, 1)
+        tortu_object = self._get_tortu_object(rep.prefab)
+        ox = tortu_object.origin.x * rep.scale if tortu_object else 0
+        oy = tortu_object.origin.y * rep.scale if tortu_object else 0
+        if rep.direction == REPEAT_VERTICAL:
+            x0, y0 = rep.x - ox, rep.y - oy
+            x1, y1 = x0 + icon_w, y0 + icon_h + step * (total - 1)
+        else:
+            x0, y0 = rep.x - ox, rep.y - oy
+            x1, y1 = x0 + icon_w + step * (total - 1), y0 + icon_h
+        return round(x0), round(y0), round(x1), round(y1)
+
     def _get_text_font(self, rel_path: str) -> TortuFont | None:
         if not rel_path:
             return None
@@ -344,6 +462,33 @@ class GuiLayerCanvas(QWidget):
             draw_y = inst.y - tortu_object.origin.y * inst.scale
             composite.blit(surface, (round(draw_x), round(draw_y)))
 
+        for rect in self.gui_layer.tiled_rects:
+            tiled = self._tiled_rect_surface(rect)
+            if tiled is None:
+                continue
+            src = self._tiled_rect_fill_rect(rect)
+            if src.width > 0 and src.height > 0:
+                composite.blit(tiled, (rect.x + src.x, rect.y + src.y), src)
+
+        for rep in self.gui_layer.repeat_sprites:
+            step, icon_w, icon_h = self._repeat_sprite_icon_size(rep)
+            if step <= 0:
+                continue
+            tortu_object = self._get_tortu_object(rep.prefab)
+            ox = tortu_object.origin.x * rep.scale if tortu_object else 0
+            oy = tortu_object.origin.y * rep.scale if tortu_object else 0
+            total = rep.max_count if rep.max_count > 0 else rep.count
+            for i in range(total):
+                filled = i < rep.count
+                surface = self._repeat_sprite_icon_surface(rep, filled)
+                if surface is None:
+                    continue
+                if rep.direction == REPEAT_VERTICAL:
+                    draw_x, draw_y = rep.x - ox, rep.y - oy + i * step
+                else:
+                    draw_x, draw_y = rep.x - ox + i * step, rep.y - oy
+                composite.blit(surface, (round(draw_x), round(draw_y)))
+
         for label in self.gui_layer.text_labels:
             surface = self._label_surface(label)
             if surface is not None:
@@ -423,6 +568,35 @@ class GuiLayerCanvas(QWidget):
                 painter.drawRect(
                     int(label.x * self.zoom), int(label.y * self.zoom),
                     int(lw * self.zoom), int(lh * self.zoom),
+                )
+
+        if self.selected_tiled_rect_index >= 0:
+            rects = self.gui_layer.tiled_rects
+            if self.selected_tiled_rect_index < len(rects):
+                rect = rects[self.selected_tiled_rect_index]
+                pen = QPen(QColor(*self.SELECTION_COLOR, 230))
+                pen.setWidth(2)
+                pen.setCosmetic(True)
+                painter.setPen(pen)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRect(
+                    int(rect.x * self.zoom), int(rect.y * self.zoom),
+                    int(rect.width * self.zoom), int(rect.height * self.zoom),
+                )
+
+        if self.selected_repeat_sprite_index >= 0:
+            reps = self.gui_layer.repeat_sprites
+            if self.selected_repeat_sprite_index < len(reps):
+                rep = reps[self.selected_repeat_sprite_index]
+                x0, y0, x1, y1 = self._repeat_sprite_bounds(rep)
+                pen = QPen(QColor(*self.SELECTION_COLOR, 230))
+                pen.setWidth(2)
+                pen.setCosmetic(True)
+                painter.setPen(pen)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRect(
+                    int(x0 * self.zoom), int(y0 * self.zoom),
+                    int((x1 - x0) * self.zoom), int((y1 - y0) * self.zoom),
                 )
 
         painter.end()
@@ -528,6 +702,59 @@ class GuiLayerCanvas(QWidget):
                 pass
         self._refresh()
 
+    DEFAULT_TILED_RECT_WIDTH = 40
+    DEFAULT_TILED_RECT_HEIGHT = 8
+
+    def _find_tiled_rect_at_pixel(self, px: int, py: int) -> int | None:
+        if not self.gui_layer:
+            return None
+        for index, rect in enumerate(self.gui_layer.tiled_rects):
+            if rect.x <= px < rect.x + rect.width and rect.y <= py < rect.y + rect.height:
+                return index
+        return None
+
+    def _apply_tiled_rect_tool(self, px: int, py: int) -> None:
+        if not self.gui_layer:
+            return
+        if self.tool == Tool.ERASE:
+            index = self.gui_layer.find_tiled_rect_near(px, py)
+            if index is not None:
+                self.gui_layer.remove_tiled_rect(index)
+        elif self.tool == Tool.PAINT and self.pending_texture:
+            try:
+                self.gui_layer.add_tiled_rect(
+                    self.pending_texture, px, py,
+                    self.DEFAULT_TILED_RECT_WIDTH, self.DEFAULT_TILED_RECT_HEIGHT,
+                )
+            except ValueError:
+                pass
+        self._refresh()
+
+    def _find_repeat_sprite_at_pixel(self, px: int, py: int) -> int | None:
+        if not self.gui_layer:
+            return None
+        for index, rep in enumerate(self.gui_layer.repeat_sprites):
+            x0, y0, x1, y1 = self._repeat_sprite_bounds(rep)
+            if x0 <= px < x1 and y0 <= py < y1:
+                return index
+        return None
+
+    def _apply_repeat_sprite_tool(self, px: int, py: int) -> None:
+        if not self.gui_layer:
+            return
+        if self.tool == Tool.ERASE:
+            index = self.gui_layer.find_repeat_sprite_near(px, py)
+            if index is not None:
+                self.gui_layer.remove_repeat_sprite(index)
+        elif self.tool == Tool.PAINT and self.selected_object_prefab:
+            try:
+                self.gui_layer.add_repeat_sprite(
+                    self.selected_object_prefab, px, py, count=1, max_count=1,
+                )
+            except ValueError:
+                pass
+        self._refresh()
+
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.RightButton:
             if not self.edit_mode:
@@ -546,18 +773,42 @@ class GuiLayerCanvas(QWidget):
             if obj_index is not None:
                 self._dragging_object_index = obj_index
                 self._dragging_text_index = -1
+                self._dragging_tiled_rect_index = -1
+                self._dragging_repeat_sprite_index = -1
                 self.object_selected.emit(obj_index)
                 return
             text_index = self._find_text_at_pixel(*pos)
             if text_index is not None:
                 self._dragging_text_index = text_index
                 self._dragging_object_index = -1
+                self._dragging_tiled_rect_index = -1
+                self._dragging_repeat_sprite_index = -1
                 self.text_label_selected.emit(text_index)
+                return
+            rect_index = self._find_tiled_rect_at_pixel(*pos)
+            if rect_index is not None:
+                self._dragging_tiled_rect_index = rect_index
+                self._dragging_object_index = -1
+                self._dragging_text_index = -1
+                self._dragging_repeat_sprite_index = -1
+                self.tiled_rect_selected.emit(rect_index)
+                return
+            rep_index = self._find_repeat_sprite_at_pixel(*pos)
+            if rep_index is not None:
+                self._dragging_repeat_sprite_index = rep_index
+                self._dragging_object_index = -1
+                self._dragging_text_index = -1
+                self._dragging_tiled_rect_index = -1
+                self.repeat_sprite_selected.emit(rep_index)
                 return
             self._dragging_object_index = -1
             self._dragging_text_index = -1
+            self._dragging_tiled_rect_index = -1
+            self._dragging_repeat_sprite_index = -1
             self.object_selected.emit(-1)
             self.text_label_selected.emit(-1)
+            self.tiled_rect_selected.emit(-1)
+            self.repeat_sprite_selected.emit(-1)
             return
 
         if self.target == GuiLayerTarget.TILES:
@@ -573,6 +824,10 @@ class GuiLayerCanvas(QWidget):
             self._drawing = True
             if self.target == GuiLayerTarget.OBJECTS:
                 self._apply_object_tool(*pos)
+            elif self.target == GuiLayerTarget.TILED_RECT:
+                self._apply_tiled_rect_tool(*pos)
+            elif self.target == GuiLayerTarget.REPEAT_SPRITE:
+                self._apply_repeat_sprite_tool(*pos)
             else:
                 self._apply_text_tool(*pos)
             self.changed.emit()
@@ -593,6 +848,16 @@ class GuiLayerCanvas(QWidget):
                     label.x, label.y = pos
                     self._refresh()
                     self.changed.emit()
+                elif 0 <= self._dragging_tiled_rect_index < len(self.gui_layer.tiled_rects):
+                    rect = self.gui_layer.tiled_rects[self._dragging_tiled_rect_index]
+                    rect.x, rect.y = pos
+                    self._refresh()
+                    self.changed.emit()
+                elif 0 <= self._dragging_repeat_sprite_index < len(self.gui_layer.repeat_sprites):
+                    rep = self.gui_layer.repeat_sprites[self._dragging_repeat_sprite_index]
+                    rep.x, rep.y = pos
+                    self._refresh()
+                    self.changed.emit()
             return
         if self._drawing and event.buttons() & Qt.MouseButton.LeftButton:
             if self.target == GuiLayerTarget.TILES:
@@ -605,6 +870,10 @@ class GuiLayerCanvas(QWidget):
                 if pos:
                     if self.target == GuiLayerTarget.OBJECTS:
                         self._apply_object_tool(*pos)
+                    elif self.target == GuiLayerTarget.TILED_RECT:
+                        self._apply_tiled_rect_tool(*pos)
+                    elif self.target == GuiLayerTarget.REPEAT_SPRITE:
+                        self._apply_repeat_sprite_tool(*pos)
                     else:
                         self._apply_text_tool(*pos)
                     self.changed.emit()
@@ -615,6 +884,8 @@ class GuiLayerCanvas(QWidget):
         if self.edit_mode:
             self._dragging_object_index = -1
             self._dragging_text_index = -1
+            self._dragging_tiled_rect_index = -1
+            self._dragging_repeat_sprite_index = -1
             return
         if self._drawing:
             self._drawing = False
@@ -894,6 +1165,332 @@ class _GuiTextLabelCard(QWidget):
         label.enabled = self.enabled_check.isChecked()
 
 
+class _GuiTiledRectCard(QWidget):
+    """Collapsible editor for one tiled-rect (progress bar) instance in a GUI layer."""
+
+    changed = pyqtSignal()
+    remove_requested = pyqtSignal()
+    picked = pyqtSignal()
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._suspend = False
+
+        self.toggle = QToolButton()
+        self.toggle.setCheckable(True)
+        self.toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.toggle.setArrowType(Qt.ArrowType.RightArrow)
+        self.toggle.setStyleSheet(
+            "QToolButton { border: none; font-weight: 600; padding: 4px; text-align: left; }"
+            "QToolButton:hover { background-color: rgba(255, 255, 255, 24); }"
+        )
+        self.toggle.clicked.connect(self._on_toggle_clicked)
+
+        self.btn_remove = QPushButton("✕")
+        self.btn_remove.setFixedWidth(22)
+        self.btn_remove.setToolTip("Remove this tiled rect")
+        self.btn_remove.clicked.connect(self.remove_requested.emit)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.addWidget(self.toggle, stretch=1)
+        header.addWidget(self.btn_remove)
+
+        self.texture_combo = QComboBox()
+        self.x_spin = QSpinBox()
+        self.x_spin.setRange(-9999, 9999)
+        self.y_spin = QSpinBox()
+        self.y_spin.setRange(-9999, 9999)
+        self.width_spin = QSpinBox()
+        self.width_spin.setRange(1, 2048)
+        self.height_spin = QSpinBox()
+        self.height_spin.setRange(1, 2048)
+        self.value_spin = QDoubleSpinBox()
+        self.value_spin.setRange(0.0, 1.0)
+        self.value_spin.setSingleStep(0.05)
+        self.value_spin.setValue(1.0)
+        self.value_spin.setToolTip("Fraction of the rect drawn — e.g. current/max health")
+        self.direction_combo = QComboBox()
+        for direction in FILL_DIRECTIONS:
+            self.direction_combo.addItem(direction.replace("_", " ").title(), direction)
+        self.visible_check = QCheckBox("Visible at play")
+        self.visible_check.setChecked(True)
+        self.visible_check.setToolTip("Whether this rect is drawn when the scene runs")
+        self.enabled_check = QCheckBox("Enabled at scene start")
+        self.enabled_check.setChecked(True)
+        self.enabled_check.setToolTip("Unchecked: the rect starts off entirely and isn't drawn")
+
+        form = QFormLayout()
+        form.setContentsMargins(20, 2, 0, 6)
+        form.addRow("Texture:", self.texture_combo)
+        form.addRow("X:", self.x_spin)
+        form.addRow("Y:", self.y_spin)
+        form.addRow("Width:", self.width_spin)
+        form.addRow("Height:", self.height_spin)
+        form.addRow("Value:", self.value_spin)
+        form.addRow("Fill direction:", self.direction_combo)
+        form.addRow("", self.visible_check)
+        form.addRow("", self.enabled_check)
+
+        self.content = QWidget()
+        self.content.setLayout(form)
+        self.content.setVisible(False)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addLayout(header)
+        outer.addWidget(self.content)
+
+        self.texture_combo.currentIndexChanged.connect(self._emit_changed)
+        self.x_spin.valueChanged.connect(self._emit_changed)
+        self.y_spin.valueChanged.connect(self._emit_changed)
+        self.width_spin.valueChanged.connect(self._emit_changed)
+        self.height_spin.valueChanged.connect(self._emit_changed)
+        self.value_spin.valueChanged.connect(self._emit_changed)
+        self.direction_combo.currentIndexChanged.connect(self._emit_changed)
+        self.visible_check.toggled.connect(self._emit_changed)
+        self.enabled_check.toggled.connect(self._emit_changed)
+
+    def _on_toggle_clicked(self) -> None:
+        self.set_expanded(self.toggle.isChecked())
+        self.picked.emit()
+
+    def is_expanded(self) -> bool:
+        return self.toggle.isChecked()
+
+    def set_expanded(self, expanded: bool) -> None:
+        self.toggle.setChecked(expanded)
+        self.content.setVisible(expanded)
+        self.toggle.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
+
+    def set_header_text(self, text: str) -> None:
+        self.toggle.setText(text)
+
+    def set_highlighted(self, on: bool) -> None:
+        weight = "700" if on else "600"
+        color = " color: #4da3ff;" if on else ""
+        self.toggle.setStyleSheet(
+            f"QToolButton {{ border: none; font-weight: {weight};{color} padding: 4px;"
+            " text-align: left; }"
+            "QToolButton:hover { background-color: rgba(255, 255, 255, 24); }"
+        )
+
+    def _emit_changed(self) -> None:
+        if not self._suspend:
+            self.changed.emit()
+
+    def sync(self, rect: GuiTiledRect, texture_choices: list[str]) -> None:
+        widgets = (
+            self.texture_combo, self.x_spin, self.y_spin, self.width_spin, self.height_spin,
+            self.value_spin, self.direction_combo, self.visible_check, self.enabled_check,
+        )
+        self._suspend = True
+        for widget in widgets:
+            widget.blockSignals(True)
+        self.texture_combo.clear()
+        for rel in texture_choices:
+            self.texture_combo.addItem(rel, rel)
+        found = self.texture_combo.findData(rect.texture)
+        self.texture_combo.setCurrentIndex(found if found >= 0 else 0)
+        self.x_spin.setValue(rect.x)
+        self.y_spin.setValue(rect.y)
+        self.width_spin.setValue(rect.width)
+        self.height_spin.setValue(rect.height)
+        self.value_spin.setValue(rect.value)
+        found_dir = self.direction_combo.findData(rect.fill_direction)
+        self.direction_combo.setCurrentIndex(found_dir if found_dir >= 0 else 0)
+        self.visible_check.setChecked(rect.visible)
+        self.enabled_check.setChecked(rect.enabled)
+        for widget in widgets:
+            widget.blockSignals(False)
+        self._suspend = False
+
+    def read_into(self, rect: GuiTiledRect) -> None:
+        rect.texture = self.texture_combo.currentData() or rect.texture
+        rect.x = self.x_spin.value()
+        rect.y = self.y_spin.value()
+        rect.width = self.width_spin.value()
+        rect.height = self.height_spin.value()
+        rect.value = self.value_spin.value()
+        rect.fill_direction = self.direction_combo.currentData() or FILL_LEFT_TO_RIGHT
+        rect.visible = self.visible_check.isChecked()
+        rect.enabled = self.enabled_check.isChecked()
+
+
+class _GuiRepeatSpriteCard(QWidget):
+    """Collapsible editor for one repeat-sprite (life pips) instance in a GUI layer."""
+
+    changed = pyqtSignal()
+    remove_requested = pyqtSignal()
+    picked = pyqtSignal()
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._suspend = False
+
+        self.toggle = QToolButton()
+        self.toggle.setCheckable(True)
+        self.toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.toggle.setArrowType(Qt.ArrowType.RightArrow)
+        self.toggle.setStyleSheet(
+            "QToolButton { border: none; font-weight: 600; padding: 4px; text-align: left; }"
+            "QToolButton:hover { background-color: rgba(255, 255, 255, 24); }"
+        )
+        self.toggle.clicked.connect(self._on_toggle_clicked)
+
+        self.btn_remove = QPushButton("✕")
+        self.btn_remove.setFixedWidth(22)
+        self.btn_remove.setToolTip("Remove this repeat sprite")
+        self.btn_remove.clicked.connect(self.remove_requested.emit)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.addWidget(self.toggle, stretch=1)
+        header.addWidget(self.btn_remove)
+
+        self.x_spin = QSpinBox()
+        self.x_spin.setRange(-9999, 9999)
+        self.y_spin = QSpinBox()
+        self.y_spin.setRange(-9999, 9999)
+        self.count_spin = QSpinBox()
+        self.count_spin.setRange(0, 256)
+        self.count_spin.setToolTip("Currently filled slots — e.g. remaining life")
+        self.max_count_spin = QSpinBox()
+        self.max_count_spin.setRange(0, 256)
+        self.max_count_spin.setToolTip("Total slots — e.g. maximum life")
+        self.spacing_spin = QSpinBox()
+        self.spacing_spin.setRange(-99, 99)
+        self.spacing_spin.setToolTip("Extra pixel gap between icons, beyond the icon's own size")
+        self.direction_combo = QComboBox()
+        for direction in REPEAT_DIRECTIONS:
+            self.direction_combo.addItem(direction.title(), direction)
+        self.full_anim_combo = QComboBox()
+        self.empty_anim_combo = QComboBox()
+        self.scale_spin = QDoubleSpinBox()
+        self.scale_spin.setRange(0.1, 10.0)
+        self.scale_spin.setSingleStep(0.1)
+        self.scale_spin.setValue(1.0)
+        self.visible_check = QCheckBox("Visible at play")
+        self.visible_check.setChecked(True)
+        self.visible_check.setToolTip("Whether these icons are drawn when the scene runs")
+        self.enabled_check = QCheckBox("Enabled at scene start")
+        self.enabled_check.setChecked(True)
+        self.enabled_check.setToolTip("Unchecked: the icons start off entirely and aren't drawn")
+
+        form = QFormLayout()
+        form.setContentsMargins(20, 2, 0, 6)
+        form.addRow("X:", self.x_spin)
+        form.addRow("Y:", self.y_spin)
+        form.addRow("Count:", self.count_spin)
+        form.addRow("Max count:", self.max_count_spin)
+        form.addRow("Spacing:", self.spacing_spin)
+        form.addRow("Direction:", self.direction_combo)
+        form.addRow("Full animation:", self.full_anim_combo)
+        form.addRow("Empty animation:", self.empty_anim_combo)
+        form.addRow("Scale:", self.scale_spin)
+        form.addRow("", self.visible_check)
+        form.addRow("", self.enabled_check)
+
+        self.content = QWidget()
+        self.content.setLayout(form)
+        self.content.setVisible(False)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addLayout(header)
+        outer.addWidget(self.content)
+
+        self.x_spin.valueChanged.connect(self._emit_changed)
+        self.y_spin.valueChanged.connect(self._emit_changed)
+        self.count_spin.valueChanged.connect(self._emit_changed)
+        self.max_count_spin.valueChanged.connect(self._emit_changed)
+        self.spacing_spin.valueChanged.connect(self._emit_changed)
+        self.direction_combo.currentIndexChanged.connect(self._emit_changed)
+        self.full_anim_combo.currentIndexChanged.connect(self._emit_changed)
+        self.empty_anim_combo.currentIndexChanged.connect(self._emit_changed)
+        self.scale_spin.valueChanged.connect(self._emit_changed)
+        self.visible_check.toggled.connect(self._emit_changed)
+        self.enabled_check.toggled.connect(self._emit_changed)
+
+    def _on_toggle_clicked(self) -> None:
+        self.set_expanded(self.toggle.isChecked())
+        self.picked.emit()
+
+    def is_expanded(self) -> bool:
+        return self.toggle.isChecked()
+
+    def set_expanded(self, expanded: bool) -> None:
+        self.toggle.setChecked(expanded)
+        self.content.setVisible(expanded)
+        self.toggle.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
+
+    def set_header_text(self, text: str) -> None:
+        self.toggle.setText(text)
+
+    def set_highlighted(self, on: bool) -> None:
+        weight = "700" if on else "600"
+        color = " color: #4da3ff;" if on else ""
+        self.toggle.setStyleSheet(
+            f"QToolButton {{ border: none; font-weight: {weight};{color} padding: 4px;"
+            " text-align: left; }"
+            "QToolButton:hover { background-color: rgba(255, 255, 255, 24); }"
+        )
+
+    def _emit_changed(self) -> None:
+        if not self._suspend:
+            self.changed.emit()
+
+    def sync(self, rep: GuiRepeatSprite, tortu_object: TortuObject | None) -> None:
+        widgets = (
+            self.x_spin, self.y_spin, self.count_spin, self.max_count_spin, self.spacing_spin,
+            self.direction_combo, self.full_anim_combo, self.empty_anim_combo, self.scale_spin,
+            self.visible_check, self.enabled_check,
+        )
+        self._suspend = True
+        for widget in widgets:
+            widget.blockSignals(True)
+        self.x_spin.setValue(rep.x)
+        self.y_spin.setValue(rep.y)
+        self.count_spin.setValue(rep.count)
+        self.max_count_spin.setValue(rep.max_count)
+        self.spacing_spin.setValue(rep.spacing)
+        found_dir = self.direction_combo.findData(rep.direction)
+        self.direction_combo.setCurrentIndex(found_dir if found_dir >= 0 else 0)
+        self.full_anim_combo.clear()
+        self.full_anim_combo.addItem("(default)", "")
+        self.empty_anim_combo.clear()
+        self.empty_anim_combo.addItem("(none)", "")
+        if tortu_object is not None:
+            for anim in tortu_object.animations:
+                self.full_anim_combo.addItem(anim.name, anim.name)
+                self.empty_anim_combo.addItem(anim.name, anim.name)
+        found_full = self.full_anim_combo.findData(rep.full_animation)
+        self.full_anim_combo.setCurrentIndex(found_full if found_full >= 0 else 0)
+        found_empty = self.empty_anim_combo.findData(rep.empty_animation)
+        self.empty_anim_combo.setCurrentIndex(found_empty if found_empty >= 0 else 0)
+        self.scale_spin.setValue(rep.scale)
+        self.visible_check.setChecked(rep.visible)
+        self.enabled_check.setChecked(rep.enabled)
+        for widget in widgets:
+            widget.blockSignals(False)
+        self._suspend = False
+
+    def read_into(self, rep: GuiRepeatSprite) -> None:
+        rep.x = self.x_spin.value()
+        rep.y = self.y_spin.value()
+        rep.count = self.count_spin.value()
+        rep.max_count = self.max_count_spin.value()
+        rep.spacing = self.spacing_spin.value()
+        rep.direction = self.direction_combo.currentData() or REPEAT_HORIZONTAL
+        rep.full_animation = self.full_anim_combo.currentData() or ""
+        rep.empty_animation = self.empty_anim_combo.currentData() or ""
+        rep.scale = self.scale_spin.value()
+        rep.visible = self.visible_check.isChecked()
+        rep.enabled = self.enabled_check.isChecked()
+
+
 class GuiLayerEditorWidget(QWidget):
     saved = pyqtSignal(Path)
     renamed = pyqtSignal(Path, Path)  # (old_path, new_path)
@@ -915,6 +1512,8 @@ class GuiLayerEditorWidget(QWidget):
         self.canvas.tool_cycled.connect(self._set_tool)
         self.canvas.object_selected.connect(self._on_canvas_object_selected)
         self.canvas.text_label_selected.connect(self._on_canvas_text_selected)
+        self.canvas.tiled_rect_selected.connect(self._on_canvas_tiled_rect_selected)
+        self.canvas.repeat_sprite_selected.connect(self._on_canvas_repeat_sprite_selected)
 
         self.strip_canvas = TilesetStripCanvas()
         self.strip_canvas.tile_clicked.connect(self._on_strip_tile_clicked)
@@ -997,12 +1596,24 @@ class GuiLayerEditorWidget(QWidget):
         self.btn_target_tiles = QPushButton("Tiles")
         self.btn_target_objects = QPushButton("Objects")
         self.btn_target_text = QPushButton("Text")
-        for btn in (self.btn_target_tiles, self.btn_target_objects, self.btn_target_text):
+        self.btn_target_tiled_rect = QPushButton("Tiled Rect")
+        self.btn_target_repeat_sprite = QPushButton("Repeat Sprite")
+        target_buttons = (
+            self.btn_target_tiles, self.btn_target_objects, self.btn_target_text,
+            self.btn_target_tiled_rect, self.btn_target_repeat_sprite,
+        )
+        for btn in target_buttons:
             btn.setCheckable(True)
         self.btn_target_tiles.setChecked(True)
         self.btn_target_tiles.clicked.connect(lambda: self._set_target(GuiLayerTarget.TILES))
         self.btn_target_objects.clicked.connect(lambda: self._set_target(GuiLayerTarget.OBJECTS))
         self.btn_target_text.clicked.connect(lambda: self._set_target(GuiLayerTarget.TEXT))
+        self.btn_target_tiled_rect.clicked.connect(
+            lambda: self._set_target(GuiLayerTarget.TILED_RECT)
+        )
+        self.btn_target_repeat_sprite.clicked.connect(
+            lambda: self._set_target(GuiLayerTarget.REPEAT_SPRITE)
+        )
 
         self.btn_draw_mode = QPushButton("Draw")
         self.btn_edit_mode = QPushButton("Edit")
@@ -1079,8 +1690,57 @@ class GuiLayerEditorWidget(QWidget):
         self.text_labels_scroll.setWidget(self.text_labels_container)
         self.text_labels_scroll.setMinimumHeight(160)
 
+        # -- tiled rects panel ---------------------------------------
+        self.tiled_rect_texture_combo = QComboBox()
+        self.tiled_rect_texture_combo.currentIndexChanged.connect(self._refresh_canvas)
+
+        self.btn_add_tiled_rect = QPushButton("Add tiled rect")
+        self.btn_add_tiled_rect.setToolTip(
+            "Create a new tiled rect (e.g. a health bar) using the texture above"
+        )
+        self.btn_add_tiled_rect.clicked.connect(self._add_tiled_rect)
+
+        self.tiled_rects_search = QLineEdit()
+        self.tiled_rects_search.setPlaceholderText("Filter tiled rects…")
+        self.tiled_rects_search.textChanged.connect(self._refresh_tiled_rects_list)
+
+        self._tiled_rects_list_indices: list[int] = []
+        self._tiled_rect_cards: dict[int, _GuiTiledRectCard] = {}
+
+        self.tiled_rects_container = QWidget()
+        self.tiled_rects_container_layout = QVBoxLayout(self.tiled_rects_container)
+        self.tiled_rects_container_layout.setContentsMargins(0, 0, 0, 0)
+        self.tiled_rects_container_layout.setSpacing(2)
+        self.tiled_rects_container_layout.addStretch(1)
+
+        self.tiled_rects_scroll = QScrollArea()
+        self.tiled_rects_scroll.setWidgetResizable(True)
+        self.tiled_rects_scroll.setWidget(self.tiled_rects_container)
+        self.tiled_rects_scroll.setMinimumHeight(160)
+
+        # -- repeat sprites panel ---------------------------------------
+        self.repeat_sprites_search = QLineEdit()
+        self.repeat_sprites_search.setPlaceholderText("Filter repeat sprites…")
+        self.repeat_sprites_search.textChanged.connect(self._refresh_repeat_sprites_list)
+
+        self._repeat_sprites_list_indices: list[int] = []
+        self._repeat_sprite_cards: dict[int, _GuiRepeatSpriteCard] = {}
+
+        self.repeat_sprites_container = QWidget()
+        self.repeat_sprites_container_layout = QVBoxLayout(self.repeat_sprites_container)
+        self.repeat_sprites_container_layout.setContentsMargins(0, 0, 0, 0)
+        self.repeat_sprites_container_layout.setSpacing(2)
+        self.repeat_sprites_container_layout.addStretch(1)
+
+        self.repeat_sprites_scroll = QScrollArea()
+        self.repeat_sprites_scroll.setWidgetResizable(True)
+        self.repeat_sprites_scroll.setWidget(self.repeat_sprites_container)
+        self.repeat_sprites_scroll.setMinimumHeight(160)
+
         self._selected_object_index = -1
         self._selected_text_index = -1
+        self._selected_tiled_rect_index = -1
+        self._selected_repeat_sprite_index = -1
         self._target = GuiLayerTarget.TILES
         self._edit_mode = False
         self._selected_tile = 0
@@ -1161,6 +1821,24 @@ class GuiLayerEditorWidget(QWidget):
         text_section.content_layout().addWidget(self.text_labels_scroll)
         side.addWidget(text_section)
 
+        tiled_rects_section = CollapsibleSection("Tiled Rects", expanded=True)
+        tiled_rects_form = QFormLayout()
+        tiled_rects_form.addRow("New rect texture:", self.tiled_rect_texture_combo)
+        tiled_rects_section.content_layout().addLayout(tiled_rects_form)
+        tiled_rects_section.content_layout().addWidget(self.btn_add_tiled_rect)
+        tiled_rects_section.content_layout().addWidget(self.tiled_rects_search)
+        tiled_rects_section.content_layout().addWidget(self.tiled_rects_scroll)
+        side.addWidget(tiled_rects_section)
+
+        repeat_sprites_section = CollapsibleSection("Repeat Sprites", expanded=True)
+        repeat_sprites_section.content_layout().addWidget(QLabel(
+            "Pick a prefab in the Objects strip below, then click the canvas\n"
+            "in Repeat Sprite mode to place a pip/heart counter."
+        ))
+        repeat_sprites_section.content_layout().addWidget(self.repeat_sprites_search)
+        repeat_sprites_section.content_layout().addWidget(self.repeat_sprites_scroll)
+        side.addWidget(repeat_sprites_section)
+
         side.addStretch()
 
         side_scroll = QScrollArea()
@@ -1196,6 +1874,8 @@ class GuiLayerEditorWidget(QWidget):
         mode_row.addWidget(self.btn_target_tiles)
         mode_row.addWidget(self.btn_target_objects)
         mode_row.addWidget(self.btn_target_text)
+        mode_row.addWidget(self.btn_target_tiled_rect)
+        mode_row.addWidget(self.btn_target_repeat_sprite)
         mode_row.addSpacing(12)
         mode_row.addWidget(self.btn_draw_mode)
         mode_row.addWidget(self.btn_edit_mode)
@@ -1213,6 +1893,8 @@ class GuiLayerEditorWidget(QWidget):
         self.btn_target_tiles.setChecked(target == GuiLayerTarget.TILES)
         self.btn_target_objects.setChecked(target == GuiLayerTarget.OBJECTS)
         self.btn_target_text.setChecked(target == GuiLayerTarget.TEXT)
+        self.btn_target_tiled_rect.setChecked(target == GuiLayerTarget.TILED_RECT)
+        self.btn_target_repeat_sprite.setChecked(target == GuiLayerTarget.REPEAT_SPRITE)
         self.btn_dropper.setEnabled(target == GuiLayerTarget.TILES)
         if target != GuiLayerTarget.TILES and self.canvas.tool == Tool.EYEDROPPER:
             self._set_tool(Tool.PAINT)
@@ -1386,10 +2068,16 @@ class GuiLayerEditorWidget(QWidget):
     def _on_object_card_picked(self, obj_idx: int) -> None:
         self._selected_object_index = obj_idx
         self._selected_text_index = -1
+        self._selected_tiled_rect_index = -1
+        self._selected_repeat_sprite_index = -1
         self.canvas.selected_object_index = obj_idx
         self.canvas.selected_text_index = -1
+        self.canvas.selected_tiled_rect_index = -1
+        self.canvas.selected_repeat_sprite_index = -1
         self.canvas.update()
         self._refresh_text_labels_list()
+        self._refresh_tiled_rects_list()
+        self._refresh_repeat_sprites_list()
         for idx, card in self._object_cards.items():
             card.set_highlighted(idx == self._selected_object_index)
 
@@ -1464,10 +2152,16 @@ class GuiLayerEditorWidget(QWidget):
     def _on_text_label_card_picked(self, label_idx: int) -> None:
         self._selected_text_index = label_idx
         self._selected_object_index = -1
+        self._selected_tiled_rect_index = -1
+        self._selected_repeat_sprite_index = -1
         self.canvas.selected_text_index = label_idx
         self.canvas.selected_object_index = -1
+        self.canvas.selected_tiled_rect_index = -1
+        self.canvas.selected_repeat_sprite_index = -1
         self.canvas.update()
         self._refresh_objects_list()
+        self._refresh_tiled_rects_list()
+        self._refresh_repeat_sprites_list()
         for idx, card in self._text_label_cards.items():
             card.set_highlighted(idx == self._selected_text_index)
 
@@ -1483,10 +2177,218 @@ class GuiLayerEditorWidget(QWidget):
         self._refresh_text_labels_list()
         self._refresh_canvas()
 
+    def _sync_tiled_rect_texture_combo(self) -> None:
+        self.tiled_rect_texture_combo.blockSignals(True)
+        current = self.tiled_rect_texture_combo.currentData()
+        self.tiled_rect_texture_combo.clear()
+        for rel in list_sprite_paths(self.project_root):
+            self.tiled_rect_texture_combo.addItem(rel, rel)
+        index = self.tiled_rect_texture_combo.findData(current) if current else 0
+        self.tiled_rect_texture_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.tiled_rect_texture_combo.blockSignals(False)
+
+    def _texture_choices(self) -> list[str]:
+        return list_sprite_paths(self.project_root)
+
+    def _refresh_tiled_rects_list(self) -> None:
+        if not self.gui_layer:
+            self._rebuild_tiled_rect_cards([])
+            self._tiled_rects_list_indices = []
+            self._selected_tiled_rect_index = -1
+            return
+        if self._selected_tiled_rect_index >= len(self.gui_layer.tiled_rects):
+            self._selected_tiled_rect_index = -1
+        query = self.tiled_rects_search.text().strip().lower()
+        visible_indices: list[int] = []
+        for i, rect in enumerate(self.gui_layer.tiled_rects):
+            if query and query not in rect.id.lower():
+                continue
+            visible_indices.append(i)
+        if visible_indices != self._tiled_rects_list_indices:
+            self._rebuild_tiled_rect_cards(visible_indices)
+            self._tiled_rects_list_indices = visible_indices
+        texture_choices = self._texture_choices()
+        for i in visible_indices:
+            rect = self.gui_layer.tiled_rects[i]
+            card = self._tiled_rect_cards[i]
+            card.sync(rect, texture_choices)
+            card.set_header_text(f"#{i}  {rect.id}")
+            card.toggle.setToolTip(f"{rect.id}  @ ({rect.x}, {rect.y})")
+            card.set_highlighted(i == self._selected_tiled_rect_index)
+
+    def _rebuild_tiled_rect_cards(self, visible_indices: list[int]) -> None:
+        for card in self._tiled_rect_cards.values():
+            card.setParent(None)
+            card.deleteLater()
+        self._tiled_rect_cards = {}
+        for i in visible_indices:
+            card = _GuiTiledRectCard()
+            card.changed.connect(lambda idx=i: self._on_tiled_rect_card_changed(idx))
+            card.remove_requested.connect(lambda idx=i: self._remove_tiled_rect(idx))
+            card.picked.connect(lambda idx=i: self._on_tiled_rect_card_picked(idx))
+            self.tiled_rects_container_layout.insertWidget(
+                self.tiled_rects_container_layout.count() - 1, card
+            )
+            self._tiled_rect_cards[i] = card
+
+    def _on_tiled_rect_card_changed(self, rect_idx: int) -> None:
+        if not self.gui_layer or not (0 <= rect_idx < len(self.gui_layer.tiled_rects)):
+            return
+        card = self._tiled_rect_cards.get(rect_idx)
+        if card is None:
+            return
+        card.read_into(self.gui_layer.tiled_rects[rect_idx])
+        self._mark_dirty()
+        self._refresh_canvas()
+        self._refresh_tiled_rects_list()
+
+    def _on_tiled_rect_card_picked(self, rect_idx: int) -> None:
+        self._selected_tiled_rect_index = rect_idx
+        self._selected_object_index = -1
+        self._selected_text_index = -1
+        self._selected_repeat_sprite_index = -1
+        self.canvas.selected_tiled_rect_index = rect_idx
+        self.canvas.selected_object_index = -1
+        self.canvas.selected_text_index = -1
+        self.canvas.selected_repeat_sprite_index = -1
+        self.canvas.update()
+        self._refresh_objects_list()
+        self._refresh_text_labels_list()
+        self._refresh_repeat_sprites_list()
+        for idx, card in self._tiled_rect_cards.items():
+            card.set_highlighted(idx == self._selected_tiled_rect_index)
+
+    def _remove_tiled_rect(self, rect_idx: int) -> None:
+        if not self.gui_layer or not (0 <= rect_idx < len(self.gui_layer.tiled_rects)):
+            return
+        self.gui_layer.remove_tiled_rect(rect_idx)
+        if self._selected_tiled_rect_index == rect_idx:
+            self._selected_tiled_rect_index = -1
+        elif self._selected_tiled_rect_index > rect_idx:
+            self._selected_tiled_rect_index -= 1
+        self._mark_dirty()
+        self._refresh_tiled_rects_list()
+        self._refresh_canvas()
+
+    def _add_tiled_rect(self) -> None:
+        if not self.gui_layer:
+            return
+        texture = self.tiled_rect_texture_combo.currentData() or ""
+        if not texture:
+            QMessageBox.information(self, "Add Tiled Rect", "Choose a texture sprite first.")
+            return
+        x = min(8, max(0, self.gui_layer.width - 1))
+        y = min(8, max(0, self.gui_layer.height - 1))
+        try:
+            index = self.gui_layer.add_tiled_rect(
+                str(texture), x, y,
+                GuiLayerCanvas.DEFAULT_TILED_RECT_WIDTH, GuiLayerCanvas.DEFAULT_TILED_RECT_HEIGHT,
+            )
+        except ValueError as exc:
+            QMessageBox.warning(self, "Add Tiled Rect", str(exc))
+            return
+        self._mark_dirty()
+        self._selected_tiled_rect_index = index
+        self._selected_object_index = -1
+        self._selected_text_index = -1
+        self._selected_repeat_sprite_index = -1
+        self._refresh_objects_list()
+        self._refresh_text_labels_list()
+        self._refresh_repeat_sprites_list()
+        self._refresh_tiled_rects_list()
+        card = self._tiled_rect_cards.get(index)
+        if card is not None:
+            card.set_expanded(True)
+            self.tiled_rects_scroll.ensureWidgetVisible(card)
+        self._refresh_canvas()
+
+    def _refresh_repeat_sprites_list(self) -> None:
+        if not self.gui_layer:
+            self._rebuild_repeat_sprite_cards([])
+            self._repeat_sprites_list_indices = []
+            self._selected_repeat_sprite_index = -1
+            return
+        if self._selected_repeat_sprite_index >= len(self.gui_layer.repeat_sprites):
+            self._selected_repeat_sprite_index = -1
+        query = self.repeat_sprites_search.text().strip().lower()
+        visible_indices: list[int] = []
+        for i, rep in enumerate(self.gui_layer.repeat_sprites):
+            name = Path(rep.prefab).stem if rep.prefab else rep.id
+            if query and query not in name.lower() and query not in rep.id.lower():
+                continue
+            visible_indices.append(i)
+        if visible_indices != self._repeat_sprites_list_indices:
+            self._rebuild_repeat_sprite_cards(visible_indices)
+            self._repeat_sprites_list_indices = visible_indices
+        for i in visible_indices:
+            rep = self.gui_layer.repeat_sprites[i]
+            card = self._repeat_sprite_cards[i]
+            tortu_object = self.canvas._get_tortu_object(rep.prefab)
+            card.sync(rep, tortu_object)
+            name = Path(rep.prefab).stem if rep.prefab else "(unassigned)"
+            card.set_header_text(f"#{i}  {name}  {rep.count}/{rep.max_count}")
+            card.toggle.setToolTip(f"{name}  @ ({rep.x}, {rep.y})")
+            card.set_highlighted(i == self._selected_repeat_sprite_index)
+
+    def _rebuild_repeat_sprite_cards(self, visible_indices: list[int]) -> None:
+        for card in self._repeat_sprite_cards.values():
+            card.setParent(None)
+            card.deleteLater()
+        self._repeat_sprite_cards = {}
+        for i in visible_indices:
+            card = _GuiRepeatSpriteCard()
+            card.changed.connect(lambda idx=i: self._on_repeat_sprite_card_changed(idx))
+            card.remove_requested.connect(lambda idx=i: self._remove_repeat_sprite(idx))
+            card.picked.connect(lambda idx=i: self._on_repeat_sprite_card_picked(idx))
+            self.repeat_sprites_container_layout.insertWidget(
+                self.repeat_sprites_container_layout.count() - 1, card
+            )
+            self._repeat_sprite_cards[i] = card
+
+    def _on_repeat_sprite_card_changed(self, rep_idx: int) -> None:
+        if not self.gui_layer or not (0 <= rep_idx < len(self.gui_layer.repeat_sprites)):
+            return
+        card = self._repeat_sprite_cards.get(rep_idx)
+        if card is None:
+            return
+        card.read_into(self.gui_layer.repeat_sprites[rep_idx])
+        self._mark_dirty()
+        self._refresh_canvas()
+        self._refresh_repeat_sprites_list()
+
+    def _on_repeat_sprite_card_picked(self, rep_idx: int) -> None:
+        self._selected_repeat_sprite_index = rep_idx
+        self._selected_object_index = -1
+        self._selected_text_index = -1
+        self._selected_tiled_rect_index = -1
+        self.canvas.selected_repeat_sprite_index = rep_idx
+        self.canvas.selected_object_index = -1
+        self.canvas.selected_text_index = -1
+        self.canvas.selected_tiled_rect_index = -1
+        self.canvas.update()
+        self._refresh_objects_list()
+        self._refresh_text_labels_list()
+        self._refresh_tiled_rects_list()
+        for idx, card in self._repeat_sprite_cards.items():
+            card.set_highlighted(idx == self._selected_repeat_sprite_index)
+
+    def _remove_repeat_sprite(self, rep_idx: int) -> None:
+        if not self.gui_layer or not (0 <= rep_idx < len(self.gui_layer.repeat_sprites)):
+            return
+        self.gui_layer.remove_repeat_sprite(rep_idx)
+        if self._selected_repeat_sprite_index == rep_idx:
+            self._selected_repeat_sprite_index = -1
+        elif self._selected_repeat_sprite_index > rep_idx:
+            self._selected_repeat_sprite_index -= 1
+        self._mark_dirty()
+        self._refresh_repeat_sprites_list()
+        self._refresh_canvas()
+
     # -- canvas refresh -----------------------------------------------------
 
     def _refresh_canvas(self) -> None:
         pending_font = self.text_font_combo.currentData() or ""
+        pending_texture = self.tiled_rect_texture_combo.currentData() or ""
         self.canvas.set_context(
             self.gui_layer,
             self.project_root,
@@ -1502,6 +2404,9 @@ class GuiLayerEditorWidget(QWidget):
             selected_object_index=self._selected_object_index,
             selected_text_index=self._selected_text_index,
             show_grid=self.show_grid.isChecked(),
+            pending_texture=str(pending_texture),
+            selected_tiled_rect_index=self._selected_tiled_rect_index,
+            selected_repeat_sprite_index=self._selected_repeat_sprite_index,
         )
 
     def _refresh_editor(self) -> None:
@@ -1523,11 +2428,14 @@ class GuiLayerEditorWidget(QWidget):
         self._refresh_script_row()
         self._sync_tileset_combo()
         self._sync_text_font_combo()
+        self._sync_tiled_rect_texture_combo()
         self._load_active_tileset()
         self._refresh_strip()
         self._refresh_object_strip()
         self._refresh_objects_list()
         self._refresh_text_labels_list()
+        self._refresh_tiled_rects_list()
+        self._refresh_repeat_sprites_list()
         self._refresh_canvas()
 
     # -- canvas event handlers -----------------------------------------------------
@@ -1540,6 +2448,8 @@ class GuiLayerEditorWidget(QWidget):
         self._refresh_canvas()
         self._refresh_objects_list()
         self._refresh_text_labels_list()
+        self._refresh_tiled_rects_list()
+        self._refresh_repeat_sprites_list()
 
     def _on_strip_tile_clicked(self, index: int) -> None:
         self._selected_tile = index
@@ -1550,7 +2460,8 @@ class GuiLayerEditorWidget(QWidget):
         self._refresh_canvas()
 
     def _on_object_strip_clicked(self, _index: int) -> None:
-        self._set_target(GuiLayerTarget.OBJECTS)
+        if self._target != GuiLayerTarget.REPEAT_SPRITE:
+            self._set_target(GuiLayerTarget.OBJECTS)
         self._set_tool(Tool.PAINT)
         self._refresh_canvas()
 
@@ -1579,7 +2490,11 @@ class GuiLayerEditorWidget(QWidget):
         self._selected_object_index = index
         if index >= 0:
             self._selected_text_index = -1
+            self._selected_tiled_rect_index = -1
+            self._selected_repeat_sprite_index = -1
             self._refresh_text_labels_list()
+            self._refresh_tiled_rects_list()
+            self._refresh_repeat_sprites_list()
         self._refresh_objects_list()
         card = self._object_cards.get(index)
         if card is not None:
@@ -1591,12 +2506,48 @@ class GuiLayerEditorWidget(QWidget):
         self._selected_text_index = index
         if index >= 0:
             self._selected_object_index = -1
+            self._selected_tiled_rect_index = -1
+            self._selected_repeat_sprite_index = -1
             self._refresh_objects_list()
+            self._refresh_tiled_rects_list()
+            self._refresh_repeat_sprites_list()
         self._refresh_text_labels_list()
         card = self._text_label_cards.get(index)
         if card is not None:
             card.set_expanded(True)
             self.text_labels_scroll.ensureWidgetVisible(card)
+        self._refresh_canvas()
+
+    def _on_canvas_tiled_rect_selected(self, index: int) -> None:
+        self._selected_tiled_rect_index = index
+        if index >= 0:
+            self._selected_object_index = -1
+            self._selected_text_index = -1
+            self._selected_repeat_sprite_index = -1
+            self._refresh_objects_list()
+            self._refresh_text_labels_list()
+            self._refresh_repeat_sprites_list()
+        self._refresh_tiled_rects_list()
+        card = self._tiled_rect_cards.get(index)
+        if card is not None:
+            card.set_expanded(True)
+            self.tiled_rects_scroll.ensureWidgetVisible(card)
+        self._refresh_canvas()
+
+    def _on_canvas_repeat_sprite_selected(self, index: int) -> None:
+        self._selected_repeat_sprite_index = index
+        if index >= 0:
+            self._selected_object_index = -1
+            self._selected_text_index = -1
+            self._selected_tiled_rect_index = -1
+            self._refresh_objects_list()
+            self._refresh_text_labels_list()
+            self._refresh_tiled_rects_list()
+        self._refresh_repeat_sprites_list()
+        card = self._repeat_sprite_cards.get(index)
+        if card is not None:
+            card.set_expanded(True)
+            self.repeat_sprites_scroll.ensureWidgetVisible(card)
         self._refresh_canvas()
 
     def _on_text_fields_changed(self) -> None:
@@ -1662,6 +2613,8 @@ class GuiLayerEditorWidget(QWidget):
         self._dirty = True
         self._selected_object_index = -1
         self._selected_text_index = -1
+        self._selected_tiled_rect_index = -1
+        self._selected_repeat_sprite_index = -1
         self._selected_tile = 0
         self.canvas.clear_caches()
         self._tilesets_cache.clear()
@@ -1679,6 +2632,8 @@ class GuiLayerEditorWidget(QWidget):
         self._dirty = False
         self._selected_object_index = -1
         self._selected_text_index = -1
+        self._selected_tiled_rect_index = -1
+        self._selected_repeat_sprite_index = -1
         self._selected_tile = 0
         self.canvas.clear_caches()
         self._tilesets_cache.clear()
