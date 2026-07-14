@@ -27,6 +27,7 @@ _player_crouching: bool = False
 _player_hitbox: tuple[float, float, float, float] | None = None
 _player_energy: tuple[float, float] | None = None  # (current, max)
 _player_lives: tuple[int, int] | None = None  # (current, max)
+_player_gears: int | None = None
 _tileset_cache: dict[str, Tileset] = {}
 # Renderer-owned GuiLayer loader (rel_path -> live, cached GuiLayer), so
 # scripts can drive HUD elements (health bars, pip counters) without
@@ -90,6 +91,16 @@ def set_player_lives(current: int, max_lives: int) -> None:
 
 def player_lives() -> tuple[int, int] | None:
     return _player_lives
+
+
+def set_player_gears(count: int) -> None:
+    """Call every frame from the player controller script — drives the HUD gears counter."""
+    global _player_gears
+    _player_gears = count
+
+
+def player_gears() -> int | None:
+    return _player_gears
 
 
 def bind_gui_layers(loader: Callable[[str], "GuiLayer | None"]) -> None:

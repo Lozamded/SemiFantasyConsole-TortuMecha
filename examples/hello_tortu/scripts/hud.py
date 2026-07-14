@@ -8,6 +8,7 @@ from tortuengine import instance_api
 GUI_LAYER_PATH = "assets/gui/hud.tortuguilayer"
 ENERGY_PIPS_ID = "pips1"
 LIVES_LABEL_ID = "lives_label"
+GEARS_LABEL_ID = "gears_label"
 
 
 def init(engine):
@@ -24,6 +25,10 @@ def update(dt):
     if lives is not None:
         current, _maximum = lives
         instance_api.set_gui_text_label_text(GUI_LAYER_PATH, LIVES_LABEL_ID, f"x{current}")
+
+    gears = instance_api.player_gears()
+    if gears is not None:
+        instance_api.set_gui_text_label_text(GUI_LAYER_PATH, GEARS_LABEL_ID, f"x{gears}")
 
 
 def draw(engine):

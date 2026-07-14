@@ -31,6 +31,7 @@ _PREFAB_PATH = "assets/objects/mechaturtle.tortuobject"
 ATTACK_COLLIDER_PREFAB = "assets/objects/collider_mechaturtle_attack.tortuobject"
 ATTACK_COLLIDER_ID = "mechaturtle_attack_hitbox"
 SLIME_PREFAB = "assets/objects/red_slime.tortuobject"
+GEAR_PREFAB = "assets/objects/gear.tortuobject"
 
 SCREEN_W, SCREEN_H = 264, 198
 TILE_SIZE = 16
@@ -48,6 +49,7 @@ KNOCKBACK_SPEED = 140.0
 # wired into the life system yet — reserved for a future shoot/attack meter.
 MAX_ENERGY = 3
 MAX_LIVES = 6
+GEARS_PER_LIFE = 100
 
 # Hitbox offsets from the character origin. Resolved in init() from the
 # auto.COLLIDER_BODY + auto.COLLIDER_HEAD colliders (stand) and
@@ -56,6 +58,7 @@ STAND_HB_L = STAND_HB_R = STAND_HB_T = STAND_HB_B = 0
 CROUCH_HB_L = CROUCH_HB_R = CROUCH_HB_T = CROUCH_HB_B = 0
 ATK_HB_L = ATK_HB_R = ATK_HB_T = ATK_HB_B = 0
 SLIME_HB_L = SLIME_HB_R = SLIME_HB_T = SLIME_HB_B = 0
+GEAR_HB_L = GEAR_HB_R = GEAR_HB_T = GEAR_HB_B = 0
 
 _scene = None
 # Attack hitbox scene object — spawned once in init(), repositioned and
@@ -86,10 +89,12 @@ _hurt_timer = 0.0
 _knockback_dir = 1  # -1 = pushed left, 1 = pushed right; set when a hit lands
 _energy = MAX_ENERGY
 _lives = MAX_LIVES
+_gears = 0
 
 _sfx_jump: pygame.mixer.Sound | None = None
 _sfx_shell: pygame.mixer.Sound | None = None
 _sfx_attack: pygame.mixer.Sound | None = None
+_sfx_coin: pygame.mixer.Sound | None = None
 
 _camera = None
 _is_camera_target: bool = True
@@ -313,9 +318,10 @@ def init(engine) -> None:
     global CROUCH_HB_L, CROUCH_HB_R, CROUCH_HB_T, CROUCH_HB_B
     global ATK_HB_L, ATK_HB_R, ATK_HB_T, ATK_HB_B
     global SLIME_HB_L, SLIME_HB_R, SLIME_HB_T, SLIME_HB_B
-    global _sfx_jump, _sfx_shell, _sfx_attack, _is_camera_target
+    global GEAR_HB_L, GEAR_HB_R, GEAR_HB_T, GEAR_HB_B
+    global _sfx_jump, _sfx_shell, _sfx_attack, _sfx_coin, _is_camera_target
     global _engine, _attack_obj, _hurt_timer, _knockback_dir
-    global _energy, _lives
+    global _energy, _lives, _gears
 
     _engine = engine
     _px, _py = 34.0, 191.0
@@ -328,7 +334,7 @@ def init(engine) -> None:
     _was_on_ground = False
     _crouching, _prev_down = False, False
     _hurt_timer, _knockback_dir = 0.0, 1
-    _energy, _lives = MAX_ENERGY, MAX_LIVES
+    _energy, _lives, _gears = MAX_ENERGY, MAX_LIVES, 0
 
     scene_path = ROOT / "scenes/level_01.tortuscene"
     _scene = load_scene(scene_path, project_root=ROOT)
@@ -396,6 +402,14 @@ def init(engine) -> None:
         slime_sprite.pixel_width, slime_sprite.pixel_height,
     )
 
+    # Gear (coin) pickup hitbox, resolved from the gear prefab the same way.
+    gear_obj = load_object(ROOT / GEAR_PREFAB)
+    gear_sprite = load_sprite(ROOT / gear_obj.default_sprite)
+    GEAR_HB_L, GEAR_HB_R, GEAR_HB_T, GEAR_HB_B = _resolve_bounds(
+        gear_obj.colliders, gear_obj.origin.x, gear_obj.origin.y,
+        gear_sprite.pixel_width, gear_sprite.pixel_height,
+    )
+
     _frames.clear()
     for anim in _ANIMS:
         sp = load_sprite(ROOT / f"assets/sprites/mechaturtle_{anim}.tortusprite")
@@ -411,6 +425,7 @@ def init(engine) -> None:
         _sfx_jump = pygame.mixer.Sound(str(ROOT / "assets/audio/sfx_jump.ogg"))
         _sfx_shell = pygame.mixer.Sound(str(ROOT / "assets/audio/sfx_shell.ogg"))
         _sfx_attack = pygame.mixer.Sound(str(ROOT / "assets/audio/sfx_attack.ogg"))
+        _sfx_coin = pygame.mixer.Sound(str(ROOT / "assets/audio/sfx_coin.ogg"))
     except Exception:
         pass
 
@@ -434,7 +449,7 @@ def update(dt: float) -> None:
     global _prev_jump, _prev_attack, _was_on_ground
     global _crouching, _prev_down
     global _hurt_timer, _knockback_dir
-    global _energy, _lives
+    global _energy, _lives, _gears
 
     keys = pygame.key.get_pressed()
     jump_held  = keys[pygame.K_z] or keys[pygame.K_SPACE] or keys[pygame.K_UP] or keys[pygame.K_w]
@@ -472,12 +487,13 @@ def update(dt: float) -> None:
         _hurt_timer = max(0.0, _hurt_timer - dt)
     hurt = _hurt_timer > 0
 
+    px_l, px_r = _px + hb_l, _px + hb_r
+    py_t, py_b = _py + hb_t, _py + hb_b
+
     # Touch-damage: only look for a new hit while not already reeling from one.
     # Crouching is immune — red_slime.py bounces off a crouched turtle instead
     # (see its own player_hitbox()/player_is_crouching() check).
     if not hurt and not _crouching and _scene is not None:
-        px_l, px_r = _px + hb_l, _px + hb_r
-        py_t, py_b = _py + hb_t, _py + hb_b
         for inst in _scene.objects:
             if inst.prefab != SLIME_PREFAB or not inst.enabled:
                 continue
@@ -495,6 +511,22 @@ def update(dt: float) -> None:
                         _lives -= 1
                         _energy = MAX_ENERGY if _lives > 0 else 0
                 break
+
+    # Gear pickup — a coin-style collectible; always active regardless of
+    # hurt/crouch state, unlike enemy touch-damage above.
+    if _scene is not None:
+        for inst in _scene.objects:
+            if inst.prefab != GEAR_PREFAB or not inst.enabled:
+                continue
+            g_l, g_r = inst.x + GEAR_HB_L, inst.x + GEAR_HB_R
+            g_t, g_b = inst.y + GEAR_HB_T, inst.y + GEAR_HB_B
+            if px_l < g_r and px_r > g_l and py_t < g_b and py_b > g_t:
+                inst.enabled = False
+                if _sfx_coin:
+                    _sfx_coin.play()
+                _gears += 1
+                if _gears % GEARS_PER_LIFE == 0:
+                    _lives += 1
 
     if jump_released and _vy < 0:
         _vy *= JUMP_CUT
@@ -604,6 +636,7 @@ def update(dt: float) -> None:
     instance_api.set_player_hitbox(_px + hb_l, _px + hb_r, _py + hb_t, _py + hb_b)
     instance_api.set_player_energy(_energy, MAX_ENERGY)
     instance_api.set_player_lives(_lives, MAX_LIVES)
+    instance_api.set_player_gears(_gears)
     if _renderer and _scene:
         _renderer.tick(_scene, dt, _engine)
 
