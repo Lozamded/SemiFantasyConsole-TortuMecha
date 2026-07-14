@@ -1,0 +1,7 @@
+{
+  "name": "health_bar",
+  "texture": "assets/sprites/enemycollider.tortusprite",
+  "fill_direction": "left_to_right",
+  "width": 40,
+  "height": 8
+}

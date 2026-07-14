@@ -35,6 +35,8 @@ from tortuengine import instance_api
 from tortuengine.instance_scripts import InstanceScript, load_instance_script
 from tortuengine.object import TortuObject, load_object
 from tortuengine.palette import load_palette, palette_path
+from tortuengine.pip_bar import PipBar, load_pip_bar
+from tortuengine.progress_bar import ProgressBar, load_progress_bar
 from tortuengine.scene import EMPTY_TILE, Scene, SceneObject, tile_size_for_tile_layer
 from tortuengine.sprite import Sprite, load_sprite
 from tortuengine.sprite_font import TortuSpriteFont, load_sprite_font, render_sprite_text_line
@@ -85,6 +87,8 @@ class SceneRenderer:
         self._sprites: dict[str, Sprite] = {}
         self._objects: dict[str, TortuObject] = {}
         self._gui_layers: dict[str, GuiLayer] = {}
+        self._progress_bars: dict[str, ProgressBar] = {}
+        self._pip_bars: dict[str, PipBar] = {}
         self._text_fonts: dict[str, TortuFont] = {}
         self._sprite_fonts: dict[str, TortuSpriteFont] = {}
         self._object_anim: list[_ObjectAnimState] = []
@@ -587,6 +591,30 @@ class SceneRenderer:
         self._gui_layers[rel_path] = loaded
         return loaded
 
+    def _progress_bar(self, rel_path: str) -> ProgressBar | None:
+        if not rel_path:
+            return None
+        if rel_path in self._progress_bars:
+            return self._progress_bars[rel_path]
+        path = (self.project_root / rel_path).resolve()
+        if not path.is_file():
+            return None
+        loaded = load_progress_bar(path)
+        self._progress_bars[rel_path] = loaded
+        return loaded
+
+    def _pip_bar(self, rel_path: str) -> PipBar | None:
+        if not rel_path:
+            return None
+        if rel_path in self._pip_bars:
+            return self._pip_bars[rel_path]
+        path = (self.project_root / rel_path).resolve()
+        if not path.is_file():
+            return None
+        loaded = load_pip_bar(path)
+        self._pip_bars[rel_path] = loaded
+        return loaded
+
     def _text_font(self, rel_path: str) -> TortuFont | None:
         if not rel_path:
             return None
@@ -671,22 +699,25 @@ class SceneRenderer:
         for rect in gui_layer.tiled_rects:
             if not rect.visible or not rect.enabled or rect.width <= 0 or rect.height <= 0:
                 continue
-            sprite = self._sprite(rect.texture)
+            bar = self._progress_bar(rect.prefab)
+            if bar is None:
+                continue
+            sprite = self._sprite(bar.texture)
             if sprite is None:
                 continue
-            tiled = self._tiled_gui_texture(rect.texture, sprite, rect.width, rect.height)
+            tiled = self._tiled_gui_texture(bar.texture, sprite, rect.width, rect.height)
             if tiled is None:
                 continue
-            value = max(0.0, min(1.0, rect.value))
-            if rect.fill_direction == FILL_RIGHT_TO_LEFT:
+            value = rect.fill_fraction
+            if bar.fill_direction == FILL_RIGHT_TO_LEFT:
                 visible_w = round(rect.width * value)
                 src = pygame.Rect(rect.width - visible_w, 0, visible_w, rect.height)
                 dest = (ox + rect.x + rect.width - visible_w, oy + rect.y)
-            elif rect.fill_direction == FILL_TOP_TO_BOTTOM:
+            elif bar.fill_direction == FILL_TOP_TO_BOTTOM:
                 visible_h = round(rect.height * value)
                 src = pygame.Rect(0, 0, rect.width, visible_h)
                 dest = (ox + rect.x, oy + rect.y)
-            elif rect.fill_direction == FILL_BOTTOM_TO_TOP:
+            elif bar.fill_direction == FILL_BOTTOM_TO_TOP:
                 visible_h = round(rect.height * value)
                 src = pygame.Rect(0, rect.height - visible_h, rect.width, visible_h)
                 dest = (ox + rect.x, oy + rect.y + rect.height - visible_h)
@@ -700,28 +731,23 @@ class SceneRenderer:
         for rep in gui_layer.repeat_sprites:
             if not rep.visible or not rep.enabled:
                 continue
-            tortu_object = self._tortu_object(rep.prefab)
-            if tortu_object is None:
+            pip_bar = self._pip_bar(rep.prefab)
+            if pip_bar is None:
                 continue
-            full_anim = rep.full_animation or tortu_object.default_animation
-            full_sprite_path = tortu_object.sprite_for(full_anim) or tortu_object.default_sprite
-            full_sprite = self._sprite(full_sprite_path)
+            full_sprite = self._sprite(pip_bar.full_sprite)
             if full_sprite is None:
                 continue
-            empty_sprite_path = (
-                tortu_object.sprite_for(rep.empty_animation) if rep.empty_animation else ""
-            )
             icon_size = (
-                full_sprite.pixel_height if rep.direction == REPEAT_VERTICAL
+                full_sprite.pixel_height if pip_bar.direction == REPEAT_VERTICAL
                 else full_sprite.pixel_width
             )
-            step = round(icon_size * rep.scale) + rep.spacing
-            total = rep.max_count if rep.max_count > 0 else rep.count
+            step = round(icon_size * pip_bar.scale) + pip_bar.spacing
+            total = rep.max_number if rep.max_number > 0 else rep.number
             for i in range(total):
-                if i < rep.count:
-                    sprite_path = full_sprite_path
-                elif empty_sprite_path:
-                    sprite_path = empty_sprite_path
+                if i < rep.number:
+                    sprite_path = pip_bar.full_sprite
+                elif pip_bar.empty_sprite:
+                    sprite_path = pip_bar.empty_sprite
                 else:
                     continue
                 sprite = self._sprite(sprite_path)
@@ -730,15 +756,15 @@ class SceneRenderer:
                 base = self._baked_sprite_frame(sprite_path, sprite, 0)
                 if base is None:
                     continue
-                surface = base if rep.scale == 1.0 else self._scaled_surface(
-                    base, (sprite_path, 0, round(rep.scale, 3)), rep.scale
+                surface = base if pip_bar.scale == 1.0 else self._scaled_surface(
+                    base, (sprite_path, 0, round(pip_bar.scale, 3)), pip_bar.scale
                 )
-                if rep.direction == REPEAT_VERTICAL:
-                    draw_x = ox + rep.x - tortu_object.origin.x * rep.scale
-                    draw_y = oy + rep.y - tortu_object.origin.y * rep.scale + i * step
+                if pip_bar.direction == REPEAT_VERTICAL:
+                    draw_x = ox + rep.x
+                    draw_y = oy + rep.y + i * step
                 else:
-                    draw_x = ox + rep.x - tortu_object.origin.x * rep.scale + i * step
-                    draw_y = oy + rep.y - tortu_object.origin.y * rep.scale
+                    draw_x = ox + rep.x + i * step
+                    draw_y = oy + rep.y
                 target.blit(surface, (round(draw_x), round(draw_y)))
 
         for label in gui_layer.text_labels:

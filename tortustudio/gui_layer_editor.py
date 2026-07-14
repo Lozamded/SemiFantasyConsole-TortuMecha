@@ -37,11 +37,9 @@ from tortuengine.gui_layer import (
     DEFAULT_GUI_LAYER_WIDTH,
     EMPTY_TILE,
     FILL_BOTTOM_TO_TOP,
-    FILL_DIRECTIONS,
     FILL_LEFT_TO_RIGHT,
     FILL_RIGHT_TO_LEFT,
     FILL_TOP_TO_BOTTOM,
-    REPEAT_DIRECTIONS,
     REPEAT_HORIZONTAL,
     REPEAT_VERTICAL,
     GuiLayer,
@@ -54,6 +52,8 @@ from tortuengine.gui_layer import (
 )
 from tortuengine.object import TortuObject, load_object
 from tortuengine.palette import TRANSPARENT_INDEX, load_palette, palette_path
+from tortuengine.pip_bar import PipBar, load_pip_bar
+from tortuengine.progress_bar import ProgressBar, load_progress_bar
 from tortuengine.project import load_project
 from tortuengine.sprite import Sprite, load_sprite
 from tortuengine.sprite_font import TortuSpriteFont, load_sprite_font, render_sprite_text_line
@@ -61,10 +61,13 @@ from tortuengine.text_font import TortuFont, load_tortu_font, render_text_line
 from tortuengine.tileset import Tileset, load_tileset
 from tortustudio.collapsible import CollapsibleSection
 from tortustudio.object_strip import ObjectStripCanvas
+from tortustudio.pip_bar_strip import PipBarStripCanvas
+from tortustudio.progress_bar_strip import ProgressBarStripCanvas
 from tortustudio.scene_assets import (
     list_object_paths,
+    list_pip_bar_paths,
+    list_progress_bar_paths,
     list_sprite_font_paths,
-    list_sprite_paths,
     list_text_font_paths,
     list_tileset_paths,
 )
@@ -110,6 +113,8 @@ class GuiLayerCanvas(QWidget):
         self.text_fonts: dict[str, TortuFont] = {}
         self.sprite_fonts: dict[str, TortuSpriteFont] = {}
         self.font_palettes: dict[str, list[tuple[int, int, int]]] = {}
+        self.progress_bars: dict[str, ProgressBar] = {}
+        self.pip_bars: dict[str, PipBar] = {}
 
         self.target = GuiLayerTarget.TILES
         self.tool = Tool.PAINT
@@ -118,7 +123,8 @@ class GuiLayerCanvas(QWidget):
         self.selected_object_prefab = ""
         self.pending_text = ""
         self.pending_font = ""
-        self.pending_texture = ""
+        self.pending_progress_bar_prefab = ""
+        self.pending_pip_bar_prefab = ""
         self.selected_object_index = -1
         self.selected_text_index = -1
         self.selected_tiled_rect_index = -1
@@ -152,7 +158,8 @@ class GuiLayerCanvas(QWidget):
         selected_object_index: int,
         selected_text_index: int,
         show_grid: bool = True,
-        pending_texture: str = "",
+        pending_progress_bar_prefab: str = "",
+        pending_pip_bar_prefab: str = "",
         selected_tiled_rect_index: int = -1,
         selected_repeat_sprite_index: int = -1,
     ) -> None:
@@ -167,7 +174,8 @@ class GuiLayerCanvas(QWidget):
         self.selected_object_prefab = selected_object_prefab
         self.pending_text = pending_text
         self.pending_font = pending_font
-        self.pending_texture = pending_texture
+        self.pending_progress_bar_prefab = pending_progress_bar_prefab
+        self.pending_pip_bar_prefab = pending_pip_bar_prefab
         self.selected_object_index = selected_object_index
         self.selected_text_index = selected_text_index
         self.selected_tiled_rect_index = selected_tiled_rect_index
@@ -195,6 +203,8 @@ class GuiLayerCanvas(QWidget):
         self.text_fonts.clear()
         self.sprite_fonts.clear()
         self.font_palettes.clear()
+        self.progress_bars.clear()
+        self.pip_bars.clear()
 
     # -- asset lookups -----------------------------------------------------
 
@@ -272,8 +282,39 @@ class GuiLayerCanvas(QWidget):
             surface = pygame.transform.scale(surface, (width, height))
         return surface
 
+    def _get_progress_bar(self, prefab_path: str) -> ProgressBar | None:
+        if not prefab_path:
+            return None
+        if prefab_path in self.progress_bars:
+            return self.progress_bars[prefab_path]
+        if self.project_root is None:
+            return None
+        path = (self.project_root / prefab_path).resolve()
+        if not path.is_file():
+            return None
+        loaded = load_progress_bar(path)
+        self.progress_bars[prefab_path] = loaded
+        return loaded
+
+    def _get_pip_bar(self, prefab_path: str) -> PipBar | None:
+        if not prefab_path:
+            return None
+        if prefab_path in self.pip_bars:
+            return self.pip_bars[prefab_path]
+        if self.project_root is None:
+            return None
+        path = (self.project_root / prefab_path).resolve()
+        if not path.is_file():
+            return None
+        loaded = load_pip_bar(path)
+        self.pip_bars[prefab_path] = loaded
+        return loaded
+
     def _tiled_rect_base_surface(self, rect: GuiTiledRect) -> pygame.Surface | None:
-        sprite = self._get_object_sprite(rect.texture)
+        bar = self._get_progress_bar(rect.prefab)
+        if bar is None:
+            return None
+        sprite = self._get_object_sprite(bar.texture)
         if sprite is None:
             return None
         palette = self._sprite_palette(sprite.palette)
@@ -297,14 +338,16 @@ class GuiLayerCanvas(QWidget):
 
     def _tiled_rect_fill_rect(self, rect: GuiTiledRect) -> pygame.Rect:
         """Local (unclipped to rect.x/y) crop rect of the currently-filled portion."""
-        value = max(0.0, min(1.0, rect.value))
-        if rect.fill_direction == FILL_RIGHT_TO_LEFT:
+        bar = self._get_progress_bar(rect.prefab)
+        fill_direction = bar.fill_direction if bar else FILL_LEFT_TO_RIGHT
+        value = rect.fill_fraction
+        if fill_direction == FILL_RIGHT_TO_LEFT:
             visible_w = round(rect.width * value)
             return pygame.Rect(rect.width - visible_w, 0, visible_w, rect.height)
-        if rect.fill_direction == FILL_TOP_TO_BOTTOM:
+        if fill_direction == FILL_TOP_TO_BOTTOM:
             visible_h = round(rect.height * value)
             return pygame.Rect(0, 0, rect.width, visible_h)
-        if rect.fill_direction == FILL_BOTTOM_TO_TOP:
+        if fill_direction == FILL_BOTTOM_TO_TOP:
             visible_h = round(rect.height * value)
             return pygame.Rect(0, rect.height - visible_h, rect.width, visible_h)
         visible_w = round(rect.width * value)
@@ -312,30 +355,26 @@ class GuiLayerCanvas(QWidget):
 
     def _repeat_sprite_icon_size(self, rep: GuiRepeatSprite) -> tuple[int, int, int]:
         """(step, icon_w, icon_h) for one icon slot, or (0, 0, 0) if unresolvable."""
-        tortu_object = self._get_tortu_object(rep.prefab)
-        if tortu_object is None:
+        pip_bar = self._get_pip_bar(rep.prefab)
+        if pip_bar is None:
             return 0, 0, 0
-        full_anim = rep.full_animation or tortu_object.default_animation
-        sprite_path = tortu_object.sprite_for(full_anim) or tortu_object.default_sprite
-        sprite = self._get_object_sprite(sprite_path)
+        sprite = self._get_object_sprite(pip_bar.full_sprite)
         if sprite is None:
             return 0, 0, 0
         icon_w, icon_h = sprite.pixel_width, sprite.pixel_height
-        icon_size = icon_h if rep.direction == REPEAT_VERTICAL else icon_w
-        step = round(icon_size * rep.scale) + rep.spacing
-        return step, round(icon_w * rep.scale), round(icon_h * rep.scale)
+        icon_size = icon_h if pip_bar.direction == REPEAT_VERTICAL else icon_w
+        step = round(icon_size * pip_bar.scale) + pip_bar.spacing
+        return step, round(icon_w * pip_bar.scale), round(icon_h * pip_bar.scale)
 
     def _repeat_sprite_icon_surface(
         self, rep: GuiRepeatSprite, filled: bool
     ) -> pygame.Surface | None:
-        tortu_object = self._get_tortu_object(rep.prefab)
-        if tortu_object is None:
+        pip_bar = self._get_pip_bar(rep.prefab)
+        if pip_bar is None:
             return None
-        anim = (rep.full_animation if filled else rep.empty_animation) or ""
-        if not filled and not rep.empty_animation:
+        sprite_path = pip_bar.full_sprite if filled else pip_bar.empty_sprite
+        if not sprite_path:
             return None
-        anim = anim or tortu_object.default_animation
-        sprite_path = tortu_object.sprite_for(anim) or tortu_object.default_sprite
         sprite = self._get_object_sprite(sprite_path)
         if sprite is None:
             return None
@@ -343,24 +382,23 @@ class GuiLayerCanvas(QWidget):
         if palette is None:
             return None
         surface = sprite.to_surface(palette, frame_index=0)
-        if rep.scale != 1.0:
-            width = max(1, round(surface.get_width() * rep.scale))
-            height = max(1, round(surface.get_height() * rep.scale))
+        if pip_bar.scale != 1.0:
+            width = max(1, round(surface.get_width() * pip_bar.scale))
+            height = max(1, round(surface.get_height() * pip_bar.scale))
             surface = pygame.transform.scale(surface, (width, height))
         return surface
 
     def _repeat_sprite_bounds(self, rep: GuiRepeatSprite) -> tuple[int, int, int, int]:
         """(x0, y0, x1, y1) bounding box covering every icon slot."""
         step, icon_w, icon_h = self._repeat_sprite_icon_size(rep)
-        total = max(rep.max_count, rep.count, 1)
-        tortu_object = self._get_tortu_object(rep.prefab)
-        ox = tortu_object.origin.x * rep.scale if tortu_object else 0
-        oy = tortu_object.origin.y * rep.scale if tortu_object else 0
-        if rep.direction == REPEAT_VERTICAL:
-            x0, y0 = rep.x - ox, rep.y - oy
+        pip_bar = self._get_pip_bar(rep.prefab)
+        total = max(rep.max_number, rep.number, 1)
+        direction = pip_bar.direction if pip_bar else REPEAT_HORIZONTAL
+        if direction == REPEAT_VERTICAL:
+            x0, y0 = rep.x, rep.y
             x1, y1 = x0 + icon_w, y0 + icon_h + step * (total - 1)
         else:
-            x0, y0 = rep.x - ox, rep.y - oy
+            x0, y0 = rep.x, rep.y
             x1, y1 = x0 + icon_w + step * (total - 1), y0 + icon_h
         return round(x0), round(y0), round(x1), round(y1)
 
@@ -474,19 +512,18 @@ class GuiLayerCanvas(QWidget):
             step, icon_w, icon_h = self._repeat_sprite_icon_size(rep)
             if step <= 0:
                 continue
-            tortu_object = self._get_tortu_object(rep.prefab)
-            ox = tortu_object.origin.x * rep.scale if tortu_object else 0
-            oy = tortu_object.origin.y * rep.scale if tortu_object else 0
-            total = rep.max_count if rep.max_count > 0 else rep.count
+            pip_bar = self._get_pip_bar(rep.prefab)
+            direction = pip_bar.direction if pip_bar else REPEAT_HORIZONTAL
+            total = rep.max_number if rep.max_number > 0 else rep.number
             for i in range(total):
-                filled = i < rep.count
+                filled = i < rep.number
                 surface = self._repeat_sprite_icon_surface(rep, filled)
                 if surface is None:
                     continue
-                if rep.direction == REPEAT_VERTICAL:
-                    draw_x, draw_y = rep.x - ox, rep.y - oy + i * step
+                if direction == REPEAT_VERTICAL:
+                    draw_x, draw_y = rep.x, rep.y + i * step
                 else:
-                    draw_x, draw_y = rep.x - ox + i * step, rep.y - oy
+                    draw_x, draw_y = rep.x + i * step, rep.y
                 composite.blit(surface, (round(draw_x), round(draw_y)))
 
         for label in self.gui_layer.text_labels:
@@ -720,11 +757,13 @@ class GuiLayerCanvas(QWidget):
             index = self.gui_layer.find_tiled_rect_near(px, py)
             if index is not None:
                 self.gui_layer.remove_tiled_rect(index)
-        elif self.tool == Tool.PAINT and self.pending_texture:
+        elif self.tool == Tool.PAINT and self.pending_progress_bar_prefab:
+            bar = self._get_progress_bar(self.pending_progress_bar_prefab)
+            width = bar.width if bar else self.DEFAULT_TILED_RECT_WIDTH
+            height = bar.height if bar else self.DEFAULT_TILED_RECT_HEIGHT
             try:
                 self.gui_layer.add_tiled_rect(
-                    self.pending_texture, px, py,
-                    self.DEFAULT_TILED_RECT_WIDTH, self.DEFAULT_TILED_RECT_HEIGHT,
+                    self.pending_progress_bar_prefab, px, py, width, height,
                 )
             except ValueError:
                 pass
@@ -746,10 +785,10 @@ class GuiLayerCanvas(QWidget):
             index = self.gui_layer.find_repeat_sprite_near(px, py)
             if index is not None:
                 self.gui_layer.remove_repeat_sprite(index)
-        elif self.tool == Tool.PAINT and self.selected_object_prefab:
+        elif self.tool == Tool.PAINT and self.pending_pip_bar_prefab:
             try:
                 self.gui_layer.add_repeat_sprite(
-                    self.selected_object_prefab, px, py, count=1, max_count=1,
+                    self.pending_pip_bar_prefab, px, py, number=1, max_number=1,
                 )
             except ValueError:
                 pass
@@ -1196,7 +1235,8 @@ class _GuiTiledRectCard(QWidget):
         header.addWidget(self.toggle, stretch=1)
         header.addWidget(self.btn_remove)
 
-        self.texture_combo = QComboBox()
+        self.prefab_combo = QComboBox()
+        self.prefab_combo.setToolTip("Reusable .tortuprogressbar prefab (texture + fill direction)")
         self.x_spin = QSpinBox()
         self.x_spin.setRange(-9999, 9999)
         self.y_spin = QSpinBox()
@@ -1205,14 +1245,14 @@ class _GuiTiledRectCard(QWidget):
         self.width_spin.setRange(1, 2048)
         self.height_spin = QSpinBox()
         self.height_spin.setRange(1, 2048)
-        self.value_spin = QDoubleSpinBox()
-        self.value_spin.setRange(0.0, 1.0)
-        self.value_spin.setSingleStep(0.05)
-        self.value_spin.setValue(1.0)
-        self.value_spin.setToolTip("Fraction of the rect drawn — e.g. current/max health")
-        self.direction_combo = QComboBox()
-        for direction in FILL_DIRECTIONS:
-            self.direction_combo.addItem(direction.replace("_", " ").title(), direction)
+        self.number_spin = QDoubleSpinBox()
+        self.number_spin.setRange(0.0, 999999.0)
+        self.number_spin.setValue(1.0)
+        self.number_spin.setToolTip("Current value — e.g. current HP")
+        self.max_number_spin = QDoubleSpinBox()
+        self.max_number_spin.setRange(0.0, 999999.0)
+        self.max_number_spin.setValue(1.0)
+        self.max_number_spin.setToolTip("Max value — e.g. max HP. Fill % is number / max_number")
         self.visible_check = QCheckBox("Visible at play")
         self.visible_check.setChecked(True)
         self.visible_check.setToolTip("Whether this rect is drawn when the scene runs")
@@ -1222,13 +1262,13 @@ class _GuiTiledRectCard(QWidget):
 
         form = QFormLayout()
         form.setContentsMargins(20, 2, 0, 6)
-        form.addRow("Texture:", self.texture_combo)
+        form.addRow("Prefab:", self.prefab_combo)
         form.addRow("X:", self.x_spin)
         form.addRow("Y:", self.y_spin)
         form.addRow("Width:", self.width_spin)
         form.addRow("Height:", self.height_spin)
-        form.addRow("Value:", self.value_spin)
-        form.addRow("Fill direction:", self.direction_combo)
+        form.addRow("Number:", self.number_spin)
+        form.addRow("Max number:", self.max_number_spin)
         form.addRow("", self.visible_check)
         form.addRow("", self.enabled_check)
 
@@ -1242,13 +1282,13 @@ class _GuiTiledRectCard(QWidget):
         outer.addLayout(header)
         outer.addWidget(self.content)
 
-        self.texture_combo.currentIndexChanged.connect(self._emit_changed)
+        self.prefab_combo.currentIndexChanged.connect(self._emit_changed)
         self.x_spin.valueChanged.connect(self._emit_changed)
         self.y_spin.valueChanged.connect(self._emit_changed)
         self.width_spin.valueChanged.connect(self._emit_changed)
         self.height_spin.valueChanged.connect(self._emit_changed)
-        self.value_spin.valueChanged.connect(self._emit_changed)
-        self.direction_combo.currentIndexChanged.connect(self._emit_changed)
+        self.number_spin.valueChanged.connect(self._emit_changed)
+        self.max_number_spin.valueChanged.connect(self._emit_changed)
         self.visible_check.toggled.connect(self._emit_changed)
         self.enabled_check.toggled.connect(self._emit_changed)
 
@@ -1280,26 +1320,25 @@ class _GuiTiledRectCard(QWidget):
         if not self._suspend:
             self.changed.emit()
 
-    def sync(self, rect: GuiTiledRect, texture_choices: list[str]) -> None:
+    def sync(self, rect: GuiTiledRect, prefab_choices: list[str]) -> None:
         widgets = (
-            self.texture_combo, self.x_spin, self.y_spin, self.width_spin, self.height_spin,
-            self.value_spin, self.direction_combo, self.visible_check, self.enabled_check,
+            self.prefab_combo, self.x_spin, self.y_spin, self.width_spin, self.height_spin,
+            self.number_spin, self.max_number_spin, self.visible_check, self.enabled_check,
         )
         self._suspend = True
         for widget in widgets:
             widget.blockSignals(True)
-        self.texture_combo.clear()
-        for rel in texture_choices:
-            self.texture_combo.addItem(rel, rel)
-        found = self.texture_combo.findData(rect.texture)
-        self.texture_combo.setCurrentIndex(found if found >= 0 else 0)
+        self.prefab_combo.clear()
+        for rel in prefab_choices:
+            self.prefab_combo.addItem(rel, rel)
+        found = self.prefab_combo.findData(rect.prefab)
+        self.prefab_combo.setCurrentIndex(found if found >= 0 else 0)
         self.x_spin.setValue(rect.x)
         self.y_spin.setValue(rect.y)
         self.width_spin.setValue(rect.width)
         self.height_spin.setValue(rect.height)
-        self.value_spin.setValue(rect.value)
-        found_dir = self.direction_combo.findData(rect.fill_direction)
-        self.direction_combo.setCurrentIndex(found_dir if found_dir >= 0 else 0)
+        self.number_spin.setValue(rect.number)
+        self.max_number_spin.setValue(rect.max_number)
         self.visible_check.setChecked(rect.visible)
         self.enabled_check.setChecked(rect.enabled)
         for widget in widgets:
@@ -1307,13 +1346,13 @@ class _GuiTiledRectCard(QWidget):
         self._suspend = False
 
     def read_into(self, rect: GuiTiledRect) -> None:
-        rect.texture = self.texture_combo.currentData() or rect.texture
+        rect.prefab = self.prefab_combo.currentData() or rect.prefab
         rect.x = self.x_spin.value()
         rect.y = self.y_spin.value()
         rect.width = self.width_spin.value()
         rect.height = self.height_spin.value()
-        rect.value = self.value_spin.value()
-        rect.fill_direction = self.direction_combo.currentData() or FILL_LEFT_TO_RIGHT
+        rect.number = self.number_spin.value()
+        rect.max_number = self.max_number_spin.value()
         rect.visible = self.visible_check.isChecked()
         rect.enabled = self.enabled_check.isChecked()
 
@@ -1349,28 +1388,20 @@ class _GuiRepeatSpriteCard(QWidget):
         header.addWidget(self.toggle, stretch=1)
         header.addWidget(self.btn_remove)
 
+        self.prefab_combo = QComboBox()
+        self.prefab_combo.setToolTip(
+            "Reusable .tortupipbar prefab (full/empty sprites, direction, spacing, scale)"
+        )
         self.x_spin = QSpinBox()
         self.x_spin.setRange(-9999, 9999)
         self.y_spin = QSpinBox()
         self.y_spin.setRange(-9999, 9999)
-        self.count_spin = QSpinBox()
-        self.count_spin.setRange(0, 256)
-        self.count_spin.setToolTip("Currently filled slots — e.g. remaining life")
-        self.max_count_spin = QSpinBox()
-        self.max_count_spin.setRange(0, 256)
-        self.max_count_spin.setToolTip("Total slots — e.g. maximum life")
-        self.spacing_spin = QSpinBox()
-        self.spacing_spin.setRange(-99, 99)
-        self.spacing_spin.setToolTip("Extra pixel gap between icons, beyond the icon's own size")
-        self.direction_combo = QComboBox()
-        for direction in REPEAT_DIRECTIONS:
-            self.direction_combo.addItem(direction.title(), direction)
-        self.full_anim_combo = QComboBox()
-        self.empty_anim_combo = QComboBox()
-        self.scale_spin = QDoubleSpinBox()
-        self.scale_spin.setRange(0.1, 10.0)
-        self.scale_spin.setSingleStep(0.1)
-        self.scale_spin.setValue(1.0)
+        self.number_spin = QSpinBox()
+        self.number_spin.setRange(0, 999999)
+        self.number_spin.setToolTip("Currently filled slots — e.g. remaining life")
+        self.max_number_spin = QSpinBox()
+        self.max_number_spin.setRange(0, 999999)
+        self.max_number_spin.setToolTip("Total slots — e.g. max life")
         self.visible_check = QCheckBox("Visible at play")
         self.visible_check.setChecked(True)
         self.visible_check.setToolTip("Whether these icons are drawn when the scene runs")
@@ -1380,15 +1411,11 @@ class _GuiRepeatSpriteCard(QWidget):
 
         form = QFormLayout()
         form.setContentsMargins(20, 2, 0, 6)
+        form.addRow("Prefab:", self.prefab_combo)
         form.addRow("X:", self.x_spin)
         form.addRow("Y:", self.y_spin)
-        form.addRow("Count:", self.count_spin)
-        form.addRow("Max count:", self.max_count_spin)
-        form.addRow("Spacing:", self.spacing_spin)
-        form.addRow("Direction:", self.direction_combo)
-        form.addRow("Full animation:", self.full_anim_combo)
-        form.addRow("Empty animation:", self.empty_anim_combo)
-        form.addRow("Scale:", self.scale_spin)
+        form.addRow("Number:", self.number_spin)
+        form.addRow("Max number:", self.max_number_spin)
         form.addRow("", self.visible_check)
         form.addRow("", self.enabled_check)
 
@@ -1402,15 +1429,11 @@ class _GuiRepeatSpriteCard(QWidget):
         outer.addLayout(header)
         outer.addWidget(self.content)
 
+        self.prefab_combo.currentIndexChanged.connect(self._emit_changed)
         self.x_spin.valueChanged.connect(self._emit_changed)
         self.y_spin.valueChanged.connect(self._emit_changed)
-        self.count_spin.valueChanged.connect(self._emit_changed)
-        self.max_count_spin.valueChanged.connect(self._emit_changed)
-        self.spacing_spin.valueChanged.connect(self._emit_changed)
-        self.direction_combo.currentIndexChanged.connect(self._emit_changed)
-        self.full_anim_combo.currentIndexChanged.connect(self._emit_changed)
-        self.empty_anim_combo.currentIndexChanged.connect(self._emit_changed)
-        self.scale_spin.valueChanged.connect(self._emit_changed)
+        self.number_spin.valueChanged.connect(self._emit_changed)
+        self.max_number_spin.valueChanged.connect(self._emit_changed)
         self.visible_check.toggled.connect(self._emit_changed)
         self.enabled_check.toggled.connect(self._emit_changed)
 
@@ -1442,35 +1465,23 @@ class _GuiRepeatSpriteCard(QWidget):
         if not self._suspend:
             self.changed.emit()
 
-    def sync(self, rep: GuiRepeatSprite, tortu_object: TortuObject | None) -> None:
+    def sync(self, rep: GuiRepeatSprite, prefab_choices: list[str]) -> None:
         widgets = (
-            self.x_spin, self.y_spin, self.count_spin, self.max_count_spin, self.spacing_spin,
-            self.direction_combo, self.full_anim_combo, self.empty_anim_combo, self.scale_spin,
-            self.visible_check, self.enabled_check,
+            self.prefab_combo, self.x_spin, self.y_spin, self.number_spin,
+            self.max_number_spin, self.visible_check, self.enabled_check,
         )
         self._suspend = True
         for widget in widgets:
             widget.blockSignals(True)
+        self.prefab_combo.clear()
+        for rel in prefab_choices:
+            self.prefab_combo.addItem(rel, rel)
+        found = self.prefab_combo.findData(rep.prefab)
+        self.prefab_combo.setCurrentIndex(found if found >= 0 else 0)
         self.x_spin.setValue(rep.x)
         self.y_spin.setValue(rep.y)
-        self.count_spin.setValue(rep.count)
-        self.max_count_spin.setValue(rep.max_count)
-        self.spacing_spin.setValue(rep.spacing)
-        found_dir = self.direction_combo.findData(rep.direction)
-        self.direction_combo.setCurrentIndex(found_dir if found_dir >= 0 else 0)
-        self.full_anim_combo.clear()
-        self.full_anim_combo.addItem("(default)", "")
-        self.empty_anim_combo.clear()
-        self.empty_anim_combo.addItem("(none)", "")
-        if tortu_object is not None:
-            for anim in tortu_object.animations:
-                self.full_anim_combo.addItem(anim.name, anim.name)
-                self.empty_anim_combo.addItem(anim.name, anim.name)
-        found_full = self.full_anim_combo.findData(rep.full_animation)
-        self.full_anim_combo.setCurrentIndex(found_full if found_full >= 0 else 0)
-        found_empty = self.empty_anim_combo.findData(rep.empty_animation)
-        self.empty_anim_combo.setCurrentIndex(found_empty if found_empty >= 0 else 0)
-        self.scale_spin.setValue(rep.scale)
+        self.number_spin.setValue(rep.number)
+        self.max_number_spin.setValue(rep.max_number)
         self.visible_check.setChecked(rep.visible)
         self.enabled_check.setChecked(rep.enabled)
         for widget in widgets:
@@ -1478,15 +1489,11 @@ class _GuiRepeatSpriteCard(QWidget):
         self._suspend = False
 
     def read_into(self, rep: GuiRepeatSprite) -> None:
+        rep.prefab = self.prefab_combo.currentData() or rep.prefab
         rep.x = self.x_spin.value()
         rep.y = self.y_spin.value()
-        rep.count = self.count_spin.value()
-        rep.max_count = self.max_count_spin.value()
-        rep.spacing = self.spacing_spin.value()
-        rep.direction = self.direction_combo.currentData() or REPEAT_HORIZONTAL
-        rep.full_animation = self.full_anim_combo.currentData() or ""
-        rep.empty_animation = self.empty_anim_combo.currentData() or ""
-        rep.scale = self.scale_spin.value()
+        rep.number = self.number_spin.value()
+        rep.max_number = self.max_number_spin.value()
         rep.visible = self.visible_check.isChecked()
         rep.enabled = self.enabled_check.isChecked()
 
@@ -1520,6 +1527,12 @@ class GuiLayerEditorWidget(QWidget):
 
         self.object_strip = ObjectStripCanvas()
         self.object_strip.object_clicked.connect(self._on_object_strip_clicked)
+
+        self.progress_bar_strip = ProgressBarStripCanvas()
+        self.progress_bar_strip.progress_bar_clicked.connect(self._on_progress_bar_strip_clicked)
+
+        self.pip_bar_strip = PipBarStripCanvas()
+        self.pip_bar_strip.pip_bar_clicked.connect(self._on_pip_bar_strip_clicked)
 
         self.btn_new = QPushButton("New GUI Layer…")
         self.btn_new.clicked.connect(self.new_gui_layer_requested.emit)
@@ -1691,12 +1704,10 @@ class GuiLayerEditorWidget(QWidget):
         self.text_labels_scroll.setMinimumHeight(160)
 
         # -- tiled rects panel ---------------------------------------
-        self.tiled_rect_texture_combo = QComboBox()
-        self.tiled_rect_texture_combo.currentIndexChanged.connect(self._refresh_canvas)
-
         self.btn_add_tiled_rect = QPushButton("Add tiled rect")
         self.btn_add_tiled_rect.setToolTip(
-            "Create a new tiled rect (e.g. a health bar) using the texture above"
+            "Create a new tiled rect (e.g. a health bar) using the texture selected\n"
+            "in the Tiled Rects tab below"
         )
         self.btn_add_tiled_rect.clicked.connect(self._add_tiled_rect)
 
@@ -1822,9 +1833,10 @@ class GuiLayerEditorWidget(QWidget):
         side.addWidget(text_section)
 
         tiled_rects_section = CollapsibleSection("Tiled Rects", expanded=True)
-        tiled_rects_form = QFormLayout()
-        tiled_rects_form.addRow("New rect texture:", self.tiled_rect_texture_combo)
-        tiled_rects_section.content_layout().addLayout(tiled_rects_form)
+        tiled_rects_section.content_layout().addWidget(QLabel(
+            "Pick a texture in the Tiled Rects tab below, then click the canvas\n"
+            "in Tiled Rect mode to place a bar (e.g. a health bar)."
+        ))
         tiled_rects_section.content_layout().addWidget(self.btn_add_tiled_rect)
         tiled_rects_section.content_layout().addWidget(self.tiled_rects_search)
         tiled_rects_section.content_layout().addWidget(self.tiled_rects_scroll)
@@ -1832,7 +1844,7 @@ class GuiLayerEditorWidget(QWidget):
 
         repeat_sprites_section = CollapsibleSection("Repeat Sprites", expanded=True)
         repeat_sprites_section.content_layout().addWidget(QLabel(
-            "Pick a prefab in the Objects strip below, then click the canvas\n"
+            "Pick a prefab in the Repeat Sprites tab below, then click the canvas\n"
             "in Repeat Sprite mode to place a pip/heart counter."
         ))
         repeat_sprites_section.content_layout().addWidget(self.repeat_sprites_search)
@@ -1868,6 +1880,26 @@ class GuiLayerEditorWidget(QWidget):
         object_strip_scroll.setWidget(self.object_strip)
         object_tab_layout.addWidget(object_strip_scroll)
         self.bottom_tabs.addTab(object_tab, "Objects")
+
+        tiled_rect_tab = QWidget()
+        tiled_rect_tab_layout = QVBoxLayout(tiled_rect_tab)
+        tiled_rect_tab_layout.setContentsMargins(0, 0, 0, 0)
+        progress_bar_strip_scroll = QScrollArea()
+        progress_bar_strip_scroll.setWidgetResizable(True)
+        progress_bar_strip_scroll.setMaximumHeight(140)
+        progress_bar_strip_scroll.setWidget(self.progress_bar_strip)
+        tiled_rect_tab_layout.addWidget(progress_bar_strip_scroll)
+        self.bottom_tabs.addTab(tiled_rect_tab, "Tiled Rects")
+
+        repeat_sprite_tab = QWidget()
+        repeat_sprite_tab_layout = QVBoxLayout(repeat_sprite_tab)
+        repeat_sprite_tab_layout.setContentsMargins(0, 0, 0, 0)
+        pip_bar_strip_scroll = QScrollArea()
+        pip_bar_strip_scroll.setWidgetResizable(True)
+        pip_bar_strip_scroll.setMaximumHeight(140)
+        pip_bar_strip_scroll.setWidget(self.pip_bar_strip)
+        repeat_sprite_tab_layout.addWidget(pip_bar_strip_scroll)
+        self.bottom_tabs.addTab(repeat_sprite_tab, "Repeat Sprites")
         outer.addWidget(self.bottom_tabs)
 
         mode_row = QHBoxLayout()
@@ -2009,6 +2041,14 @@ class GuiLayerEditorWidget(QWidget):
     def _refresh_object_strip(self) -> None:
         paths = list_object_paths(self.project_root)
         self.object_strip.set_project(self.project_root, paths)
+
+    def _refresh_progress_bar_strip(self) -> None:
+        paths = list_progress_bar_paths(self.project_root)
+        self.progress_bar_strip.set_project(self.project_root, paths)
+
+    def _refresh_pip_bar_strip(self) -> None:
+        paths = list_pip_bar_paths(self.project_root)
+        self.pip_bar_strip.set_project(self.project_root, paths)
 
     def _refresh_objects_list(self) -> None:
         if not self.gui_layer:
@@ -2177,18 +2217,11 @@ class GuiLayerEditorWidget(QWidget):
         self._refresh_text_labels_list()
         self._refresh_canvas()
 
-    def _sync_tiled_rect_texture_combo(self) -> None:
-        self.tiled_rect_texture_combo.blockSignals(True)
-        current = self.tiled_rect_texture_combo.currentData()
-        self.tiled_rect_texture_combo.clear()
-        for rel in list_sprite_paths(self.project_root):
-            self.tiled_rect_texture_combo.addItem(rel, rel)
-        index = self.tiled_rect_texture_combo.findData(current) if current else 0
-        self.tiled_rect_texture_combo.setCurrentIndex(index if index >= 0 else 0)
-        self.tiled_rect_texture_combo.blockSignals(False)
+    def _progress_bar_choices(self) -> list[str]:
+        return list_progress_bar_paths(self.project_root)
 
-    def _texture_choices(self) -> list[str]:
-        return list_sprite_paths(self.project_root)
+    def _pip_bar_choices(self) -> list[str]:
+        return list_pip_bar_paths(self.project_root)
 
     def _refresh_tiled_rects_list(self) -> None:
         if not self.gui_layer:
@@ -2207,11 +2240,11 @@ class GuiLayerEditorWidget(QWidget):
         if visible_indices != self._tiled_rects_list_indices:
             self._rebuild_tiled_rect_cards(visible_indices)
             self._tiled_rects_list_indices = visible_indices
-        texture_choices = self._texture_choices()
+        progress_bar_choices = self._progress_bar_choices()
         for i in visible_indices:
             rect = self.gui_layer.tiled_rects[i]
             card = self._tiled_rect_cards[i]
-            card.sync(rect, texture_choices)
+            card.sync(rect, progress_bar_choices)
             card.set_header_text(f"#{i}  {rect.id}")
             card.toggle.setToolTip(f"{rect.id}  @ ({rect.x}, {rect.y})")
             card.set_highlighted(i == self._selected_tiled_rect_index)
@@ -2273,17 +2306,17 @@ class GuiLayerEditorWidget(QWidget):
     def _add_tiled_rect(self) -> None:
         if not self.gui_layer:
             return
-        texture = self.tiled_rect_texture_combo.currentData() or ""
-        if not texture:
-            QMessageBox.information(self, "Add Tiled Rect", "Choose a texture sprite first.")
+        prefab = self.progress_bar_strip.selected_prefab()
+        if not prefab:
+            QMessageBox.information(self, "Add Tiled Rect", "Choose a progress bar prefab first.")
             return
         x = min(8, max(0, self.gui_layer.width - 1))
         y = min(8, max(0, self.gui_layer.height - 1))
+        bar = self.canvas._get_progress_bar(prefab)
+        width = bar.width if bar else GuiLayerCanvas.DEFAULT_TILED_RECT_WIDTH
+        height = bar.height if bar else GuiLayerCanvas.DEFAULT_TILED_RECT_HEIGHT
         try:
-            index = self.gui_layer.add_tiled_rect(
-                str(texture), x, y,
-                GuiLayerCanvas.DEFAULT_TILED_RECT_WIDTH, GuiLayerCanvas.DEFAULT_TILED_RECT_HEIGHT,
-            )
+            index = self.gui_layer.add_tiled_rect(str(prefab), x, y, width, height)
         except ValueError as exc:
             QMessageBox.warning(self, "Add Tiled Rect", str(exc))
             return
@@ -2320,13 +2353,13 @@ class GuiLayerEditorWidget(QWidget):
         if visible_indices != self._repeat_sprites_list_indices:
             self._rebuild_repeat_sprite_cards(visible_indices)
             self._repeat_sprites_list_indices = visible_indices
+        pip_bar_choices = self._pip_bar_choices()
         for i in visible_indices:
             rep = self.gui_layer.repeat_sprites[i]
             card = self._repeat_sprite_cards[i]
-            tortu_object = self.canvas._get_tortu_object(rep.prefab)
-            card.sync(rep, tortu_object)
+            card.sync(rep, pip_bar_choices)
             name = Path(rep.prefab).stem if rep.prefab else "(unassigned)"
-            card.set_header_text(f"#{i}  {name}  {rep.count}/{rep.max_count}")
+            card.set_header_text(f"#{i}  {name}  {rep.number}/{rep.max_number}")
             card.toggle.setToolTip(f"{name}  @ ({rep.x}, {rep.y})")
             card.set_highlighted(i == self._selected_repeat_sprite_index)
 
@@ -2388,7 +2421,8 @@ class GuiLayerEditorWidget(QWidget):
 
     def _refresh_canvas(self) -> None:
         pending_font = self.text_font_combo.currentData() or ""
-        pending_texture = self.tiled_rect_texture_combo.currentData() or ""
+        pending_progress_bar_prefab = self.progress_bar_strip.selected_prefab()
+        pending_pip_bar_prefab = self.pip_bar_strip.selected_prefab()
         self.canvas.set_context(
             self.gui_layer,
             self.project_root,
@@ -2404,7 +2438,8 @@ class GuiLayerEditorWidget(QWidget):
             selected_object_index=self._selected_object_index,
             selected_text_index=self._selected_text_index,
             show_grid=self.show_grid.isChecked(),
-            pending_texture=str(pending_texture),
+            pending_progress_bar_prefab=str(pending_progress_bar_prefab),
+            pending_pip_bar_prefab=str(pending_pip_bar_prefab),
             selected_tiled_rect_index=self._selected_tiled_rect_index,
             selected_repeat_sprite_index=self._selected_repeat_sprite_index,
         )
@@ -2428,10 +2463,11 @@ class GuiLayerEditorWidget(QWidget):
         self._refresh_script_row()
         self._sync_tileset_combo()
         self._sync_text_font_combo()
-        self._sync_tiled_rect_texture_combo()
         self._load_active_tileset()
         self._refresh_strip()
         self._refresh_object_strip()
+        self._refresh_progress_bar_strip()
+        self._refresh_pip_bar_strip()
         self._refresh_objects_list()
         self._refresh_text_labels_list()
         self._refresh_tiled_rects_list()
@@ -2460,8 +2496,17 @@ class GuiLayerEditorWidget(QWidget):
         self._refresh_canvas()
 
     def _on_object_strip_clicked(self, _index: int) -> None:
-        if self._target != GuiLayerTarget.REPEAT_SPRITE:
-            self._set_target(GuiLayerTarget.OBJECTS)
+        self._set_target(GuiLayerTarget.OBJECTS)
+        self._set_tool(Tool.PAINT)
+        self._refresh_canvas()
+
+    def _on_progress_bar_strip_clicked(self, _index: int) -> None:
+        self._set_target(GuiLayerTarget.TILED_RECT)
+        self._set_tool(Tool.PAINT)
+        self._refresh_canvas()
+
+    def _on_pip_bar_strip_clicked(self, _index: int) -> None:
+        self._set_target(GuiLayerTarget.REPEAT_SPRITE)
         self._set_tool(Tool.PAINT)
         self._refresh_canvas()
 

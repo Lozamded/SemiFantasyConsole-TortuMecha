@@ -10,6 +10,8 @@ ENGINE_ASSET_SUFFIXES = frozenset(
         ".tortutileset",
         ".tortubackground",
         ".tortuguilayer",
+        ".tortuprogressbar",
+        ".tortupipbar",
         ".tortuscene",
         ".tortuobject",
         ".tortufont",
@@ -61,6 +63,24 @@ def list_sprite_paths(project_root: Path) -> list[str]:
         return []
     return sorted(
         p.relative_to(project_root).as_posix() for p in sprites_dir.glob("*.tortusprite")
+    )
+
+
+def list_progress_bar_paths(project_root: Path) -> list[str]:
+    elements_dir = project_root / "assets" / "gui_elements"
+    if not elements_dir.is_dir():
+        return []
+    return sorted(
+        p.relative_to(project_root).as_posix() for p in elements_dir.glob("*.tortuprogressbar")
+    )
+
+
+def list_pip_bar_paths(project_root: Path) -> list[str]:
+    elements_dir = project_root / "assets" / "gui_elements"
+    if not elements_dir.is_dir():
+        return []
+    return sorted(
+        p.relative_to(project_root).as_posix() for p in elements_dir.glob("*.tortupipbar")
     )
 
 

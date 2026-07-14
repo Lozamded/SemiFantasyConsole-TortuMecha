@@ -1,0 +1,29 @@
+{
+  "name": "gear",
+  "default_animation": "rotating",
+  "animations": [
+    {
+      "name": "rotating",
+      "sprite": "assets/sprites/gear_rotating.tortusprite"
+    },
+    {
+      "name": "static",
+      "sprite": "assets/sprites/gear_static.tortusprite"
+    }
+  ],
+  "solid": false,
+  "origin": {
+    "x": 8,
+    "y": 8
+  },
+  "colliders": [
+    {
+      "name": "main",
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0,
+      "active": true
+    }
+  ]
+}

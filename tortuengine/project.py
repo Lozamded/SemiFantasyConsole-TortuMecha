@@ -51,6 +51,9 @@ class Project:
     def gui_dir(self) -> Path:
         return self.root / "assets" / "gui"
 
+    def gui_elements_dir(self) -> Path:
+        return self.root / "assets" / "gui_elements"
+
     def audio_dir(self) -> Path:
         return self.root / "assets" / "audio"
 

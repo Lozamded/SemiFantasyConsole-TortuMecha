@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
     QSpinBox,
     QSplitter,
     QStackedWidget,
+    QTabWidget,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -42,6 +43,8 @@ from tortuengine.game_settings import MAX_GAME_FPS, MIN_GAME_FPS, slugify_cart_n
 from tortuengine.background import save_background
 from tortuengine.gui_layer import save_gui_layer
 from tortuengine.object import save_object
+from tortuengine.pip_bar import save_pip_bar
+from tortuengine.progress_bar import save_progress_bar
 from tortuengine.script_codegen import write_object_auto_script, write_scene_auto_script
 from tortuengine.project import Project, create_project, load_project, save_project
 from tortuengine.scene import save_scene
@@ -55,16 +58,22 @@ from tortustudio.gui_layer_editor import GuiLayerEditorWidget
 from tortustudio.new_background_dialog import NewBackgroundDialog
 from tortustudio.new_gui_layer_dialog import NewGuiLayerDialog
 from tortustudio.new_object_dialog import NewObjectDialog
+from tortustudio.new_pip_bar_dialog import NewPipBarDialog
+from tortustudio.new_progress_bar_dialog import NewProgressBarDialog
 from tortustudio.new_scene_dialog import NewSceneDialog
 from tortustudio.new_sprite_dialog import NewSpriteDialog
 from tortustudio.new_tileset_dialog import NewTilesetDialog
 from tortustudio.object_editor import ObjectEditorWidget
+from tortustudio.pip_bar_editor import PipBarEditorWidget
+from tortustudio.progress_bar_editor import ProgressBarEditorWidget
 from tortustudio.scene_assets import (
     is_engine_asset,
     list_background_paths,
     list_gui_layer_paths,
     list_object_paths,
     list_palette_paths,
+    list_pip_bar_paths,
+    list_progress_bar_paths,
     list_scene_paths,
     list_sprite_font_paths,
     list_sprite_paths,
@@ -163,7 +172,8 @@ class MainWindow(QMainWindow):
     SOUND_EDITOR = 7
     PALETTE_EDITOR = 8
     GUI_LAYER_EDITOR = 9
-    GAME_SETTINGS = 10
+    BAR_EDITOR = 10
+    GAME_SETTINGS = 11
 
     def __init__(self, project: Project | None = None) -> None:
         super().__init__()
@@ -178,6 +188,8 @@ class MainWindow(QMainWindow):
         self._active_scene_path: Path | None = None
         self._active_background_path: Path | None = None
         self._active_gui_layer_path: Path | None = None
+        self._active_progress_bar_path: Path | None = None
+        self._active_pip_bar_path: Path | None = None
         self._active_object_path: Path | None = None
         self._active_font_path: Path | None = None
         self._active_palette_path: Path | None = None
@@ -375,6 +387,20 @@ class MainWindow(QMainWindow):
         self.gui_layer_editor.renamed.connect(self._on_gui_layer_renamed)
         self.gui_layer_editor.new_gui_layer_requested.connect(self._action_new_gui_layer)
         self.gui_layer_editor.open_gui_layer_requested.connect(self._action_open_gui_layer)
+        self.progress_bar_editor = ProgressBarEditorWidget(Path("."))
+        self.progress_bar_editor.saved.connect(self._on_progress_bar_saved)
+        self.progress_bar_editor.renamed.connect(self._on_progress_bar_renamed)
+        self.progress_bar_editor.new_progress_bar_requested.connect(self._action_new_progress_bar)
+        self.progress_bar_editor.open_progress_bar_requested.connect(self._action_open_progress_bar)
+        self.pip_bar_editor = PipBarEditorWidget(Path("."))
+        self.pip_bar_editor.saved.connect(self._on_pip_bar_saved)
+        self.pip_bar_editor.renamed.connect(self._on_pip_bar_renamed)
+        self.pip_bar_editor.new_pip_bar_requested.connect(self._action_new_pip_bar)
+        self.pip_bar_editor.open_pip_bar_requested.connect(self._action_open_pip_bar)
+        self.bar_editor_tabs = QTabWidget()
+        self.bar_editor_tabs.addTab(self.progress_bar_editor, "Progress Bar")
+        self.bar_editor_tabs.addTab(self.pip_bar_editor, "Pip Bar")
+        self.bar_editor_tabs.currentChanged.connect(self._on_bar_editor_subtab_changed)
         self.font_editor = FontEditorWidget(Path("."))
         self.font_editor.saved.connect(self._on_font_saved)
         self.font_editor.renamed.connect(self._on_font_renamed)
@@ -453,6 +479,7 @@ class MainWindow(QMainWindow):
         self.center_stack.addWidget(self.sound_editor)
         self.center_stack.addWidget(self.palette_editor)
         self.center_stack.addWidget(self.gui_layer_editor)
+        self.center_stack.addWidget(self.bar_editor_tabs)
         self.center_stack.addWidget(game_settings_panel)
         self.center_stack.currentChanged.connect(self._on_center_stack_changed)
         splitter.addWidget(self.center_stack)
@@ -485,6 +512,8 @@ class MainWindow(QMainWindow):
         self.scene_editor.project_root = project.root
         self.background_editor.project_root = project.root
         self.gui_layer_editor.project_root = project.root
+        self.progress_bar_editor.project_root = project.root
+        self.pip_bar_editor.project_root = project.root
         self.font_editor.set_project_root(project.root)
         self.object_editor.project_root = project.root
         self.sound_editor.set_project_root(project.root)
@@ -495,6 +524,8 @@ class MainWindow(QMainWindow):
         self._active_scene_path = None
         self._active_background_path = None
         self._active_gui_layer_path = None
+        self._active_progress_bar_path = None
+        self._active_pip_bar_path = None
         self._active_object_path = None
         self._active_font_path = None
         self._active_palette_path = None
@@ -574,6 +605,7 @@ class MainWindow(QMainWindow):
             ("Tiles", self.project.tiles_dir()),
             ("Backgrounds", self.project.backgrounds_dir()),
             ("GUI Layers", self.project.gui_dir()),
+            ("GUI Elements", self.project.gui_elements_dir()),
             ("Scenes", self.project.scenes_dir()),
             ("Fonts", self.project.fonts_dir()),
             ("Sprites", self.project.sprites_dir()),
@@ -1018,6 +1050,22 @@ class MainWindow(QMainWindow):
         self._switching_tabs = False
         self._show_gui_layer(path)
 
+    def _open_progress_bar(self, path: Path) -> None:
+        if not self._confirm_discard_editor_changes():
+            return
+        self._switching_tabs = True
+        self.workspace_tabs.select_bar_editor()
+        self._switching_tabs = False
+        self._show_progress_bar(path)
+
+    def _open_pip_bar(self, path: Path) -> None:
+        if not self._confirm_discard_editor_changes():
+            return
+        self._switching_tabs = True
+        self.workspace_tabs.select_bar_editor()
+        self._switching_tabs = False
+        self._show_pip_bar(path)
+
     def _open_object(self, path: Path) -> None:
         if not self._confirm_discard_editor_changes():
             return
@@ -1129,6 +1177,59 @@ class MainWindow(QMainWindow):
         self._active_gui_layer_path = path.resolve()
         self.center_stack.setCurrentIndex(self.GUI_LAYER_EDITOR)
         self.field_name.setText(path.name)
+
+    def _show_progress_bar_editor(self) -> None:
+        self.bar_editor_tabs.setCurrentWidget(self.progress_bar_editor)
+        self.center_stack.setCurrentIndex(self.BAR_EDITOR)
+        if self._active_progress_bar_path:
+            self.field_name.setText(self._active_progress_bar_path.name)
+        else:
+            self.field_name.setPlaceholderText(
+                "No progress bar open — use New / Open Progress Bar above"
+            )
+
+    def _show_progress_bar(self, path: Path) -> None:
+        self.progress_bar_editor.open_progress_bar(path)
+        self._active_progress_bar_path = path.resolve()
+        self.bar_editor_tabs.setCurrentWidget(self.progress_bar_editor)
+        self.center_stack.setCurrentIndex(self.BAR_EDITOR)
+        self.field_name.setText(path.name)
+
+    def _show_pip_bar_editor(self) -> None:
+        self.bar_editor_tabs.setCurrentWidget(self.pip_bar_editor)
+        self.center_stack.setCurrentIndex(self.BAR_EDITOR)
+        if self._active_pip_bar_path:
+            self.field_name.setText(self._active_pip_bar_path.name)
+        else:
+            self.field_name.setPlaceholderText(
+                "No pip bar open — use New / Open Pip Bar above"
+            )
+
+    def _show_pip_bar(self, path: Path) -> None:
+        self.pip_bar_editor.open_pip_bar(path)
+        self._active_pip_bar_path = path.resolve()
+        self.bar_editor_tabs.setCurrentWidget(self.pip_bar_editor)
+        self.center_stack.setCurrentIndex(self.BAR_EDITOR)
+        self.field_name.setText(path.name)
+
+    def _on_bar_editor_subtab_changed(self, _index: int) -> None:
+        if self.center_stack.currentIndex() != self.BAR_EDITOR:
+            return
+        if self.bar_editor_tabs.currentWidget() is self.pip_bar_editor:
+            if self._active_pip_bar_path:
+                self.field_name.setText(self._active_pip_bar_path.name)
+            else:
+                self.field_name.setPlaceholderText(
+                    "No pip bar open — use New / Open Pip Bar above"
+                )
+        else:
+            if self._active_progress_bar_path:
+                self.field_name.setText(self._active_progress_bar_path.name)
+            else:
+                self.field_name.setPlaceholderText(
+                    "No progress bar open — use New / Open Progress Bar above"
+                )
+        self._on_center_stack_changed(self.BAR_EDITOR)
 
     def _show_object_editor(self) -> None:
         self.center_stack.setCurrentIndex(self.OBJECT_EDITOR)
@@ -1254,6 +1355,24 @@ class MainWindow(QMainWindow):
                 self._show_gui_layer_editor()
             return
 
+        if ref.kind == TabKind.BAR_EDITOR:
+            if not self._confirm_discard_editor_changes():
+                self._switching_tabs = True
+                self._restore_editor_tab()
+                self._switching_tabs = False
+                return
+            if self.bar_editor_tabs.currentWidget() is self.pip_bar_editor:
+                if self._active_pip_bar_path and self._active_pip_bar_path.is_file():
+                    self._show_pip_bar(self._active_pip_bar_path)
+                else:
+                    self._show_pip_bar_editor()
+            else:
+                if self._active_progress_bar_path and self._active_progress_bar_path.is_file():
+                    self._show_progress_bar(self._active_progress_bar_path)
+                else:
+                    self._show_progress_bar_editor()
+            return
+
         if ref.kind == TabKind.FONT_EDITOR:
             if not self._confirm_discard_editor_changes():
                 self._switching_tabs = True
@@ -1322,6 +1441,8 @@ class MainWindow(QMainWindow):
             self.workspace_tabs.select_palette_editor()
         elif index == self.GUI_LAYER_EDITOR:
             self.workspace_tabs.select_gui_layer_editor()
+        elif index == self.BAR_EDITOR:
+            self.workspace_tabs.select_bar_editor()
         elif index == self.GAME_SETTINGS:
             self.workspace_tabs.select_game_settings()
         else:
@@ -1342,6 +1463,11 @@ class MainWindow(QMainWindow):
             self.asset_browser.populate("Backgrounds", list_background_paths(root))
         elif index == self.GUI_LAYER_EDITOR:
             self.asset_browser.populate("GUI Layers", list_gui_layer_paths(root))
+        elif index == self.BAR_EDITOR:
+            if self.bar_editor_tabs.currentWidget() is self.pip_bar_editor:
+                self.asset_browser.populate("Pip Bars", list_pip_bar_paths(root))
+            else:
+                self.asset_browser.populate("Progress Bars", list_progress_bar_paths(root))
         elif index == self.OBJECT_EDITOR:
             self.asset_browser.populate("Objects", list_object_paths(root))
         elif index == self.FONT_EDITOR:
@@ -1377,6 +1503,14 @@ class MainWindow(QMainWindow):
             return self._confirm_discard_unsaved("background", self.background_editor.save)
         if index == self.GUI_LAYER_EDITOR and self.gui_layer_editor.has_unsaved_changes():
             return self._confirm_discard_unsaved("GUI layer", self.gui_layer_editor.save)
+        if index == self.BAR_EDITOR:
+            if self.progress_bar_editor.has_unsaved_changes():
+                if not self._confirm_discard_unsaved("progress bar", self.progress_bar_editor.save):
+                    return False
+            if self.pip_bar_editor.has_unsaved_changes():
+                if not self._confirm_discard_unsaved("pip bar", self.pip_bar_editor.save):
+                    return False
+            return True
         if index == self.FONT_EDITOR and self.font_editor.has_unsaved_changes():
             return self._confirm_discard_unsaved("font", self.font_editor.save)
         if index == self.OBJECT_EDITOR and self.object_editor.has_unsaved_changes():
@@ -1412,6 +1546,10 @@ class MainWindow(QMainWindow):
             self._open_background(path)
         elif path.suffix == ".tortuguilayer":
             self._open_gui_layer(path)
+        elif path.suffix == ".tortuprogressbar":
+            self._open_progress_bar(path)
+        elif path.suffix == ".tortupipbar":
+            self._open_pip_bar(path)
         elif path.suffix == ".tortuobject":
             self._open_object(path)
         elif path.suffix == ".tortufont":
@@ -1468,6 +1606,20 @@ class MainWindow(QMainWindow):
         if self.project:
             self.log(f"Renamed {old_path.name} → {new_path.name}")
 
+    def _on_progress_bar_renamed(self, old_path: Path, new_path: Path) -> None:
+        self._active_progress_bar_path = new_path
+        self.field_name.setText(new_path.name)
+        self._populate_tree()
+        if self.project:
+            self.log(f"Renamed {old_path.name} → {new_path.name}")
+
+    def _on_pip_bar_renamed(self, old_path: Path, new_path: Path) -> None:
+        self._active_pip_bar_path = new_path
+        self.field_name.setText(new_path.name)
+        self._populate_tree()
+        if self.project:
+            self.log(f"Renamed {old_path.name} → {new_path.name}")
+
     def _on_object_renamed(self, old_path: Path, new_path: Path) -> None:
         self._active_object_path = new_path
         self.field_name.setText(new_path.name)
@@ -1502,6 +1654,14 @@ class MainWindow(QMainWindow):
             self.viewport.invalidate_baked_assets()
 
     def _on_gui_layer_saved(self, path: Path) -> None:
+        self.log(f"Saved {path.relative_to(self.project.root)}")
+        self._populate_tree()
+
+    def _on_progress_bar_saved(self, path: Path) -> None:
+        self.log(f"Saved {path.relative_to(self.project.root)}")
+        self._populate_tree()
+
+    def _on_pip_bar_saved(self, path: Path) -> None:
         self.log(f"Saved {path.relative_to(self.project.root)}")
         self._populate_tree()
 
@@ -1768,6 +1928,100 @@ class MainWindow(QMainWindow):
         )
         if path:
             self._open_gui_layer(Path(path))
+
+    def _action_new_progress_bar(self) -> None:
+        if not self.project:
+            QMessageBox.information(self, "New Progress Bar", "Open a project first.")
+            return
+
+        dialog = NewProgressBarDialog(self.project.root, self)
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+        if not dialog.texture_path:
+            QMessageBox.warning(
+                self, "New Progress Bar", "Create a sprite asset before making a progress bar."
+            )
+            return
+
+        name = dialog.progress_bar_name or "progress_bar"
+        progress_bar_path = self.project.gui_elements_dir() / f"{name}.tortuprogressbar"
+        if progress_bar_path.exists():
+            QMessageBox.warning(
+                self, "New Progress Bar", f"{progress_bar_path.name} already exists."
+            )
+            return
+
+        if not self._confirm_discard_editor_changes():
+            return
+
+        self.progress_bar_editor.new_progress_bar(progress_bar_path, dialog.texture_path, name)
+        if not self.progress_bar_editor.progress_bar:
+            return
+        save_progress_bar(self.progress_bar_editor.progress_bar, progress_bar_path)
+        self.progress_bar_editor._dirty = False
+        self.progress_bar_editor._update_status()
+        self._populate_tree()
+        self._open_progress_bar(progress_bar_path)
+        self.log(f"Created {progress_bar_path.relative_to(self.project.root)}")
+
+    def _action_open_progress_bar(self) -> None:
+        if not self.project:
+            QMessageBox.information(self, "Open Progress Bar", "Open a project first.")
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Progress Bar",
+            str(self.project.gui_elements_dir()),
+            "Tortu Progress Bars (*.tortuprogressbar)",
+        )
+        if path:
+            self._open_progress_bar(Path(path))
+
+    def _action_new_pip_bar(self) -> None:
+        if not self.project:
+            QMessageBox.information(self, "New Pip Bar", "Open a project first.")
+            return
+
+        dialog = NewPipBarDialog(self.project.root, self)
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+        if not dialog.full_sprite_path:
+            QMessageBox.warning(
+                self, "New Pip Bar", "Create a sprite asset before making a pip bar."
+            )
+            return
+
+        name = dialog.pip_bar_name or "pip_bar"
+        pip_bar_path = self.project.gui_elements_dir() / f"{name}.tortupipbar"
+        if pip_bar_path.exists():
+            QMessageBox.warning(self, "New Pip Bar", f"{pip_bar_path.name} already exists.")
+            return
+
+        if not self._confirm_discard_editor_changes():
+            return
+
+        self.pip_bar_editor.new_pip_bar(pip_bar_path, dialog.full_sprite_path, name)
+        if not self.pip_bar_editor.pip_bar:
+            return
+        save_pip_bar(self.pip_bar_editor.pip_bar, pip_bar_path)
+        self.pip_bar_editor._dirty = False
+        self.pip_bar_editor._update_status()
+        self._populate_tree()
+        self._open_pip_bar(pip_bar_path)
+        self.log(f"Created {pip_bar_path.relative_to(self.project.root)}")
+
+    def _action_open_pip_bar(self) -> None:
+        if not self.project:
+            QMessageBox.information(self, "Open Pip Bar", "Open a project first.")
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Pip Bar",
+            str(self.project.gui_elements_dir()),
+            "Tortu Pip Bars (*.tortupipbar)",
+        )
+        if path:
+            self._open_pip_bar(Path(path))
 
     def _action_new_text_font(self) -> None:
         if not self.project:

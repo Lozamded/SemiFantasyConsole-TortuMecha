@@ -4834,8 +4834,8 @@
     },
     {
       "object": "assets/objects/red_slime.tortuobject",
-      "x": 526,
-      "y": 169,
+      "x": 536,
+      "y": 147,
       "id": "red_slime1"
     },
     {
@@ -4879,6 +4879,90 @@
       "x": 31,
       "y": 188,
       "id": "mechaturtle1"
+    },
+    {
+      "object": "assets/objects/gear.tortuobject",
+      "x": 151,
+      "y": 121,
+      "id": "gear1"
+    },
+    {
+      "object": "assets/objects/gear.tortuobject",
+      "x": 179,
+      "y": 121,
+      "id": "gear2"
+    },
+    {
+      "object": "assets/objects/gear.tortuobject",
+      "x": 117,
+      "y": 166,
+      "id": "gear3"
+    },
+    {
+      "object": "assets/objects/gear.tortuobject",
+      "x": 291,
+      "y": 151,
+      "id": "gear4"
+    },
+    {
+      "object": "assets/objects/gear.tortuobject",
+      "x": 317,
+      "y": 152,
+      "id": "gear5"
+    },
+    {
+      "object": "assets/objects/gear.tortuobject",
+      "x": 481,
+      "y": 150,
+      "id": "gear6"
+    },
+    {
+      "object": "assets/objects/gear.tortuobject",
+      "x": 504,
+      "y": 138,
+      "id": "gear7"
+    },
+    {
+      "object": "assets/objects/gear.tortuobject",
+      "x": 527,
+      "y": 152,
+      "id": "gear8"
+    },
+    {
+      "object": "assets/objects/gear.tortuobject",
+      "x": 702,
+      "y": 86,
+      "id": "gear9"
+    },
+    {
+      "object": "assets/objects/gear.tortuobject",
+      "x": 730,
+      "y": 85,
+      "id": "gear10"
+    },
+    {
+      "object": "assets/objects/gear.tortuobject",
+      "x": 756,
+      "y": 86,
+      "id": "gear11"
+    },
+    {
+      "object": "assets/objects/gear.tortuobject",
+      "x": 856,
+      "y": 118,
+      "id": "gear12"
+    },
+    {
+      "object": "assets/objects/gear.tortuobject",
+      "x": 837,
+      "y": 134,
+      "id": "gear13"
+    },
+    {
+      "object": "assets/objects/gear.tortuobject",
+      "x": 821,
+      "y": 150,
+      "id": "gear14"
     }
   ],
   "gui_layers": [

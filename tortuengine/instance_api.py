@@ -88,28 +88,42 @@ def _find_gui_element(gui_layer_path: str, element_id: str, attr: str):
     return None
 
 
-def set_gui_tiled_rect_value(gui_layer_path: str, rect_id: str, value: float) -> None:
-    """Set a `.tortuguilayer` tiled rect's fill fraction (0..1) — e.g. a health bar."""
+def set_gui_tiled_rect_number(
+    gui_layer_path: str, rect_id: str, number: float, max_number: float | None = None
+) -> None:
+    """Set a `.tortuguilayer` tiled rect's current (and optionally max) value.
+
+    The rendered fill fraction is always `number / max_number` — e.g. a
+    health bar tracks current/max HP directly instead of a raw 0..1 fraction.
+    """
     rect = _find_gui_element(gui_layer_path, rect_id, "tiled_rects")
     if rect is not None:
-        rect.value = max(0.0, min(1.0, value))
+        rect.number = max(0.0, number)
+        if max_number is not None:
+            rect.max_number = max(0.0, max_number)
 
 
-def gui_tiled_rect_value(gui_layer_path: str, rect_id: str) -> float | None:
+def gui_tiled_rect_number(gui_layer_path: str, rect_id: str) -> tuple[float, float] | None:
+    """Return (number, max_number), or None if the rect isn't found."""
     rect = _find_gui_element(gui_layer_path, rect_id, "tiled_rects")
-    return rect.value if rect is not None else None
+    return (rect.number, rect.max_number) if rect is not None else None
 
 
-def set_gui_repeat_sprite_count(gui_layer_path: str, sprite_id: str, count: int) -> None:
-    """Set a `.tortuguilayer` repeat sprite's filled count — e.g. remaining life pips."""
+def set_gui_repeat_sprite_number(
+    gui_layer_path: str, sprite_id: str, number: int, max_number: int | None = None
+) -> None:
+    """Set a `.tortuguilayer` repeat sprite's current (and optionally max) slot count."""
     rep = _find_gui_element(gui_layer_path, sprite_id, "repeat_sprites")
     if rep is not None:
-        rep.count = max(0, count)
+        rep.number = max(0, number)
+        if max_number is not None:
+            rep.max_number = max(0, max_number)
 
 
-def gui_repeat_sprite_count(gui_layer_path: str, sprite_id: str) -> int | None:
+def gui_repeat_sprite_number(gui_layer_path: str, sprite_id: str) -> tuple[int, int] | None:
+    """Return (number, max_number), or None if the sprite isn't found."""
     rep = _find_gui_element(gui_layer_path, sprite_id, "repeat_sprites")
-    return rep.count if rep is not None else None
+    return (rep.number, rep.max_number) if rep is not None else None
 
 
 def _find(instance_id: str):

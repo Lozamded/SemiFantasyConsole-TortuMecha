@@ -232,25 +232,48 @@
       "object": "assets/objects/UI_MechaTurtle_face.tortuobject",
       "x": 1,
       "y": 1
+    },
+    {
+      "object": "assets/objects/gear.tortuobject",
+      "x": 70,
+      "y": 12,
+      "animation": "static"
     }
   ],
   "text_labels": [
     {
-      "text": "X 6",
-      "x": 31,
-      "y": 4,
+      "text": "x6",
+      "x": 28,
+      "y": 2,
+      "font": "assets/fonts/VCR.tortufont"
+    },
+    {
+      "text": "x0",
+      "x": 79,
+      "y": 5,
       "font": "assets/fonts/KiwiSoda.tortufont"
     }
   ],
   "tiled_rects": [
     {
       "id": "bar1",
-      "texture": "assets/sprites/enemycollider.tortusprite",
-      "x": 2,
-      "y": 23,
-      "width": 40,
-      "height": 8
+      "prefab": "assets/gui_elements/power_bar.tortuprogressbar",
+      "x": 107,
+      "y": 10,
+      "width": 22,
+      "height": 8,
+      "number": 1.0,
+      "max_number": 1.0
     }
   ],
-  "repeat_sprites": []
+  "repeat_sprites": [
+    {
+      "id": "pips1",
+      "prefab": "assets/gui_elements/life_bar.tortupipbar",
+      "x": 2,
+      "y": 24,
+      "number": 3,
+      "max_number": 0
+    }
+  ]
 }
