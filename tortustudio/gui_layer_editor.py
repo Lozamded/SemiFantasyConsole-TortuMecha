@@ -314,7 +314,7 @@ class GuiLayerCanvas(QWidget):
         bar = self._get_progress_bar(rect.prefab)
         if bar is None:
             return None
-        sprite = self._get_object_sprite(bar.texture)
+        sprite = self._get_object_sprite(bar.texture_for(rect.number))
         if sprite is None:
             return None
         palette = self._sprite_palette(sprite.palette)
@@ -358,7 +358,7 @@ class GuiLayerCanvas(QWidget):
         pip_bar = self._get_pip_bar(rep.prefab)
         if pip_bar is None:
             return 0, 0, 0
-        sprite = self._get_object_sprite(pip_bar.full_sprite)
+        sprite = self._get_object_sprite(pip_bar.full_sprite_for(rep.number))
         if sprite is None:
             return 0, 0, 0
         icon_w, icon_h = sprite.pixel_width, sprite.pixel_height
@@ -372,7 +372,7 @@ class GuiLayerCanvas(QWidget):
         pip_bar = self._get_pip_bar(rep.prefab)
         if pip_bar is None:
             return None
-        sprite_path = pip_bar.full_sprite if filled else pip_bar.empty_sprite
+        sprite_path = pip_bar.full_sprite_for(rep.number) if filled else pip_bar.empty_sprite
         if not sprite_path:
             return None
         sprite = self._get_object_sprite(sprite_path)
@@ -1106,6 +1106,12 @@ class _GuiTextLabelCard(QWidget):
 
         self.text_edit = QLineEdit()
         self.font_combo = QComboBox()
+        self.id_edit = QLineEdit()
+        self.id_edit.setPlaceholderText("(none — not addressable from scripts)")
+        self.id_edit.setToolTip(
+            "Optional name so instance scripts can find and update this label's text\n"
+            "at runtime via instance_api.set_gui_text_label_text(gui_layer_path, id, text)"
+        )
         self.x_spin = QSpinBox()
         self.x_spin.setRange(-9999, 9999)
         self.y_spin = QSpinBox()
@@ -1121,6 +1127,7 @@ class _GuiTextLabelCard(QWidget):
         form.setContentsMargins(20, 2, 0, 6)
         form.addRow("Text:", self.text_edit)
         form.addRow("Font:", self.font_combo)
+        form.addRow("Name/ID:", self.id_edit)
         form.addRow("X:", self.x_spin)
         form.addRow("Y:", self.y_spin)
         form.addRow("", self.visible_check)
@@ -1138,6 +1145,7 @@ class _GuiTextLabelCard(QWidget):
 
         self.text_edit.textChanged.connect(self._emit_changed)
         self.font_combo.currentIndexChanged.connect(self._emit_changed)
+        self.id_edit.textChanged.connect(self._emit_changed)
         self.x_spin.valueChanged.connect(self._emit_changed)
         self.y_spin.valueChanged.connect(self._emit_changed)
         self.visible_check.toggled.connect(self._emit_changed)
@@ -1173,7 +1181,7 @@ class _GuiTextLabelCard(QWidget):
 
     def sync(self, label: GuiTextLabel, font_choices: list[str]) -> None:
         widgets = (
-            self.text_edit, self.font_combo, self.x_spin, self.y_spin,
+            self.text_edit, self.font_combo, self.id_edit, self.x_spin, self.y_spin,
             self.visible_check, self.enabled_check,
         )
         self._suspend = True
@@ -1187,6 +1195,8 @@ class _GuiTextLabelCard(QWidget):
             self.font_combo.addItem(rel, rel)
         found = self.font_combo.findData(label.font)
         self.font_combo.setCurrentIndex(found if found >= 0 else 0)
+        if self.id_edit.text() != label.id:
+            self.id_edit.setText(label.id)
         self.x_spin.setValue(label.x)
         self.y_spin.setValue(label.y)
         self.visible_check.setChecked(label.visible)
@@ -1198,6 +1208,7 @@ class _GuiTextLabelCard(QWidget):
     def read_into(self, label: GuiTextLabel) -> None:
         label.text = self.text_edit.text()
         label.font = self.font_combo.currentData() or ""
+        label.id = self.id_edit.text().strip()
         label.x = self.x_spin.value()
         label.y = self.y_spin.value()
         label.visible = self.visible_check.isChecked()
@@ -2159,7 +2170,8 @@ class GuiLayerEditorWidget(QWidget):
             card = self._text_label_cards[i]
             card.sync(label, font_choices)
             preview = label.text if len(label.text) <= 20 else label.text[:20] + "…"
-            card.set_header_text(f'#{i}  "{preview}"')
+            name_suffix = f"  [{label.id}]" if label.id else ""
+            card.set_header_text(f'#{i}  "{preview}"{name_suffix}')
             card.toggle.setToolTip(f'"{preview}"  @ ({label.x}, {label.y})')
             card.set_highlighted(i == self._selected_text_index)
 
@@ -2184,7 +2196,17 @@ class GuiLayerEditorWidget(QWidget):
         card = self._text_label_cards.get(label_idx)
         if card is None:
             return
-        card.read_into(self.gui_layer.text_labels[label_idx])
+        label = self.gui_layer.text_labels[label_idx]
+        card.read_into(label)
+        if label.id and any(
+            i != label_idx and other.id == label.id for i, other in enumerate(self.gui_layer.text_labels)
+        ):
+            QMessageBox.warning(
+                self, "Duplicate Label Name",
+                f'Another label already uses the name "{label.id}" — scripts would find '
+                "only the first match. Pick a different name."
+            )
+            label.id = ""
         self._mark_dirty()
         self._refresh_canvas()
         self._refresh_text_labels_list()

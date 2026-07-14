@@ -245,12 +245,14 @@
       "text": "x6",
       "x": 28,
       "y": 2,
+      "id": "lives_label",
       "font": "assets/fonts/VCR.tortufont"
     },
     {
       "text": "x0",
       "x": 79,
       "y": 5,
+      "id": "gears_label",
       "font": "assets/fonts/KiwiSoda.tortufont"
     }
   ],
@@ -273,7 +275,8 @@
       "x": 2,
       "y": 24,
       "number": 3,
-      "max_number": 0
+      "max_number": 3
     }
-  ]
+  ],
+  "script": "scripts/hud.py"
 }

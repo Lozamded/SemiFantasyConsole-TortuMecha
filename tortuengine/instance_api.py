@@ -25,6 +25,8 @@ _player_crouching: bool = False
 # World-space (left, right, top, bottom) of the player's current active
 # hitbox — crouch-aware, since it swaps between stand/crouch bounds.
 _player_hitbox: tuple[float, float, float, float] | None = None
+_player_energy: tuple[float, float] | None = None  # (current, max)
+_player_lives: tuple[int, int] | None = None  # (current, max)
 _tileset_cache: dict[str, Tileset] = {}
 # Renderer-owned GuiLayer loader (rel_path -> live, cached GuiLayer), so
 # scripts can drive HUD elements (health bars, pip counters) without
@@ -68,6 +70,26 @@ def set_player_hitbox(left: float, right: float, top: float, bottom: float) -> N
 
 def player_hitbox() -> tuple[float, float, float, float] | None:
     return _player_hitbox
+
+
+def set_player_energy(current: float, max_energy: float) -> None:
+    """Call every frame from the player controller script — drives HUD energy pips."""
+    global _player_energy
+    _player_energy = (current, max_energy)
+
+
+def player_energy() -> tuple[float, float] | None:
+    return _player_energy
+
+
+def set_player_lives(current: int, max_lives: int) -> None:
+    """Call every frame from the player controller script — drives the HUD lives counter."""
+    global _player_lives
+    _player_lives = (current, max_lives)
+
+
+def player_lives() -> tuple[int, int] | None:
+    return _player_lives
 
 
 def bind_gui_layers(loader: Callable[[str], "GuiLayer | None"]) -> None:
@@ -124,6 +146,18 @@ def gui_repeat_sprite_number(gui_layer_path: str, sprite_id: str) -> tuple[int, 
     """Return (number, max_number), or None if the sprite isn't found."""
     rep = _find_gui_element(gui_layer_path, sprite_id, "repeat_sprites")
     return (rep.number, rep.max_number) if rep is not None else None
+
+
+def set_gui_text_label_text(gui_layer_path: str, label_id: str, text: str) -> None:
+    """Set a `.tortuguilayer` text label's displayed text — e.g. a lives counter."""
+    label = _find_gui_element(gui_layer_path, label_id, "text_labels")
+    if label is not None:
+        label.text = text
+
+
+def gui_text_label_text(gui_layer_path: str, label_id: str) -> str | None:
+    label = _find_gui_element(gui_layer_path, label_id, "text_labels")
+    return label.text if label is not None else None
 
 
 def _find(instance_id: str):

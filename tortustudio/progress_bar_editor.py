@@ -9,6 +9,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QImage, QPainter
 from PyQt6.QtWidgets import (
     QComboBox,
+    QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -29,7 +30,9 @@ from tortuengine.palette import load_palette, palette_path
 from tortuengine.progress_bar import (
     DEFAULT_PROGRESS_BAR_HEIGHT,
     DEFAULT_PROGRESS_BAR_WIDTH,
+    MAX_PROGRESS_BAR_RANGES,
     ProgressBar,
+    ProgressBarRange,
     load_progress_bar,
     save_progress_bar,
 )
@@ -163,6 +166,28 @@ class ProgressBarEditorWidget(QWidget):
         self.height_spin.setValue(DEFAULT_PROGRESS_BAR_HEIGHT)
         self.height_spin.valueChanged.connect(self._on_size_changed)
 
+        # -- texture ranges: swap the base texture over a [min, max] number band,
+        # modeled on the scene editor's background parallax bands (band_combo +
+        # shared detail panel) --
+        self.range_combo = QComboBox()
+        self.range_combo.currentIndexChanged.connect(self._on_range_changed)
+
+        self.range_min_spin = QDoubleSpinBox()
+        self.range_min_spin.setRange(0.0, 999999.0)
+        self.range_min_spin.valueChanged.connect(self._on_range_fields_changed)
+
+        self.range_max_spin = QDoubleSpinBox()
+        self.range_max_spin.setRange(0.0, 999999.0)
+        self.range_max_spin.valueChanged.connect(self._on_range_fields_changed)
+
+        self.range_texture_combo = QComboBox()
+        self.range_texture_combo.currentIndexChanged.connect(self._on_range_fields_changed)
+
+        self.btn_add_range = QPushButton("Add range")
+        self.btn_add_range.clicked.connect(self._add_range)
+        self.btn_remove_range = QPushButton("Remove range")
+        self.btn_remove_range.clicked.connect(self._remove_range)
+
         self._build_layout()
 
     def _build_layout(self) -> None:
@@ -201,9 +226,27 @@ class ProgressBarEditorWidget(QWidget):
         form.addRow("Default width:", self.width_spin)
         form.addRow("Default height:", self.height_spin)
 
+        ranges_group = QGroupBox("Texture Ranges")
+        ranges_layout = QVBoxLayout(ranges_group)
+        ranges_layout.addWidget(QLabel(
+            "Swap the texture above while number falls within a range\n"
+            "(e.g. red for 0-20 HP). First matching range wins."
+        ))
+        range_btn_row = QHBoxLayout()
+        range_btn_row.addWidget(self.range_combo, stretch=1)
+        range_btn_row.addWidget(self.btn_add_range)
+        range_btn_row.addWidget(self.btn_remove_range)
+        ranges_layout.addLayout(range_btn_row)
+        range_form = QFormLayout()
+        range_form.addRow("Number from:", self.range_min_spin)
+        range_form.addRow("Number to:", self.range_max_spin)
+        range_form.addRow("Texture:", self.range_texture_combo)
+        ranges_layout.addLayout(range_form)
+
         side = QWidget()
         side_layout = QVBoxLayout(side)
         side_layout.addLayout(form)
+        side_layout.addWidget(ranges_group)
         side_layout.addStretch()
         body.addWidget(side)
 
@@ -244,6 +287,110 @@ class ProgressBarEditorWidget(QWidget):
             self.texture_combo.addItem(rel_path, rel_path)
             index = self.texture_combo.findData(rel_path)
         self.texture_combo.setCurrentIndex(index)
+
+    def _populate_range_texture_combo(self, current: str) -> None:
+        self.range_texture_combo.blockSignals(True)
+        self.range_texture_combo.clear()
+        for rel in list_sprite_paths(self.project_root):
+            self.range_texture_combo.addItem(rel, rel)
+        if current and self.range_texture_combo.findData(current) < 0:
+            self.range_texture_combo.addItem(current, current)
+        index = self.range_texture_combo.findData(current) if current else 0
+        self.range_texture_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.range_texture_combo.blockSignals(False)
+
+    def _active_range_index(self) -> int:
+        if self.range_combo.count() == 0:
+            return -1
+        return self.range_combo.currentIndex()
+
+    def _range_label(self, r: ProgressBarRange) -> str:
+        texture_name = Path(r.texture).stem if r.texture else "(none)"
+        return f"{r.min_number:g}–{r.max_number:g} → {texture_name}"
+
+    def _sync_range_controls(self) -> None:
+        self.range_combo.blockSignals(True)
+        self.range_combo.clear()
+        if not self.progress_bar:
+            self.range_combo.blockSignals(False)
+            self._set_range_controls_enabled(False)
+            return
+        for i, r in enumerate(self.progress_bar.ranges):
+            self.range_combo.addItem(f"{i}: {self._range_label(r)}", i)
+        if self.progress_bar.ranges:
+            active = min(max(self._active_range_index(), 0), len(self.progress_bar.ranges) - 1)
+            self.range_combo.setCurrentIndex(active)
+            self._load_range_fields(self.progress_bar.ranges[active])
+        self.range_combo.blockSignals(False)
+        self._set_range_controls_enabled(bool(self.progress_bar.ranges))
+        self.btn_add_range.setEnabled(len(self.progress_bar.ranges) < MAX_PROGRESS_BAR_RANGES)
+
+    def _set_range_controls_enabled(self, enabled: bool) -> None:
+        for widget in (
+            self.range_combo, self.range_min_spin, self.range_max_spin,
+            self.range_texture_combo, self.btn_remove_range,
+        ):
+            widget.setEnabled(enabled)
+
+    def _load_range_fields(self, r: ProgressBarRange) -> None:
+        self.range_min_spin.blockSignals(True)
+        self.range_max_spin.blockSignals(True)
+        self.range_min_spin.setValue(r.min_number)
+        self.range_max_spin.setValue(r.max_number)
+        self.range_min_spin.blockSignals(False)
+        self.range_max_spin.blockSignals(False)
+        self._populate_range_texture_combo(r.texture)
+
+    def _save_range_fields(self, r: ProgressBarRange) -> None:
+        lo, hi = self.range_min_spin.value(), self.range_max_spin.value()
+        r.min_number, r.max_number = min(lo, hi), max(lo, hi)
+        texture = self.range_texture_combo.currentData()
+        r.texture = str(texture) if texture else ""
+
+    def _on_range_changed(self, index: int) -> None:
+        if not self.progress_bar or index < 0 or index >= len(self.progress_bar.ranges):
+            return
+        self._load_range_fields(self.progress_bar.ranges[index])
+
+    def _on_range_fields_changed(self) -> None:
+        if not self.progress_bar:
+            return
+        index = self._active_range_index()
+        if index < 0 or index >= len(self.progress_bar.ranges):
+            return
+        r = self.progress_bar.ranges[index]
+        self._save_range_fields(r)
+        self.range_combo.blockSignals(True)
+        self.range_combo.setItemText(index, f"{index}: {self._range_label(r)}")
+        self.range_combo.blockSignals(False)
+        self._mark_dirty()
+
+    def _add_range(self) -> None:
+        if not self.progress_bar:
+            return
+        if len(self.progress_bar.ranges) >= MAX_PROGRESS_BAR_RANGES:
+            QMessageBox.warning(
+                self, "Add Range", f"Maximum {MAX_PROGRESS_BAR_RANGES} texture ranges."
+            )
+            return
+        if self.progress_bar.ranges:
+            lo = self.progress_bar.ranges[-1].max_number + 1
+        else:
+            lo = 0.0
+        self.progress_bar.ranges.append(ProgressBarRange(lo, lo + 10, self.progress_bar.texture))
+        self._mark_dirty()
+        self._sync_range_controls()
+        self.range_combo.setCurrentIndex(len(self.progress_bar.ranges) - 1)
+
+    def _remove_range(self) -> None:
+        if not self.progress_bar:
+            return
+        index = self._active_range_index()
+        if index < 0 or index >= len(self.progress_bar.ranges):
+            return
+        self.progress_bar.ranges.pop(index)
+        self._mark_dirty()
+        self._sync_range_controls()
 
     def _load_texture_asset(self) -> None:
         texture = self.progress_bar.texture if self.progress_bar else ""
@@ -294,6 +441,7 @@ class ProgressBarEditorWidget(QWidget):
         self._populate_texture_combo(self.progress_bar.texture)
         self._load_texture_asset()
         self._refresh_preview()
+        self._sync_range_controls()
 
     def _apply_fields_to_progress_bar(self) -> None:
         if not self.progress_bar:

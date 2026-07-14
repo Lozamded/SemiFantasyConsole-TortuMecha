@@ -79,18 +79,27 @@ class GuiObject:
 
 @dataclass
 class GuiTextLabel:
-    """Text label placed inside a GUI layer."""
+    """Text label placed inside a GUI layer.
+
+    `id` is optional (blank by default, unlike GuiTiledRect/GuiRepeatSprite)
+    — most labels are static UI text, but naming one lets instance scripts
+    find and update its text at runtime via instance_api, e.g. a lives
+    counter.
+    """
 
     text: str
     x: int
     y: int
+    id: str = ""
     font: str = ""
     visible: bool = True
     # Off at scene start: not drawn.
     enabled: bool = True
 
     def copy(self) -> GuiTextLabel:
-        return GuiTextLabel(self.text, self.x, self.y, self.font, self.visible, self.enabled)
+        return GuiTextLabel(
+            self.text, self.x, self.y, self.id, self.font, self.visible, self.enabled
+        )
 
 
 @dataclass
@@ -263,12 +272,17 @@ class GuiLayer:
                 best_index = index
         return best_index
 
-    def add_text_label(self, text: str, x: int, y: int, *, font: str = "") -> int:
+    def unique_text_label_id(self, base: str = "label") -> str:
+        return _unique_element_id({t.id for t in self.text_labels if t.id}, base)
+
+    def add_text_label(
+        self, text: str, x: int, y: int, *, font: str = "", label_id: str = ""
+    ) -> int:
         if len(self.text_labels) >= MAX_GUI_TEXT_LABELS:
             raise ValueError(
                 f"GUI layer cannot have more than {MAX_GUI_TEXT_LABELS} text labels"
             )
-        self.text_labels.append(GuiTextLabel(text, x, y, font))
+        self.text_labels.append(GuiTextLabel(text, x, y, label_id, font))
         return len(self.text_labels) - 1
 
     def remove_text_label(self, index: int) -> None:
@@ -412,6 +426,7 @@ def load_gui_layer(path: Path, *, project_root: Path | None = None) -> GuiLayer:
             str(raw.get("text", "")),
             int(raw.get("x", 0)),
             int(raw.get("y", 0)),
+            str(raw.get("id", "")).strip(),
             _normalize_asset_path(str(raw.get("font", ""))),
             bool(raw.get("visible", True)),
             bool(raw.get("enabled", True)),
@@ -484,6 +499,7 @@ def save_gui_layer(gui_layer: GuiLayer, path: Path) -> None:
                 "text": label.text,
                 "x": label.x,
                 "y": label.y,
+                **({"id": label.id} if label.id else {}),
                 **({"font": _normalize_asset_path(label.font)} if label.font else {}),
                 **({"visible": False} if not label.visible else {}),
                 **({"enabled": False} if not label.enabled else {}),

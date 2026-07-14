@@ -94,6 +94,7 @@ class SceneRenderer:
         self._object_anim: list[_ObjectAnimState] = []
         self._instance_scripts: list[InstanceScript | None] = []
         self._instance_keys: list[tuple[str, str]] = []
+        self._gui_layer_scripts: dict[str, InstanceScript | None] = {}
         # Baked surface caches: LRU-bounded to prevent unbounded RAM growth.
         # Source-asset dicts above are bounded by project size and don't need eviction.
         self._sprite_frame_cache: _LRUCache = _LRUCache(256)
@@ -138,6 +139,7 @@ class SceneRenderer:
         self._object_anim = []
         self._instance_scripts = []
         self._instance_keys = []
+        self._gui_layer_scripts = {}
 
     def _animation_for(self, inst: SceneObject) -> str:
         tortu_object = self._tortu_object(inst.prefab)
@@ -191,8 +193,32 @@ class SceneRenderer:
         script_path = (self.project_root / tortu_object.script).resolve()
         return load_instance_script(script_path, self_id=inst.id, links=inst.links)
 
+    def _sync_gui_layer_scripts(self, scene: Scene, engine) -> None:
+        synced: dict[str, InstanceScript | None] = {}
+        for scene_gui in scene.gui_layers:
+            rel_path = scene_gui.gui_layer
+            if not rel_path or rel_path in synced:
+                continue
+            if rel_path in self._gui_layer_scripts:
+                synced[rel_path] = self._gui_layer_scripts[rel_path]
+                continue
+            script = self._load_gui_layer_script(rel_path)
+            if script is not None:
+                script.init(engine)
+            synced[rel_path] = script
+        self._gui_layer_scripts = synced
+
+    def _load_gui_layer_script(self, rel_path: str) -> InstanceScript | None:
+        if self._cart_mode():
+            return None  # GUI layer scripts aren't part of the baked cart manifest yet
+        gui_layer = self._gui_layer(rel_path)
+        if gui_layer is None or not gui_layer.script:
+            return None
+        script_path = (self.project_root / gui_layer.script).resolve()
+        return load_instance_script(script_path, self_id=rel_path, links=[])
+
     def tick(self, scene: Scene, dt: float, engine=None) -> None:
-        """Advance sprite frame playback and object-instance scripts for placed objects."""
+        """Advance sprite frame playback and object/GUI-layer instance scripts."""
         if dt <= 0:
             return
 
@@ -205,6 +231,11 @@ class SceneRenderer:
             if index < len(scene.objects) and not scene.objects[index].enabled:
                 continue
             script.update(dt)
+
+        self._sync_gui_layer_scripts(scene, engine)
+        for script in self._gui_layer_scripts.values():
+            if script is not None:
+                script.update(dt)
 
         self._sync_anim_states(scene)
         for index, inst in enumerate(scene.objects):
@@ -702,10 +733,11 @@ class SceneRenderer:
             bar = self._progress_bar(rect.prefab)
             if bar is None:
                 continue
-            sprite = self._sprite(bar.texture)
+            texture = bar.texture_for(rect.number)
+            sprite = self._sprite(texture)
             if sprite is None:
                 continue
-            tiled = self._tiled_gui_texture(bar.texture, sprite, rect.width, rect.height)
+            tiled = self._tiled_gui_texture(texture, sprite, rect.width, rect.height)
             if tiled is None:
                 continue
             value = rect.fill_fraction
@@ -734,7 +766,8 @@ class SceneRenderer:
             pip_bar = self._pip_bar(rep.prefab)
             if pip_bar is None:
                 continue
-            full_sprite = self._sprite(pip_bar.full_sprite)
+            full_sprite_path = pip_bar.full_sprite_for(rep.number)
+            full_sprite = self._sprite(full_sprite_path)
             if full_sprite is None:
                 continue
             icon_size = (
@@ -745,7 +778,7 @@ class SceneRenderer:
             total = rep.max_number if rep.max_number > 0 else rep.number
             for i in range(total):
                 if i < rep.number:
-                    sprite_path = pip_bar.full_sprite
+                    sprite_path = full_sprite_path
                 elif pip_bar.empty_sprite:
                     sprite_path = pip_bar.empty_sprite
                 else:

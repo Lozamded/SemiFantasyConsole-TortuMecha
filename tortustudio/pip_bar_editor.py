@@ -26,7 +26,7 @@ from PyQt6.QtWidgets import (
 
 from tortuengine.gui_layer import REPEAT_DIRECTIONS
 from tortuengine.palette import load_palette, palette_path
-from tortuengine.pip_bar import PipBar, load_pip_bar, save_pip_bar
+from tortuengine.pip_bar import MAX_PIP_BAR_RANGES, PipBar, PipBarRange, load_pip_bar, save_pip_bar
 from tortuengine.sprite import Sprite, load_sprite
 from tortustudio.asset_drag import SpriteDropCombo
 from tortustudio.scene_assets import list_sprite_paths
@@ -163,6 +163,28 @@ class PipBarEditorWidget(QWidget):
         self.scale_spin.setValue(1.0)
         self.scale_spin.valueChanged.connect(self._on_fields_changed)
 
+        # -- texture ranges: swap the filled-slot sprite over a [min, max] number
+        # band, modeled on the scene editor's background parallax bands (band_combo
+        # + shared detail panel) --
+        self.range_combo = QComboBox()
+        self.range_combo.currentIndexChanged.connect(self._on_range_changed)
+
+        self.range_min_spin = QSpinBox()
+        self.range_min_spin.setRange(0, 999999)
+        self.range_min_spin.valueChanged.connect(self._on_range_fields_changed)
+
+        self.range_max_spin = QSpinBox()
+        self.range_max_spin.setRange(0, 999999)
+        self.range_max_spin.valueChanged.connect(self._on_range_fields_changed)
+
+        self.range_sprite_combo = QComboBox()
+        self.range_sprite_combo.currentIndexChanged.connect(self._on_range_fields_changed)
+
+        self.btn_add_range = QPushButton("Add range")
+        self.btn_add_range.clicked.connect(self._add_range)
+        self.btn_remove_range = QPushButton("Remove range")
+        self.btn_remove_range.clicked.connect(self._remove_range)
+
         self._build_layout()
 
     def _build_layout(self) -> None:
@@ -202,9 +224,27 @@ class PipBarEditorWidget(QWidget):
         form.addRow("Spacing:", self.spacing_spin)
         form.addRow("Scale:", self.scale_spin)
 
+        ranges_group = QGroupBox("Texture Ranges")
+        ranges_layout = QVBoxLayout(ranges_group)
+        ranges_layout.addWidget(QLabel(
+            "Swap the full sprite above while number falls within a range\n"
+            "(e.g. a cracked heart for 0-1 lives). First matching range wins."
+        ))
+        range_btn_row = QHBoxLayout()
+        range_btn_row.addWidget(self.range_combo, stretch=1)
+        range_btn_row.addWidget(self.btn_add_range)
+        range_btn_row.addWidget(self.btn_remove_range)
+        ranges_layout.addLayout(range_btn_row)
+        range_form = QFormLayout()
+        range_form.addRow("Number from:", self.range_min_spin)
+        range_form.addRow("Number to:", self.range_max_spin)
+        range_form.addRow("Full sprite:", self.range_sprite_combo)
+        ranges_layout.addLayout(range_form)
+
         side = QWidget()
         side_layout = QVBoxLayout(side)
         side_layout.addLayout(form)
+        side_layout.addWidget(ranges_group)
         side_layout.addStretch()
         body.addWidget(side)
 
@@ -252,6 +292,94 @@ class PipBarEditorWidget(QWidget):
             self.empty_sprite_combo.addItem(rel_path, rel_path)
             index = self.empty_sprite_combo.findData(rel_path)
         self.empty_sprite_combo.setCurrentIndex(index)
+
+    def _active_range_index(self) -> int:
+        if self.range_combo.count() == 0:
+            return -1
+        return self.range_combo.currentIndex()
+
+    def _range_label(self, r: PipBarRange) -> str:
+        sprite_name = Path(r.full_sprite).stem if r.full_sprite else "(none)"
+        return f"{r.min_number}–{r.max_number} → {sprite_name}"
+
+    def _sync_range_controls(self) -> None:
+        self.range_combo.blockSignals(True)
+        self.range_combo.clear()
+        if not self.pip_bar:
+            self.range_combo.blockSignals(False)
+            self._set_range_controls_enabled(False)
+            return
+        for i, r in enumerate(self.pip_bar.ranges):
+            self.range_combo.addItem(f"{i}: {self._range_label(r)}", i)
+        if self.pip_bar.ranges:
+            active = min(max(self._active_range_index(), 0), len(self.pip_bar.ranges) - 1)
+            self.range_combo.setCurrentIndex(active)
+            self._load_range_fields(self.pip_bar.ranges[active])
+        self.range_combo.blockSignals(False)
+        self._set_range_controls_enabled(bool(self.pip_bar.ranges))
+        self.btn_add_range.setEnabled(len(self.pip_bar.ranges) < MAX_PIP_BAR_RANGES)
+
+    def _set_range_controls_enabled(self, enabled: bool) -> None:
+        for widget in (
+            self.range_combo, self.range_min_spin, self.range_max_spin,
+            self.range_sprite_combo, self.btn_remove_range,
+        ):
+            widget.setEnabled(enabled)
+
+    def _load_range_fields(self, r: PipBarRange) -> None:
+        self.range_min_spin.blockSignals(True)
+        self.range_max_spin.blockSignals(True)
+        self.range_min_spin.setValue(r.min_number)
+        self.range_max_spin.setValue(r.max_number)
+        self.range_min_spin.blockSignals(False)
+        self.range_max_spin.blockSignals(False)
+        self._populate_sprite_combo(self.range_sprite_combo, r.full_sprite)
+
+    def _save_range_fields(self, r: PipBarRange) -> None:
+        lo, hi = self.range_min_spin.value(), self.range_max_spin.value()
+        r.min_number, r.max_number = min(lo, hi), max(lo, hi)
+        sprite = self.range_sprite_combo.currentData()
+        r.full_sprite = str(sprite) if sprite else ""
+
+    def _on_range_changed(self, index: int) -> None:
+        if not self.pip_bar or index < 0 or index >= len(self.pip_bar.ranges):
+            return
+        self._load_range_fields(self.pip_bar.ranges[index])
+
+    def _on_range_fields_changed(self) -> None:
+        if not self.pip_bar:
+            return
+        index = self._active_range_index()
+        if index < 0 or index >= len(self.pip_bar.ranges):
+            return
+        r = self.pip_bar.ranges[index]
+        self._save_range_fields(r)
+        self.range_combo.blockSignals(True)
+        self.range_combo.setItemText(index, f"{index}: {self._range_label(r)}")
+        self.range_combo.blockSignals(False)
+        self._mark_dirty()
+
+    def _add_range(self) -> None:
+        if not self.pip_bar:
+            return
+        if len(self.pip_bar.ranges) >= MAX_PIP_BAR_RANGES:
+            QMessageBox.warning(self, "Add Range", f"Maximum {MAX_PIP_BAR_RANGES} texture ranges.")
+            return
+        lo = self.pip_bar.ranges[-1].max_number + 1 if self.pip_bar.ranges else 0
+        self.pip_bar.ranges.append(PipBarRange(lo, lo + 3, self.pip_bar.full_sprite))
+        self._mark_dirty()
+        self._sync_range_controls()
+        self.range_combo.setCurrentIndex(len(self.pip_bar.ranges) - 1)
+
+    def _remove_range(self) -> None:
+        if not self.pip_bar:
+            return
+        index = self._active_range_index()
+        if index < 0 or index >= len(self.pip_bar.ranges):
+            return
+        self.pip_bar.ranges.pop(index)
+        self._mark_dirty()
+        self._sync_range_controls()
 
     def _sprite_frame(self, sprite_path: str) -> pygame.Surface | None:
         if not sprite_path:
@@ -316,6 +444,7 @@ class PipBarEditorWidget(QWidget):
             self.empty_sprite_combo, self.pip_bar.empty_sprite, placeholder="(none)"
         )
         self._refresh_preview()
+        self._sync_range_controls()
 
     def _apply_fields_to_pip_bar(self) -> None:
         if not self.pip_bar:

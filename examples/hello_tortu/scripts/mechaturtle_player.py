@@ -43,6 +43,11 @@ JUMP_BUFFER = 0.1
 ATTACK_DUR = 0.4
 HURT_DUR = 0.4
 KNOCKBACK_SPEED = 140.0
+# Life system: each enemy touch costs one energy pip (life_bar); losing the
+# last pip costs one life (lives_label) and refills energy. power_bar isn't
+# wired into the life system yet — reserved for a future shoot/attack meter.
+MAX_ENERGY = 3
+MAX_LIVES = 6
 
 # Hitbox offsets from the character origin. Resolved in init() from the
 # auto.COLLIDER_BODY + auto.COLLIDER_HEAD colliders (stand) and
@@ -79,6 +84,8 @@ _crouching = False
 _prev_down = False
 _hurt_timer = 0.0
 _knockback_dir = 1  # -1 = pushed left, 1 = pushed right; set when a hit lands
+_energy = MAX_ENERGY
+_lives = MAX_LIVES
 
 _sfx_jump: pygame.mixer.Sound | None = None
 _sfx_shell: pygame.mixer.Sound | None = None
@@ -308,6 +315,7 @@ def init(engine) -> None:
     global SLIME_HB_L, SLIME_HB_R, SLIME_HB_T, SLIME_HB_B
     global _sfx_jump, _sfx_shell, _sfx_attack, _is_camera_target
     global _engine, _attack_obj, _hurt_timer, _knockback_dir
+    global _energy, _lives
 
     _engine = engine
     _px, _py = 34.0, 191.0
@@ -320,6 +328,7 @@ def init(engine) -> None:
     _was_on_ground = False
     _crouching, _prev_down = False, False
     _hurt_timer, _knockback_dir = 0.0, 1
+    _energy, _lives = MAX_ENERGY, MAX_LIVES
 
     scene_path = ROOT / "scenes/level_01.tortuscene"
     _scene = load_scene(scene_path, project_root=ROOT)
@@ -425,6 +434,7 @@ def update(dt: float) -> None:
     global _prev_jump, _prev_attack, _was_on_ground
     global _crouching, _prev_down
     global _hurt_timer, _knockback_dir
+    global _energy, _lives
 
     keys = pygame.key.get_pressed()
     jump_held  = keys[pygame.K_z] or keys[pygame.K_SPACE] or keys[pygame.K_UP] or keys[pygame.K_w]
@@ -479,6 +489,11 @@ def update(dt: float) -> None:
                 _hurt_timer = HURT_DUR
                 hurt = True
                 _knockback_dir = -1 if _px < inst.x else 1
+                if _lives > 0:
+                    _energy = max(0, _energy - 1)
+                    if _energy <= 0:
+                        _lives -= 1
+                        _energy = MAX_ENERGY if _lives > 0 else 0
                 break
 
     if jump_released and _vy < 0:
@@ -587,6 +602,8 @@ def update(dt: float) -> None:
     instance_api.set_player_position(_px, _py)
     instance_api.set_player_crouching(_crouching)
     instance_api.set_player_hitbox(_px + hb_l, _px + hb_r, _py + hb_t, _py + hb_b)
+    instance_api.set_player_energy(_energy, MAX_ENERGY)
+    instance_api.set_player_lives(_lives, MAX_LIVES)
     if _renderer and _scene:
         _renderer.tick(_scene, dt, _engine)
 
