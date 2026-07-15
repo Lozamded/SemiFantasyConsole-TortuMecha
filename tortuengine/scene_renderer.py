@@ -185,8 +185,6 @@ class SceneRenderer:
         self._instance_keys = synced_keys
 
     def _load_instance_script(self, inst: SceneObject) -> InstanceScript | None:
-        if self._cart_mode():
-            return None  # instance scripts aren't part of the baked cart manifest yet
         tortu_object = self._tortu_object(inst.prefab)
         if tortu_object is None or not tortu_object.script:
             return None
@@ -209,8 +207,6 @@ class SceneRenderer:
         self._gui_layer_scripts = synced
 
     def _load_gui_layer_script(self, rel_path: str) -> InstanceScript | None:
-        if self._cart_mode():
-            return None  # GUI layer scripts aren't part of the baked cart manifest yet
         gui_layer = self._gui_layer(rel_path)
         if gui_layer is None or not gui_layer.script:
             return None
@@ -611,7 +607,7 @@ class SceneRenderer:
         return tiled
 
     def _gui_layer(self, rel_path: str) -> GuiLayer | None:
-        if not rel_path or self._cart_mode():
+        if not rel_path:
             return None
         if rel_path in self._gui_layers:
             return self._gui_layers[rel_path]
@@ -824,6 +820,11 @@ class SceneRenderer:
         always form the base of the composite. Pair with `render_overlay()`
         when a script draws something (e.g. a player sprite) between the
         world and a foreground GUI layer, outside the normal object list.
+
+        Everything is drawn straight onto a viewport-sized surface (world-space
+        content offset by -cx/-cy) rather than a full map-sized composite that
+        gets cropped afterwards — walking/blitting at map scale instead of
+        screen scale was the dominant per-frame cost on large scenes.
         """
         self._sync_anim_states(scene)
         map_w = scene.width
@@ -832,8 +833,8 @@ class SceneRenderer:
         max_y = max(0, map_h - view_height)
         cx = max(0, min(camera_x, max_x))
         cy = max(0, min(camera_y, max_y))
-        composite = pygame.Surface((map_w, map_h))
-        composite.fill(MAP_BG)
+        view = pygame.Surface((view_width, view_height))
+        view.fill(MAP_BG)
 
         for scene_bg in scene.scene_bg_layers:
             if not scene_bg.visible or not scene_bg.background:
@@ -852,7 +853,7 @@ class SceneRenderer:
                     scene_bg.parallax_bands,
                 )
                 blit_parallax_bands(
-                    composite,
+                    view,
                     scene_bg.parallax_bands,
                     band_surfaces,
                     bg_height=bg.height,
@@ -869,11 +870,11 @@ class SceneRenderer:
                         baked_bg,
                         repeat_x=scene_bg.repeat_x,
                         repeat_y=scene_bg.repeat_y,
-                        target_w=map_w,
-                        target_h=map_h,
+                        target_w=view_width,
+                        target_h=view_height,
                     )
                 blit_parallax(
-                    composite,
+                    view,
                     baked_bg,
                     parallax_x=scene_bg.parallax_x,
                     parallax_y=scene_bg.parallax_y,
@@ -896,8 +897,15 @@ class SceneRenderer:
                 tile_size = tileset.tile_size
                 cols = scene.grid_columns(tile_size)
                 rows = scene.grid_rows(tile_size)
-                for ty in range(rows):
-                    for tx in range(cols):
+                # Only the tiles inside the camera viewport can ever be visible —
+                # walking the whole map here scales with map size instead of
+                # screen size and was a large source of wasted work per frame.
+                tx_start = max(0, cx // tile_size)
+                tx_end = min(cols, (cx + view_width) // tile_size + 1)
+                ty_start = max(0, cy // tile_size)
+                ty_end = min(rows, (cy + view_height) // tile_size + 1)
+                for ty in range(ty_start, ty_end):
+                    for tx in range(tx_start, tx_end):
                         px = tx * tile_size
                         py = ty * tile_size
                         if px >= map_w or py >= map_h:
@@ -914,16 +922,14 @@ class SceneRenderer:
                         )
                         if tile_surface is None:
                             continue
-                        composite.blit(tile_surface, (px, py))
+                        view.blit(tile_surface, (px - cx, py - cy))
 
-        # Objects and GUI layers share one z-ordered draw pass onto the world-space
-        # composite, so a GUI layer's z_index can place it behind or in front of
-        # objects (z_index 0), not just behind/in front of other GUI layers. Ties
-        # put the object before the GUI layer, so a default (z_index 0) GUI layer
-        # still draws on top of default objects, preserving prior "always on top"
-        # behavior. GUI layers are offset by the clamped camera position so their
-        # camera-locked content lands at the same screen position after the final
-        # viewport crop below.
+        # Objects and GUI layers share one z-ordered draw pass onto the viewport,
+        # so a GUI layer's z_index can place it behind or in front of objects
+        # (z_index 0), not just behind/in front of other GUI layers. Ties put the
+        # object before the GUI layer, so a default (z_index 0) GUI layer still
+        # draws on top of default objects, preserving prior "always on top"
+        # behavior.
         draw_items = [(inst.z_index, 0, i, inst) for i, inst in enumerate(scene.objects)]
         draw_items += [(g.z_index, 1, i, g) for i, g in enumerate(scene.gui_layers)]
         if z_max is not None:
@@ -944,9 +950,9 @@ class SceneRenderer:
                 tortu_object = self._tortu_object(inst.prefab)
                 if tortu_object is None:
                     continue
-                draw_x = inst.x - tortu_object.origin.x * inst.scale
-                draw_y = inst.y - tortu_object.origin.y * inst.scale
-                composite.blit(surface, (round(draw_x), round(draw_y)))
+                draw_x = inst.x - tortu_object.origin.x * inst.scale - cx
+                draw_y = inst.y - tortu_object.origin.y * inst.scale - cy
+                view.blit(surface, (round(draw_x), round(draw_y)))
             else:
                 scene_gui = payload
                 if not scene_gui.visible or not scene_gui.gui_layer:
@@ -954,11 +960,7 @@ class SceneRenderer:
                 gui_layer = self._gui_layer(scene_gui.gui_layer)
                 if gui_layer is None:
                     continue
-                self._draw_gui_layer(composite, gui_layer, ox=cx, oy=cy)
-
-        view = pygame.Surface((view_width, view_height))
-        view.fill(MAP_BG)
-        view.blit(composite, (0, 0), pygame.Rect(cx, cy, view_width, view_height))
+                self._draw_gui_layer(view, gui_layer)
 
         return view
 

@@ -22,8 +22,11 @@ from tortuengine.cart_manifest import (
     cart_scene_key,
     tileset_manifest_key,
 )
+from tortuengine.gui_layer import load_gui_layer
 from tortuengine.object import TortuObject, load_object
 from tortuengine.palette import load_palette, palette_path
+from tortuengine.pip_bar import load_pip_bar
+from tortuengine.progress_bar import load_progress_bar
 from tortuengine.project import Project
 from tortuengine.scene import Scene, load_scene, save_scene
 from tortuengine.sprite import load_sprite
@@ -48,6 +51,10 @@ class _ExportPlan:
     tilesets: set[tuple[str, str]] = field(default_factory=set)
     backgrounds: set[str] = field(default_factory=set)
     objects: set[str] = field(default_factory=set)
+    gui_layers: set[str] = field(default_factory=set)
+    progress_bars: set[str] = field(default_factory=set)
+    pip_bars: set[str] = field(default_factory=set)
+    fonts: set[str] = field(default_factory=set)
 
 
 def _collect_scene_assets(project: Project, scene: Scene, scene_rel: str, plan: _ExportPlan) -> None:
@@ -65,6 +72,61 @@ def _collect_scene_assets(project: Project, scene: Scene, scene_rel: str, plan: 
     for inst in scene.objects:
         if inst.prefab:
             plan.objects.add(inst.prefab)
+
+    for scene_gui in scene.gui_layers:
+        if scene_gui.gui_layer:
+            plan.gui_layers.add(scene_gui.gui_layer)
+
+
+def _collect_gui_layer_dependencies(project: Project, plan: _ExportPlan) -> None:
+    """Pull in the tileset/objects/progress bars/pip bars/fonts a GUI layer references."""
+    for gui_layer_rel in sorted(plan.gui_layers):
+        path = (project.root / gui_layer_rel).resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"GUI layer not found for export: {gui_layer_rel}")
+        gui_layer = load_gui_layer(path, project_root=project.root)
+        if gui_layer.tileset:
+            plan.tilesets.add((gui_layer.tileset, gui_layer.palette))
+        for inst in gui_layer.objects:
+            if inst.prefab:
+                plan.objects.add(inst.prefab)
+        for rect in gui_layer.tiled_rects:
+            if rect.prefab:
+                plan.progress_bars.add(rect.prefab)
+        for rep in gui_layer.repeat_sprites:
+            if rep.prefab:
+                plan.pip_bars.add(rep.prefab)
+        for label in gui_layer.text_labels:
+            if label.font:
+                plan.fonts.add(label.font)
+
+
+def _collect_progress_bar_dependencies(project: Project, plan: _ExportPlan) -> None:
+    for bar_rel in sorted(plan.progress_bars):
+        path = (project.root / bar_rel).resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"Progress bar not found for export: {bar_rel}")
+        bar = load_progress_bar(path)
+        if bar.texture:
+            plan.sprites.add(bar.texture)
+        for r in bar.ranges:
+            if r.texture:
+                plan.sprites.add(r.texture)
+
+
+def _collect_pip_bar_dependencies(project: Project, plan: _ExportPlan) -> None:
+    for bar_rel in sorted(plan.pip_bars):
+        path = (project.root / bar_rel).resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"Pip bar not found for export: {bar_rel}")
+        bar = load_pip_bar(path)
+        if bar.full_sprite:
+            plan.sprites.add(bar.full_sprite)
+        if bar.empty_sprite:
+            plan.sprites.add(bar.empty_sprite)
+        for r in bar.ranges:
+            if r.full_sprite:
+                plan.sprites.add(r.full_sprite)
 
 
 def _collect_object_sprites(project: Project, object_path: str, plan: _ExportPlan) -> TortuObject:
@@ -107,7 +169,10 @@ def build_export_plan(project: Project) -> _ExportPlan:
         scene = load_scene(scene_file, project_root=project.root)
         _collect_scene_assets(project, scene, scene_rel, plan)
 
+    _collect_gui_layer_dependencies(project, plan)
     _collect_object_dependencies(project, plan)
+    _collect_progress_bar_dependencies(project, plan)
+    _collect_pip_bar_dependencies(project, plan)
 
     return plan
 
@@ -385,6 +450,34 @@ def export_cart(project: Project, dest: Path) -> Path:
     for object_rel in sorted(plan.objects):
         src = project.root / object_rel
         dst = dest / object_rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+
+    # GUI layers/progress bars/pip bars/fonts store their own JSON data (or, for
+    # fonts, raw glyph pixel indices) rather than needing PNG baking, so they're
+    # copied as source files like objects — the sprites/tilesets they reference
+    # were already added to the plan above and get baked normally.
+    for gui_layer_rel in sorted(plan.gui_layers):
+        src = project.root / gui_layer_rel
+        dst = dest / gui_layer_rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+
+    for bar_rel in sorted(plan.progress_bars):
+        src = project.root / bar_rel
+        dst = dest / bar_rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+
+    for bar_rel in sorted(plan.pip_bars):
+        src = project.root / bar_rel
+        dst = dest / bar_rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+
+    for font_rel in sorted(plan.fonts):
+        src = project.root / font_rel
+        dst = dest / font_rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
 

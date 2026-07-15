@@ -23,18 +23,26 @@ def main(argv: list[str] | None = None) -> int:
         "--scale",
         type=int,
         default=3,
-        help="Window scale factor (default: 3); ignored with --fullscreen",
+        help="Window scale factor (default: 3); ignored when running fullscreen",
     )
-    parser.add_argument(
+    fs_group = parser.add_mutually_exclusive_group()
+    fs_group.add_argument(
         "--fullscreen",
         action="store_true",
-        help="Run fullscreen, auto-fitting the largest integer pixel scale to the display",
+        help="Run fullscreen, auto-fitting the largest integer pixel scale to the display "
+        "(default when launching a .tortucart bundle)",
+    )
+    fs_group.add_argument(
+        "--windowed",
+        action="store_true",
+        help="Force a windowed launch even for a .tortucart bundle",
     )
     args = parser.parse_args(argv)
 
     path = args.path.resolve()
     cart_root = resolve_cart_root(path)
     if cart_root is not None:
+        fullscreen = False if args.windowed else True
         try:
             manifest = load_cart_manifest(cart_root)
         except (OSError, ValueError, KeyError) as exc:
@@ -49,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
                 scale=args.scale,
                 title=title,
                 fps=fps,
-                fullscreen=args.fullscreen,
+                fullscreen=fullscreen,
             )
             try:
                 player.run()

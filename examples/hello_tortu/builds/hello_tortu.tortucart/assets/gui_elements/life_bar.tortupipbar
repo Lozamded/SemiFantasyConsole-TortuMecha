@@ -1,0 +1,20 @@
+{
+  "name": "pip_bar",
+  "full_sprite": "assets/sprites/icon_shell_green.tortusprite",
+  "empty_sprite": "",
+  "direction": "horizontal",
+  "spacing": 0,
+  "scale": 1.0,
+  "ranges": [
+    {
+      "min_number": 0,
+      "max_number": 1,
+      "full_sprite": "assets/sprites/icon_shell_red.tortusprite"
+    },
+    {
+      "min_number": 2,
+      "max_number": 5,
+      "full_sprite": "assets/sprites/icon_shell_green.tortusprite"
+    }
+  ]
+}

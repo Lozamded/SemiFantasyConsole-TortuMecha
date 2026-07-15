@@ -1,0 +1,26 @@
+{
+  "name": "collider_mechaturtle_attack",
+  "default_animation": "default",
+  "animations": [
+    {
+      "name": "default",
+      "sprite": "assets/sprites/collider_mechaturtleAttack.tortusprite"
+    }
+  ],
+  "solid": false,
+  "script": "scripts/collider_mechaturtle_attack.py",
+  "origin": {
+    "x": 8,
+    "y": 31
+  },
+  "colliders": [
+    {
+      "name": "main",
+      "x": 0,
+      "y": 6,
+      "w": 16,
+      "h": 11,
+      "active": true
+    }
+  ]
+}

@@ -23,7 +23,7 @@
       "sprite": "assets/sprites/mechaturtle_attack.tortusprite"
     },
     {
-      "name": "damge",
+      "name": "damage",
       "sprite": "assets/sprites/mechaturtle_damage.tortusprite"
     },
     {
@@ -58,5 +58,8 @@
       "h": 12,
       "active": true
     }
+  ],
+  "spawnable_objects": [
+    "assets/objects/collider_mechaturtle_attack.tortuobject"
   ]
 }

@@ -1,0 +1,22 @@
+{
+  "name": "dialoguebox",
+  "default_animation": "default",
+  "animations": [
+    {
+      "name": "default",
+      "sprite": "assets/sprites/dialog_box.tortusprite"
+    }
+  ],
+  "solid": false,
+  "script": "scripts/dialoguebox.py",
+  "colliders": [
+    {
+      "name": "main",
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0,
+      "active": true
+    }
+  ]
+}

@@ -18,7 +18,10 @@ class Display:
 
     def __init__(self, scale: int, fullscreen: bool, title: str) -> None:
         if fullscreen:
-            window = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+            # NOFRAME alongside FULLSCREEN: some Linux window managers only
+            # honor the fullscreen hint loosely and leave title bar/borders on
+            # a plain FULLSCREEN request, so force borderless explicitly too.
+            window = pygame.display.set_mode((0, 0), pygame.FULLSCREEN | pygame.NOFRAME)
             pygame.mouse.set_visible(False)
             display_w, display_h = window.get_size()
             scale = max(1, min(display_w // SCREEN_WIDTH, display_h // SCREEN_HEIGHT))

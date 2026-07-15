@@ -1,0 +1,30 @@
+{
+  "name": "red_slime",
+  "default_animation": "idle",
+  "animations": [
+    {
+      "name": "idle",
+      "sprite": "assets/sprites/red_sli.tortusprite"
+    },
+    {
+      "name": "defeat",
+      "sprite": "assets/sprites/red_sli_defeat.tortusprite"
+    }
+  ],
+  "solid": true,
+  "script": "scripts/red_slime.py",
+  "origin": {
+    "x": 14,
+    "y": 23
+  },
+  "colliders": [
+    {
+      "name": "main",
+      "x": 4,
+      "y": 5,
+      "w": 19,
+      "h": 19,
+      "active": true
+    }
+  ]
+}

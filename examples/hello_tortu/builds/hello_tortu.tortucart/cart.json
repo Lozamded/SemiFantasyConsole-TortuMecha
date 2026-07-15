@@ -14,6 +14,81 @@
   },
   "start_scene": "scenes/level_01",
   "sprites": {
+    "assets/sprites/Turtlemecha_head_UI.tortusprite": {
+      "fps": 8,
+      "width": 24,
+      "height": 20,
+      "frames": [
+        "baked/assets/sprites/Turtlemecha_head_UI/f0.png"
+      ]
+    },
+    "assets/sprites/collider_mechaturtleAttack.tortusprite": {
+      "fps": 8,
+      "width": 16,
+      "height": 32,
+      "frames": [
+        "baked/assets/sprites/collider_mechaturtleAttack/f0.png"
+      ]
+    },
+    "assets/sprites/dialog_box.tortusprite": {
+      "fps": 8,
+      "width": 128,
+      "height": 28,
+      "frames": [
+        "baked/assets/sprites/dialog_box/f0.png"
+      ]
+    },
+    "assets/sprites/dialogue_icon.tortusprite": {
+      "fps": 8,
+      "width": 24,
+      "height": 16,
+      "frames": [
+        "baked/assets/sprites/dialogue_icon/f0.png",
+        "baked/assets/sprites/dialogue_icon/f1.png",
+        "baked/assets/sprites/dialogue_icon/f2.png"
+      ]
+    },
+    "assets/sprites/enemycollider.tortusprite": {
+      "fps": 8,
+      "width": 16,
+      "height": 16,
+      "frames": [
+        "baked/assets/sprites/enemycollider/f0.png"
+      ]
+    },
+    "assets/sprites/gear_rotating.tortusprite": {
+      "fps": 8,
+      "width": 16,
+      "height": 16,
+      "frames": [
+        "baked/assets/sprites/gear_rotating/f0.png",
+        "baked/assets/sprites/gear_rotating/f1.png"
+      ]
+    },
+    "assets/sprites/gear_static.tortusprite": {
+      "fps": 8,
+      "width": 16,
+      "height": 16,
+      "frames": [
+        "baked/assets/sprites/gear_static/f0.png"
+      ]
+    },
+    "assets/sprites/icon_shell_green.tortusprite": {
+      "fps": 8,
+      "width": 24,
+      "height": 24,
+      "frames": [
+        "baked/assets/sprites/icon_shell_green/f0.png"
+      ]
+    },
+    "assets/sprites/icon_shell_red.tortusprite": {
+      "fps": 8,
+      "width": 24,
+      "height": 24,
+      "frames": [
+        "baked/assets/sprites/icon_shell_red/f0.png"
+      ]
+    },
     "assets/sprites/mechaturtle_air_attack.tortusprite": {
       "fps": 8,
       "width": 40,
@@ -86,6 +161,29 @@
         "baked/assets/sprites/mechaturtle_walk/f1.png",
         "baked/assets/sprites/mechaturtle_walk/f2.png",
         "baked/assets/sprites/mechaturtle_walk/f3.png"
+      ]
+    },
+    "assets/sprites/red_sli.tortusprite": {
+      "fps": 8,
+      "width": 28,
+      "height": 24,
+      "frames": [
+        "baked/assets/sprites/red_sli/f0.png",
+        "baked/assets/sprites/red_sli/f1.png",
+        "baked/assets/sprites/red_sli/f2.png",
+        "baked/assets/sprites/red_sli/f3.png"
+      ]
+    },
+    "assets/sprites/red_sli_defeat.tortusprite": {
+      "fps": 8,
+      "width": 28,
+      "height": 24,
+      "frames": [
+        "baked/assets/sprites/red_sli_defeat/f0.png",
+        "baked/assets/sprites/red_sli_defeat/f1.png",
+        "baked/assets/sprites/red_sli_defeat/f2.png",
+        "baked/assets/sprites/red_sli_defeat/f3.png",
+        "baked/assets/sprites/red_sli_defeat/f4.png"
       ]
     },
     "assets/sprites/robot_damage.tortusprite": {
@@ -179,9 +277,10 @@
       "full": "baked/assets/backgrounds/bg1/full.png",
       "bands": {
         "0:19": "baked/assets/backgrounds/bg1/band_0_19.png",
-        "20:80": "baked/assets/backgrounds/bg1/band_20_80.png",
-        "81:125": "baked/assets/backgrounds/bg1/band_81_125.png",
-        "126:197": "baked/assets/backgrounds/bg1/band_126_197.png"
+        "20:46": "baked/assets/backgrounds/bg1/band_20_46.png",
+        "47:72": "baked/assets/backgrounds/bg1/band_47_72.png",
+        "73:126": "baked/assets/backgrounds/bg1/band_73_126.png",
+        "127:197": "baked/assets/backgrounds/bg1/band_127_197.png"
       }
     },
     "assets/backgrounds/bg_1_mountains.tortubackground": {
@@ -192,6 +291,151 @@
     }
   },
   "objects": {
+    "assets/objects/UI_MechaTurtle_face.tortuobject": {
+      "name": "UI_MechaTurtle_face",
+      "default_animation": "idle",
+      "animations": {
+        "idle": "assets/sprites/Turtlemecha_head_UI.tortusprite"
+      },
+      "solid": false,
+      "origin": {
+        "x": 0,
+        "y": 0
+      },
+      "colliders": [
+        {
+          "name": "main",
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0,
+          "active": true
+        }
+      ],
+      "script": "",
+      "spawnable_objects": []
+    },
+    "assets/objects/collider_mechaturtle_attack.tortuobject": {
+      "name": "collider_mechaturtle_attack",
+      "default_animation": "default",
+      "animations": {
+        "default": "assets/sprites/collider_mechaturtleAttack.tortusprite"
+      },
+      "solid": false,
+      "origin": {
+        "x": 8,
+        "y": 31
+      },
+      "colliders": [
+        {
+          "name": "main",
+          "x": 0,
+          "y": 6,
+          "w": 16,
+          "h": 11,
+          "active": true
+        }
+      ],
+      "script": "scripts/collider_mechaturtle_attack.py",
+      "spawnable_objects": []
+    },
+    "assets/objects/dialogue_icon.tortuobject": {
+      "name": "dialogue_icon",
+      "default_animation": "default",
+      "animations": {
+        "default": "assets/sprites/dialogue_icon.tortusprite"
+      },
+      "solid": false,
+      "origin": {
+        "x": 7,
+        "y": 15
+      },
+      "colliders": [
+        {
+          "name": "main",
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0,
+          "active": true
+        }
+      ],
+      "script": "",
+      "spawnable_objects": []
+    },
+    "assets/objects/dialoguebox.tortuobject": {
+      "name": "dialoguebox",
+      "default_animation": "default",
+      "animations": {
+        "default": "assets/sprites/dialog_box.tortusprite"
+      },
+      "solid": false,
+      "origin": {
+        "x": 0,
+        "y": 0
+      },
+      "colliders": [
+        {
+          "name": "main",
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0,
+          "active": true
+        }
+      ],
+      "script": "scripts/dialoguebox.py",
+      "spawnable_objects": []
+    },
+    "assets/objects/enemycollider.tortuobject": {
+      "name": "enemycollider",
+      "default_animation": "default",
+      "animations": {
+        "default": "assets/sprites/enemycollider.tortusprite"
+      },
+      "solid": false,
+      "origin": {
+        "x": 8,
+        "y": 8
+      },
+      "colliders": [
+        {
+          "name": "main",
+          "x": 1,
+          "y": 1,
+          "w": 14,
+          "h": 14,
+          "active": true
+        }
+      ],
+      "script": "",
+      "spawnable_objects": []
+    },
+    "assets/objects/gear.tortuobject": {
+      "name": "gear",
+      "default_animation": "rotating",
+      "animations": {
+        "rotating": "assets/sprites/gear_rotating.tortusprite",
+        "static": "assets/sprites/gear_static.tortusprite"
+      },
+      "solid": false,
+      "origin": {
+        "x": 8,
+        "y": 8
+      },
+      "colliders": [
+        {
+          "name": "main",
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0,
+          "active": true
+        }
+      ],
+      "script": "",
+      "spawnable_objects": []
+    },
     "assets/objects/mechaturtle.tortuobject": {
       "name": "mechaturtle",
       "default_animation": "idle",
@@ -201,7 +445,7 @@
         "jump": "assets/sprites/mechaturtle_jump.tortusprite",
         "fall": "assets/sprites/mechaturtle_fall.tortusprite",
         "attack": "assets/sprites/mechaturtle_attack.tortusprite",
-        "damge": "assets/sprites/mechaturtle_damage.tortusprite",
+        "damage": "assets/sprites/mechaturtle_damage.tortusprite",
         "air_attack": "assets/sprites/mechaturtle_air_attack.tortusprite",
         "crouch": "assets/sprites/mechaturtle_crouch.tortusprite"
       },
@@ -228,7 +472,35 @@
           "active": true
         }
       ],
-      "script": "scripts/mechaturtle_player.py"
+      "script": "scripts/mechaturtle_player.py",
+      "spawnable_objects": [
+        "assets/objects/collider_mechaturtle_attack.tortuobject"
+      ]
+    },
+    "assets/objects/red_slime.tortuobject": {
+      "name": "red_slime",
+      "default_animation": "idle",
+      "animations": {
+        "idle": "assets/sprites/red_sli.tortusprite",
+        "defeat": "assets/sprites/red_sli_defeat.tortusprite"
+      },
+      "solid": true,
+      "origin": {
+        "x": 14,
+        "y": 23
+      },
+      "colliders": [
+        {
+          "name": "main",
+          "x": 4,
+          "y": 5,
+          "w": 19,
+          "h": 19,
+          "active": true
+        }
+      ],
+      "script": "scripts/red_slime.py",
+      "spawnable_objects": []
     },
     "assets/objects/robot.tortuobject": {
       "name": "robot",
@@ -255,7 +527,8 @@
           "active": true
         }
       ],
-      "script": "scripts/robot.py"
+      "script": "scripts/robot.py",
+      "spawnable_objects": []
     }
   },
   "scenes": {
