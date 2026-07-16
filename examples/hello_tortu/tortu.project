@@ -7,6 +7,12 @@
     "game_name": "Hello Tortu",
     "cart_name": "hello_tortu",
     "fps": 60,
-    "start_scene": "scenes/level_01.tortuscene"
+    "start_scene": "scenes/title.tortuscene",
+    "audio_channels": [
+      "music",
+      "sfx_1",
+      "sfx_2",
+      "sfx_3"
+    ]
   }
 }
