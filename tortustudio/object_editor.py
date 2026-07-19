@@ -28,12 +28,18 @@ from PyQt6.QtWidgets import (
 
 from tortuengine.project import load_project
 from tortuengine.object import (
+    CUSTOM_VAR_TYPES,
     MAX_OBJECT_ANIMATIONS,
     MAX_OBJECT_COLLIDERS,
+    MAX_OBJECT_CUSTOM_VARS,
+    CustomVarDef,
     ObjectAnimation,
     ObjectCollider,
     TortuObject,
+    default_for_custom_var_type,
+    format_custom_var_value,
     load_object,
+    parse_custom_var_text,
     save_object,
 )
 from tortuengine.palette import load_palette, palette_path
@@ -610,6 +616,33 @@ class ObjectEditorWidget(QWidget):
         self.spawnable_list.setMaximumHeight(90)
         self.spawnable_list.object_dropped.connect(self._add_spawnable_object_path)
 
+        # Custom variables — Godot export-var / Unity public-field style: declared
+        # here with a name/type/default, then overridable per placed scene instance
+        # in the Scene Editor (see instance_api.custom_var()).
+        self.customvar_combo = QComboBox()
+        self.customvar_combo.currentIndexChanged.connect(self._on_customvar_selection_changed)
+        self.btn_add_customvar = QPushButton("Add")
+        self.btn_add_customvar.clicked.connect(self._add_customvar)
+        self.btn_remove_customvar = QPushButton("Remove")
+        self.btn_remove_customvar.clicked.connect(self._remove_customvar)
+
+        self.customvar_name_edit = QLineEdit()
+        self.customvar_name_edit.textChanged.connect(self._on_customvar_name_changed)
+
+        self.customvar_type_combo = QComboBox()
+        for type_name in CUSTOM_VAR_TYPES:
+            self.customvar_type_combo.addItem(type_name.capitalize(), type_name)
+        self.customvar_type_combo.currentIndexChanged.connect(self._on_customvar_type_changed)
+
+        self.customvar_array_check = QCheckBox("Array")
+        self.customvar_array_check.toggled.connect(self._on_customvar_array_toggled)
+
+        self.customvar_default_edit = QLineEdit()
+        self.customvar_default_edit.setToolTip(
+            "For arrays, separate values with commas"
+        )
+        self.customvar_default_edit.editingFinished.connect(self._on_customvar_default_changed)
+
         self._build_layout()
 
     def _build_layout(self) -> None:
@@ -680,6 +713,16 @@ class ObjectEditorWidget(QWidget):
         spawnable_row.addWidget(self.btn_remove_spawnable)
         form.addRow(spawnable_row)
         form.addRow(self.spawnable_list)
+        form.addRow(QLabel("<b>Custom Variables</b> (per-scene overridable)"))
+        customvar_row = QHBoxLayout()
+        customvar_row.addWidget(self.customvar_combo, stretch=1)
+        customvar_row.addWidget(self.btn_add_customvar)
+        customvar_row.addWidget(self.btn_remove_customvar)
+        form.addRow("Variable:", customvar_row)
+        form.addRow("Name:", self.customvar_name_edit)
+        form.addRow("Type:", self.customvar_type_combo)
+        form.addRow("", self.customvar_array_check)
+        form.addRow("Default:", self.customvar_default_edit)
 
         side = QWidget()
         side_layout = QVBoxLayout(side)
@@ -967,6 +1010,7 @@ class ObjectEditorWidget(QWidget):
         self._refresh_script_row()
         self._sync_animation_controls()
         self._sync_spawnable_controls()
+        self._sync_customvar_controls()
         if self._load_sprite_asset():
             self._refresh_collider_controls()
             self._refresh_preview()
@@ -1201,6 +1245,142 @@ class ObjectEditorWidget(QWidget):
             self.tortu_object.spawnable_objects.remove(rel)
         self.spawnable_list.takeItem(self.spawnable_list.row(item))
         self._mark_dirty()
+
+    # ── custom variable controls ──────────────────────────────────────────────
+
+    def _active_customvar_index(self) -> int:
+        if self.customvar_combo.count() == 0:
+            return -1
+        return self.customvar_combo.currentIndex()
+
+    def _active_customvar(self) -> CustomVarDef | None:
+        if not self.tortu_object:
+            return None
+        idx = self._active_customvar_index()
+        if 0 <= idx < len(self.tortu_object.custom_vars):
+            return self.tortu_object.custom_vars[idx]
+        return None
+
+    def _sync_customvar_controls(self) -> None:
+        if not self.tortu_object:
+            self.customvar_combo.blockSignals(True)
+            self.customvar_combo.clear()
+            self.customvar_combo.blockSignals(False)
+            self.btn_add_customvar.setEnabled(False)
+            self.btn_remove_customvar.setEnabled(False)
+            return
+
+        active_idx = self._active_customvar_index()
+        self.customvar_combo.blockSignals(True)
+        self.customvar_combo.clear()
+        for i, v in enumerate(self.tortu_object.custom_vars):
+            label = f"{i}: {v.name} ({v.type}{'[]' if v.is_array else ''})"
+            self.customvar_combo.addItem(label, i)
+        if self.tortu_object.custom_vars:
+            pick = min(max(active_idx, 0), len(self.tortu_object.custom_vars) - 1)
+            self.customvar_combo.setCurrentIndex(pick)
+        self.customvar_combo.blockSignals(False)
+        self.btn_add_customvar.setEnabled(
+            len(self.tortu_object.custom_vars) < MAX_OBJECT_CUSTOM_VARS
+        )
+        self.btn_remove_customvar.setEnabled(bool(self.tortu_object.custom_vars))
+
+        v = self._active_customvar()
+        if v is not None:
+            self._load_customvar_fields(v)
+
+    def _load_customvar_fields(self, v: CustomVarDef) -> None:
+        self.customvar_name_edit.blockSignals(True)
+        self.customvar_type_combo.blockSignals(True)
+        self.customvar_array_check.blockSignals(True)
+        self.customvar_default_edit.blockSignals(True)
+        self.customvar_name_edit.setText(v.name)
+        type_index = self.customvar_type_combo.findData(v.type)
+        self.customvar_type_combo.setCurrentIndex(type_index if type_index >= 0 else 0)
+        self.customvar_array_check.setChecked(v.is_array)
+        self.customvar_default_edit.setText(format_custom_var_value(v.is_array, v.default))
+        self.customvar_name_edit.blockSignals(False)
+        self.customvar_type_combo.blockSignals(False)
+        self.customvar_array_check.blockSignals(False)
+        self.customvar_default_edit.blockSignals(False)
+
+    def _on_customvar_selection_changed(self, index: int) -> None:
+        if not self.tortu_object or index < 0:
+            return
+        v = self._active_customvar()
+        if v is not None:
+            self._load_customvar_fields(v)
+
+    def _on_customvar_name_changed(self) -> None:
+        v = self._active_customvar()
+        if v is None:
+            return
+        name = self.customvar_name_edit.text().strip().replace(" ", "_") or "var"
+        v.name = name
+        idx = self._active_customvar_index()
+        self.customvar_combo.blockSignals(True)
+        self.customvar_combo.setItemText(idx, f"{idx}: {v.name} ({v.type}{'[]' if v.is_array else ''})")
+        self.customvar_combo.blockSignals(False)
+        self._mark_dirty()
+
+    def _on_customvar_type_changed(self, index: int) -> None:
+        v = self._active_customvar()
+        if v is None or index < 0:
+            return
+        type_name = self.customvar_type_combo.itemData(index)
+        if not type_name or type_name == v.type:
+            return
+        v.type = type_name
+        v.default = [] if v.is_array else default_for_custom_var_type(type_name)
+        self._sync_customvar_controls()
+        self._mark_dirty()
+
+    def _on_customvar_array_toggled(self, checked: bool) -> None:
+        v = self._active_customvar()
+        if v is None:
+            return
+        v.is_array = checked
+        v.default = [] if checked else default_for_custom_var_type(v.type)
+        self._sync_customvar_controls()
+        self._mark_dirty()
+
+    def _on_customvar_default_changed(self) -> None:
+        v = self._active_customvar()
+        if v is None:
+            return
+        v.default = parse_custom_var_text(
+            v.type, v.is_array, self.customvar_default_edit.text()
+        )
+        self.customvar_default_edit.setText(format_custom_var_value(v.is_array, v.default))
+        self._mark_dirty()
+
+    def _add_customvar(self) -> None:
+        if not self.tortu_object:
+            return
+        if len(self.tortu_object.custom_vars) >= MAX_OBJECT_CUSTOM_VARS:
+            QMessageBox.warning(
+                self, "Add Custom Variable", f"Maximum {MAX_OBJECT_CUSTOM_VARS} custom variables."
+            )
+            return
+        base = "var"
+        n = 1
+        names = {v.name for v in self.tortu_object.custom_vars}
+        while f"{base}{n}" in names:
+            n += 1
+        self.tortu_object.custom_vars.append(CustomVarDef(name=f"{base}{n}"))
+        self._mark_dirty()
+        self._sync_customvar_controls()
+        self.customvar_combo.setCurrentIndex(len(self.tortu_object.custom_vars) - 1)
+
+    def _remove_customvar(self) -> None:
+        if not self.tortu_object:
+            return
+        idx = self._active_customvar_index()
+        if idx < 0:
+            return
+        self.tortu_object.custom_vars.pop(idx)
+        self._mark_dirty()
+        self._sync_customvar_controls()
 
     def _on_origin_changed(self) -> None:
         if not self.tortu_object:

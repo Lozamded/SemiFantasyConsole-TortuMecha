@@ -7,8 +7,8 @@
   "text_labels": [
     {
       "text": "Game Over",
-      "x": 85,
-      "y": 48,
+      "x": 87,
+      "y": 23,
       "font": "assets/fonts/KiwiSoda.tortufont"
     },
     {
@@ -16,8 +16,16 @@
       "x": 60,
       "y": 152,
       "font": "assets/fonts/VCR.tortufont"
+    },
+    {
+      "text": "GEARS: x0",
+      "x": 93,
+      "y": 48,
+      "id": "gears_label",
+      "font": "assets/fonts/dialog.tortufont"
     }
   ],
   "tiled_rects": [],
-  "repeat_sprites": []
+  "repeat_sprites": [],
+  "script": "scripts/gameover_hud.py"
 }

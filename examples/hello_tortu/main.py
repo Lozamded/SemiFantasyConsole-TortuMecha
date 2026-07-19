@@ -3,10 +3,10 @@
 import pygame
 from pathlib import Path
 
-from tortuengine import instance_api
 from scripts import title as _title
 from scripts import gameover as _gameover
 from scripts import mechaturtle_player as _player
+from scripts import game_state
 
 ROOT = Path(__file__).parent
 
@@ -21,13 +21,18 @@ def _enter_title():
     _title.init(_engine)
 
 
-def _enter_level():
+def _enter_level(new_game: bool):
+    """new_game=True resets lives/energy/gears (title -> level); False keeps
+    them as-is, for a mid-run respawn after the defeat bounce."""
     global _state
     _state = "level"
+    if new_game:
+        game_state.reset()
     _player.init(_engine)
-    pygame.mixer.music.load(str(ROOT / "assets/audio/every Friday.ogg"))
-    pygame.mixer.music.set_volume(0.5)
-    pygame.mixer.music.play(-1)
+    if new_game:
+        pygame.mixer.music.load(str(ROOT / "assets/audio/every Friday.ogg"))
+        pygame.mixer.music.set_volume(0.5)
+        pygame.mixer.music.play(-1)
 
 
 def _enter_gameover():
@@ -47,12 +52,14 @@ def update(dt):
     if _state == "title":
         _title.update(dt)
         if _title.start_pressed:
-            _enter_level()
+            _enter_level(new_game=True)
     elif _state == "level":
         _player.update(dt)
-        lives = instance_api.player_lives()
-        if lives is not None and lives[0] <= 0:
-            _enter_gameover()
+        if _player.defeat_done:
+            if game_state.lives <= 0:
+                _enter_gameover()
+            else:
+                _enter_level(new_game=False)
     else:
         _gameover.update(dt)
         if _gameover.start_pressed:

@@ -222,6 +222,21 @@ def set_visible(instance_id: str, visible: bool) -> None:
         inst.visible = visible
 
 
+def custom_var(instance_id: str, name: str, default: object = None) -> object:
+    """Read a custom-variable value for a scene instance.
+
+    Returns the per-instance override set in TortuStudio (SceneObject
+    .custom_var_overrides), or `default` if the instance has no override
+    for this variable — callers typically pass the prefab's declared
+    default (see the CUSTOMVAR_*_DEFAULT constant in the object's
+    generated _auto.py module).
+    """
+    inst = _find(instance_id)
+    if inst is None:
+        return default
+    return inst.custom_var_overrides.get(name, default)
+
+
 def is_enabled(instance_id: str) -> bool:
     """False means the instance is off — skip it in collision checks too, not just rendering."""
     inst = _find(instance_id)

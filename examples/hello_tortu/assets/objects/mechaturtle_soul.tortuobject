@@ -1,0 +1,25 @@
+{
+  "name": "mechaturtle_soul",
+  "default_animation": "flying",
+  "animations": [
+    {
+      "name": "flying",
+      "sprite": "assets/sprites/mechaturtle_soul.tortusprite"
+    }
+  ],
+  "solid": false,
+  "origin": {
+    "x": 24,
+    "y": 31
+  },
+  "colliders": [
+    {
+      "name": "main",
+      "x": 15,
+      "y": 5,
+      "w": 15,
+      "h": 27,
+      "active": true
+    }
+  ]
+}

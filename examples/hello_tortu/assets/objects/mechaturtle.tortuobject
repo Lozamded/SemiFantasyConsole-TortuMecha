@@ -33,6 +33,10 @@
     {
       "name": "crouch",
       "sprite": "assets/sprites/mechaturtle_crouch.tortusprite"
+    },
+    {
+      "name": "defeated",
+      "sprite": "assets/sprites/mechaturtle_defeated.tortusprite"
     }
   ],
   "solid": false,
@@ -61,5 +65,13 @@
   ],
   "spawnable_objects": [
     "assets/objects/collider_mechaturtle_attack.tortuobject"
+  ],
+  "custom_vars": [
+    {
+      "name": "kill_plane_y",
+      "type": "float",
+      "is_array": false,
+      "default": 238.0
+    }
   ]
 }

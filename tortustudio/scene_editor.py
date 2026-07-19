@@ -39,7 +39,13 @@ from tortuengine.project import load_project
 from tortuengine.background import Background, load_background
 from tortuengine.constants import SCREEN_HEIGHT, SCREEN_WIDTH, SPRITE_BLOCK, TILE_BLOCK
 from tortuengine.palette import TRANSPARENT_INDEX, load_palette, palette_path
-from tortuengine.object import TortuObject, load_object
+from tortuengine.object import (
+    CustomVarDef,
+    TortuObject,
+    format_custom_var_value,
+    load_object,
+    parse_custom_var_text,
+)
 from tortuengine.script_codegen import write_scene_auto_script
 from tortuengine.scene import (
     DEFAULT_SCENE_HEIGHT,
@@ -232,6 +238,15 @@ class _SceneObjectCard(QWidget):
             " run, and instance_api.is_enabled() reports False for other scripts' collision checks"
         )
 
+        # Per-instance overrides for custom variables declared on the prefab
+        # (TortuObject.custom_vars) — rebuilt in sync() since different
+        # prefabs declare different variables.
+        self.customvars_group = QWidget()
+        self.customvars_form = QFormLayout(self.customvars_group)
+        self.customvars_form.setContentsMargins(0, 0, 0, 0)
+        self._customvar_defs: list[CustomVarDef] = []
+        self._customvar_edits: dict[str, QLineEdit] = {}
+
         form = QFormLayout()
         form.setContentsMargins(20, 2, 0, 6)
         form.addRow("ID:", self.id_edit)
@@ -243,6 +258,7 @@ class _SceneObjectCard(QWidget):
         form.addRow("Animation:", self.anim_combo)
         form.addRow("", self.visible_check)
         form.addRow("", self.enabled_check)
+        form.addRow(self.customvars_group)
 
         self.content = QWidget()
         self.content.setLayout(form)
@@ -320,7 +336,32 @@ class _SceneObjectCard(QWidget):
         self.anim_combo.setCurrentIndex(found if found >= 0 else 0)
         for widget in widgets:
             widget.blockSignals(False)
+        self._sync_customvars(inst, tortu_object)
         self._suspend = False
+
+    def _sync_customvars(self, inst: SceneObject, tortu_object: TortuObject | None) -> None:
+        declared = tortu_object.custom_vars if tortu_object is not None else []
+        if [d.name for d in declared] != [d.name for d in self._customvar_defs]:
+            while self.customvars_form.rowCount():
+                self.customvars_form.removeRow(0)
+            self._customvar_edits = {}
+            for v in declared:
+                edit = QLineEdit()
+                edit.editingFinished.connect(self._emit_changed)
+                label = f"{v.name} ({v.type}{'[]' if v.is_array else ''}):"
+                self.customvars_form.addRow(label, edit)
+                self._customvar_edits[v.name] = edit
+        self._customvar_defs = declared
+
+        for v in declared:
+            edit = self._customvar_edits[v.name]
+            value = inst.custom_var_overrides.get(v.name, v.default)
+            text = format_custom_var_value(v.is_array, value)
+            edit.blockSignals(True)
+            if edit.text() != text:
+                edit.setText(text)
+            edit.setToolTip(f"Default: {format_custom_var_value(v.is_array, v.default)}")
+            edit.blockSignals(False)
 
     def read_into(self, inst: SceneObject) -> None:
         inst.id = self.id_edit.text().strip()
@@ -334,6 +375,15 @@ class _SceneObjectCard(QWidget):
         inst.animation = self.anim_combo.currentData() or ""
         inst.visible = self.visible_check.isChecked()
         inst.enabled = self.enabled_check.isChecked()
+        overrides: dict[str, object] = {}
+        for v in self._customvar_defs:
+            edit = self._customvar_edits.get(v.name)
+            if edit is None:
+                continue
+            value = parse_custom_var_text(v.type, v.is_array, edit.text())
+            if value != v.default:
+                overrides[v.name] = value
+        inst.custom_var_overrides = overrides
 
 
 class _DroppableTargetCombo(QComboBox):

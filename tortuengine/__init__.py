@@ -24,12 +24,18 @@ from tortuengine.scene import (
     save_scene,
 )
 from tortuengine.object import (
+    CUSTOM_VAR_TYPES,
     MAX_OBJECT_COLLIDERS,
+    MAX_OBJECT_CUSTOM_VARS,
+    CustomVarDef,
     ObjectAnimation,
     ObjectCollider,
     ObjectOrigin,
     TortuObject,
+    default_for_custom_var_type,
+    format_custom_var_value,
     load_object,
+    parse_custom_var_text,
     save_object,
 )
 from tortuengine.sprite import Sprite, load_sprite, save_sprite
@@ -60,6 +66,12 @@ __all__ = [
     "load_sprite",
     "save_sprite",
     "MAX_OBJECT_COLLIDERS",
+    "MAX_OBJECT_CUSTOM_VARS",
+    "CUSTOM_VAR_TYPES",
+    "CustomVarDef",
+    "default_for_custom_var_type",
+    "parse_custom_var_text",
+    "format_custom_var_value",
     "TortuObject",
     "ObjectAnimation",
     "ObjectCollider",

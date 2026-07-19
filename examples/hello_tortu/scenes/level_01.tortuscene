@@ -4878,7 +4878,10 @@
       "object": "assets/objects/mechaturtle.tortuobject",
       "x": 31,
       "y": 188,
-      "id": "mechaturtle1"
+      "id": "mechaturtle1",
+      "custom_var_overrides": {
+        "kill_plane_y": 264.0
+      }
     },
     {
       "object": "assets/objects/gear.tortuobject",
