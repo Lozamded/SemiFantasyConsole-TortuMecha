@@ -1,0 +1,23 @@
+{
+  "width": 264,
+  "height": 198,
+  "palette": "default",
+  "tile_layer_visible": true,
+  "objects": [],
+  "text_labels": [
+    {
+      "text": "Game Over",
+      "x": 85,
+      "y": 48,
+      "font": "assets/fonts/KiwiSoda.tortufont"
+    },
+    {
+      "text": "PRESS START",
+      "x": 60,
+      "y": 152,
+      "font": "assets/fonts/VCR.tortufont"
+    }
+  ],
+  "tiled_rects": [],
+  "repeat_sprites": []
+}
