@@ -29,6 +29,7 @@ from tortuengine.tileset import (
 
 ROOT = Path(__file__).parent.parent
 _PREFAB_PATH = "assets/objects/mechaturtle.tortuobject"
+PAUSE_GUI_LAYER = "assets/gui/pause_menu.tortuguilayer"
 ATTACK_COLLIDER_PREFAB = "assets/objects/collider_mechaturtle_attack.tortuobject"
 ATTACK_COLLIDER_ID = "mechaturtle_attack_hitbox"
 SLIME_PREFAB = "assets/objects/red_slime.tortuobject"
@@ -111,10 +112,21 @@ _camera = None
 _is_camera_target: bool = True
 _engine = None
 
+_paused = False
+_prev_pause_held = False
+
 
 def set_camera(cam) -> None:
     global _camera
     _camera = cam
+
+
+def _set_pause_gui_visible(visible: bool) -> None:
+    if _scene is None:
+        return
+    for g in _scene.gui_layers:
+        if g.gui_layer == PAUSE_GUI_LAYER:
+            g.visible = visible
 
 _ANIM_FPS: dict[str, int] = {
     auto.ANIM_IDLE: 8, auto.ANIM_WALK: 8, auto.ANIM_JUMP: 6, auto.ANIM_FALL: 8,
@@ -364,8 +376,10 @@ def init(engine) -> None:
     global _sfx_jump, _sfx_shell, _sfx_attack, _sfx_coin, _is_camera_target
     global _engine, _attack_obj, _hurt_timer, _knockback_dir
     global _defeated, defeat_done, _soul_obj, _kill_plane_y
+    global _paused, _prev_pause_held
 
     _engine = engine
+    _paused, _prev_pause_held = False, False
     _px, _py = 34.0, 191.0
     _vx, _vy = 0.0, 0.0
     _facing, _on_ground = 1, False
@@ -499,6 +513,16 @@ def update(dt: float) -> None:
     global _crouching, _prev_down
     global _hurt_timer, _knockback_dir
     global _defeated, defeat_done, _soul_obj
+    global _paused, _prev_pause_held
+
+    pause_held = pygame.key.get_pressed()[pygame.K_RETURN]
+    if pause_held and not _prev_pause_held:
+        _paused = not _paused
+        _set_pause_gui_visible(_paused)
+    _prev_pause_held = pause_held
+
+    if _paused:
+        return
 
     if _defeated:
         was_rising = _vy < 0

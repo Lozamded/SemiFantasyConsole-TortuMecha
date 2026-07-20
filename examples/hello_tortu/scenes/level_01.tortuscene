@@ -4979,6 +4979,12 @@
       "gui_layer": "assets/gui/dialog.tortuguilayer",
       "z_index": 2,
       "visible": false
+    },
+    {
+      "name": "gui_layer_2",
+      "gui_layer": "assets/gui/pause_menu.tortuguilayer",
+      "z_index": 2,
+      "visible": false
     }
   ]
 }

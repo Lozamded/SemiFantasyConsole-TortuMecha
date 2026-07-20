@@ -240,10 +240,17 @@ class _SceneObjectCard(QWidget):
 
         # Per-instance overrides for custom variables declared on the prefab
         # (TortuObject.custom_vars) — rebuilt in sync() since different
-        # prefabs declare different variables.
-        self.customvars_group = QWidget()
-        self.customvars_form = QFormLayout(self.customvars_group)
+        # prefabs declare different variables. Tucked into its own nested
+        # collapsible (hidden entirely when the prefab declares none) so it
+        # doesn't clutter the common case, but starts expanded when present
+        # so a newly-declared variable is immediately visible rather than
+        # hidden behind another click.
+        self.customvars_section = CollapsibleSection("Custom Variables", expanded=True)
+        self.customvars_section.setVisible(False)
+        customvars_inner = QWidget()
+        self.customvars_form = QFormLayout(customvars_inner)
         self.customvars_form.setContentsMargins(0, 0, 0, 0)
+        self.customvars_section.content_layout().addWidget(customvars_inner)
         self._customvar_defs: list[CustomVarDef] = []
         self._customvar_edits: dict[str, QLineEdit] = {}
 
@@ -258,7 +265,7 @@ class _SceneObjectCard(QWidget):
         form.addRow("Animation:", self.anim_combo)
         form.addRow("", self.visible_check)
         form.addRow("", self.enabled_check)
-        form.addRow(self.customvars_group)
+        form.addRow(self.customvars_section)
 
         self.content = QWidget()
         self.content.setLayout(form)
@@ -341,6 +348,7 @@ class _SceneObjectCard(QWidget):
 
     def _sync_customvars(self, inst: SceneObject, tortu_object: TortuObject | None) -> None:
         declared = tortu_object.custom_vars if tortu_object is not None else []
+        self.customvars_section.setVisible(bool(declared))
         if [d.name for d in declared] != [d.name for d in self._customvar_defs]:
             while self.customvars_form.rowCount():
                 self.customvars_form.removeRow(0)
