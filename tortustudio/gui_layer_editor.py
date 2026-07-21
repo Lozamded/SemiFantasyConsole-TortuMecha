@@ -459,15 +459,21 @@ class GuiLayerCanvas(QWidget):
             colors = self._font_palette(font.palette)
             if colors is None:
                 return None
-            return render_sprite_text_line(font, label.text, colors)
-        font = self._get_text_font(label.font)
-        if font is None:
-            return None
-        colors = self._font_palette(font.palette)
-        if colors is None:
-            return None
-        fore_index = label.color_index if label.color_index >= 0 else None
-        return render_text_line(font, label.text, colors, fore_index=fore_index)
+            surface = render_sprite_text_line(font, label.text, colors)
+        else:
+            font = self._get_text_font(label.font)
+            if font is None:
+                return None
+            colors = self._font_palette(font.palette)
+            if colors is None:
+                return None
+            fore_index = label.color_index if label.color_index >= 0 else None
+            surface = render_text_line(font, label.text, colors, fore_index=fore_index)
+        if label.scale != 1.0:
+            width = max(1, round(surface.get_width() * label.scale))
+            height = max(1, round(surface.get_height() * label.scale))
+            surface = pygame.transform.scale(surface, (width, height))
+        return surface
 
     def colors_for_text_font(self, font_path: str) -> list[tuple[int, int, int]] | None:
         """Palette colors a .tortufont label's color swatch picker should offer.
@@ -990,6 +996,12 @@ class _GuiObjectCard(QWidget):
         header.addWidget(self.toggle, stretch=1)
         header.addWidget(self.btn_remove)
 
+        self.id_edit = QLineEdit()
+        self.id_edit.setPlaceholderText("(none — not addressable from scripts)")
+        self.id_edit.setToolTip(
+            "Optional name so instance scripts can find and reposition this object\n"
+            "at runtime via instance_api.set_gui_object_position(gui_layer_path, id, x, y)"
+        )
         self.x_spin = QSpinBox()
         self.x_spin.setRange(-9999, 9999)
         self.y_spin = QSpinBox()
@@ -1009,6 +1021,7 @@ class _GuiObjectCard(QWidget):
 
         form = QFormLayout()
         form.setContentsMargins(20, 2, 0, 6)
+        form.addRow("Name/ID:", self.id_edit)
         form.addRow("X:", self.x_spin)
         form.addRow("Y:", self.y_spin)
         form.addRow("Scale:", self.scale_spin)
@@ -1026,6 +1039,7 @@ class _GuiObjectCard(QWidget):
         outer.addLayout(header)
         outer.addWidget(self.content)
 
+        self.id_edit.textChanged.connect(self._emit_changed)
         self.x_spin.valueChanged.connect(self._emit_changed)
         self.y_spin.valueChanged.connect(self._emit_changed)
         self.scale_spin.valueChanged.connect(self._emit_changed)
@@ -1063,12 +1077,14 @@ class _GuiObjectCard(QWidget):
 
     def sync(self, inst: GuiObject, tortu_object: TortuObject | None) -> None:
         widgets = (
-            self.x_spin, self.y_spin, self.scale_spin, self.anim_combo,
+            self.id_edit, self.x_spin, self.y_spin, self.scale_spin, self.anim_combo,
             self.visible_check, self.enabled_check,
         )
         self._suspend = True
         for widget in widgets:
             widget.blockSignals(True)
+        if self.id_edit.text() != inst.id:
+            self.id_edit.setText(inst.id)
         self.x_spin.setValue(inst.x)
         self.y_spin.setValue(inst.y)
         self.scale_spin.setValue(inst.scale)
@@ -1086,6 +1102,7 @@ class _GuiObjectCard(QWidget):
         self._suspend = False
 
     def read_into(self, inst: GuiObject) -> None:
+        inst.id = self.id_edit.text().strip()
         inst.x = self.x_spin.value()
         inst.y = self.y_spin.value()
         inst.scale = self.scale_spin.value()
@@ -1143,6 +1160,14 @@ class _GuiTextLabelCard(QWidget):
             "selected font's own bake palette. Not available for sprite fonts —\n"
             "their glyphs are pre-colored bitmaps."
         )
+        self.scale_spin = QDoubleSpinBox()
+        self.scale_spin.setRange(0.1, 10.0)
+        self.scale_spin.setSingleStep(0.1)
+        self.scale_spin.setValue(1.0)
+        self.scale_spin.setToolTip(
+            "Uniform size multiplier applied to the font's already-baked glyphs.\n"
+            "Cheap to change — never re-rasterizes the source TTF at runtime."
+        )
         self.visible_check = QCheckBox("Visible at play")
         self.visible_check.setChecked(True)
         self.visible_check.setToolTip("Whether this label is drawn when the scene runs")
@@ -1155,6 +1180,7 @@ class _GuiTextLabelCard(QWidget):
         form.addRow("Text:", self.text_edit)
         form.addRow("Font:", self.font_combo)
         form.addRow("Color:", self.color_combo)
+        form.addRow("Scale:", self.scale_spin)
         form.addRow("Name/ID:", self.id_edit)
         form.addRow("X:", self.x_spin)
         form.addRow("Y:", self.y_spin)
@@ -1174,6 +1200,7 @@ class _GuiTextLabelCard(QWidget):
         self.text_edit.textChanged.connect(self._emit_changed)
         self.font_combo.currentIndexChanged.connect(self._emit_changed)
         self.color_combo.currentIndexChanged.connect(self._emit_changed)
+        self.scale_spin.valueChanged.connect(self._emit_changed)
         self.id_edit.textChanged.connect(self._emit_changed)
         self.x_spin.valueChanged.connect(self._emit_changed)
         self.y_spin.valueChanged.connect(self._emit_changed)
@@ -1215,7 +1242,7 @@ class _GuiTextLabelCard(QWidget):
         color_lookup: Callable[[str], list[tuple[int, int, int]] | None] | None = None,
     ) -> None:
         widgets = (
-            self.text_edit, self.font_combo, self.color_combo, self.id_edit,
+            self.text_edit, self.font_combo, self.color_combo, self.scale_spin, self.id_edit,
             self.x_spin, self.y_spin, self.visible_check, self.enabled_check,
         )
         self._suspend = True
@@ -1241,6 +1268,8 @@ class _GuiTextLabelCard(QWidget):
         found_color = self.color_combo.findData(label.color_index)
         self.color_combo.setCurrentIndex(found_color if found_color >= 0 else 0)
 
+        self.scale_spin.setValue(label.scale)
+
         if self.id_edit.text() != label.id:
             self.id_edit.setText(label.id)
         self.x_spin.setValue(label.x)
@@ -1259,6 +1288,7 @@ class _GuiTextLabelCard(QWidget):
         )
         if label.color_index is None:
             label.color_index = -1
+        label.scale = self.scale_spin.value()
         label.id = self.id_edit.text().strip()
         label.x = self.x_spin.value()
         label.y = self.y_spin.value()

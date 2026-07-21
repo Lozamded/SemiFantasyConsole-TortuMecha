@@ -105,6 +105,7 @@ class SceneRenderer:
         self._png_cache: _LRUCache = _LRUCache(128)
         self._scaled_frame_cache: _LRUCache = _LRUCache(128)
         self._gui_tile_cache: _LRUCache = _LRUCache(32)
+        self._gui_label_cache: _LRUCache = _LRUCache(128)
 
     @classmethod
     def from_cart(cls, cart_root: Path, manifest: CartManifest) -> SceneRenderer:
@@ -134,6 +135,7 @@ class SceneRenderer:
         self._bg_band_cache.clear()
         self._gui_tile_cache.clear()
         self._png_cache.clear()
+        self._gui_label_cache.clear()
 
     def reset_animations(self) -> None:
         self._object_anim = []
@@ -213,25 +215,35 @@ class SceneRenderer:
         script_path = (self.project_root / gui_layer.script).resolve()
         return load_instance_script(script_path, self_id=rel_path, links=[])
 
-    def tick(self, scene: Scene, dt: float, engine=None) -> None:
-        """Advance sprite frame playback and object/GUI-layer instance scripts."""
+    def tick(self, scene: Scene, dt: float, engine=None, *, gui_only: bool = False) -> None:
+        """Advance sprite frame playback and object/GUI-layer instance scripts.
+
+        `gui_only=True` skips scene-object instance scripts and animation —
+        e.g. while gameplay is paused, so a GUI layer script (a pause menu)
+        still gets its update(dt) call without unfreezing the world.
+        """
         if dt <= 0:
             return
 
         instance_api.bind_scene(scene, self.project_root)
         instance_api.bind_gui_layers(self._gui_layer)
-        self._sync_instance_scripts(scene, engine)
-        for index, script in enumerate(self._instance_scripts):
-            if script is None:
-                continue
-            if index < len(scene.objects) and not scene.objects[index].enabled:
-                continue
-            script.update(dt)
+
+        if not gui_only:
+            self._sync_instance_scripts(scene, engine)
+            for index, script in enumerate(self._instance_scripts):
+                if script is None:
+                    continue
+                if index < len(scene.objects) and not scene.objects[index].enabled:
+                    continue
+                script.update(dt)
 
         self._sync_gui_layer_scripts(scene, engine)
         for script in self._gui_layer_scripts.values():
             if script is not None:
                 script.update(dt)
+
+        if gui_only:
+            return
 
         self._sync_anim_states(scene)
         for index, inst in enumerate(scene.objects):
@@ -669,6 +681,25 @@ class SceneRenderer:
     def _gui_label_surface(self, label: GuiTextLabel) -> pygame.Surface | None:
         if not label.text or not label.font:
             return None
+        cache_key = (label.font, label.text, label.color_index, round(label.scale, 3))
+        cached = self._gui_label_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        surface = self._render_gui_label(label)
+        if surface is None:
+            return None
+        if label.scale != 1.0:
+            width = max(1, round(surface.get_width() * label.scale))
+            height = max(1, round(surface.get_height() * label.scale))
+            surface = pygame.transform.scale(surface, (width, height))
+        self._gui_label_cache[cache_key] = surface
+        return surface
+
+    def _render_gui_label(self, label: GuiTextLabel) -> pygame.Surface | None:
+        # Text size is applied by scaling this baked bitmap (see
+        # _gui_label_surface), never by re-rasterizing the source TTF at a
+        # different point size — that stays a one-time cost paid in the font
+        # editor, not something the renderer redoes at runtime.
         if label.font.endswith(".tortuspritefont"):
             sprite_font = self._sprite_font(label.font)
             if sprite_font is None:
@@ -961,7 +992,7 @@ class SceneRenderer:
                 gui_layer = self._gui_layer(scene_gui.gui_layer)
                 if gui_layer is None:
                     continue
-                self._draw_gui_layer(view, gui_layer)
+                self._draw_gui_layer(view, gui_layer, ox=-gui_layer.scroll_x, oy=-gui_layer.scroll_y)
 
         return view
 
@@ -1022,6 +1053,6 @@ class SceneRenderer:
                 gui_layer = self._gui_layer(scene_gui.gui_layer)
                 if gui_layer is None:
                     continue
-                self._draw_gui_layer(view, gui_layer)
+                self._draw_gui_layer(view, gui_layer, ox=-gui_layer.scroll_x, oy=-gui_layer.scroll_y)
 
         return view

@@ -171,6 +171,127 @@ def gui_text_label_text(gui_layer_path: str, label_id: str) -> str | None:
     return label.text if label is not None else None
 
 
+def set_gui_text_label_color(gui_layer_path: str, label_id: str, color_index: int) -> None:
+    """Override a `.tortufont` label's ink color — e.g. highlight a selected menu item.
+
+    No-op for `.tortuspritefont` labels (pre-colored bitmaps, see GuiTextLabel.color_index).
+    """
+    label = _find_gui_element(gui_layer_path, label_id, "text_labels")
+    if label is not None:
+        label.color_index = color_index
+
+
+def gui_text_label_color(gui_layer_path: str, label_id: str) -> int | None:
+    """Return the label's color override, or -1 if it's using the font's baked color."""
+    label = _find_gui_element(gui_layer_path, label_id, "text_labels")
+    return label.color_index if label is not None else None
+
+
+def set_gui_text_label_scale(gui_layer_path: str, label_id: str, scale: float) -> None:
+    """Resize a label's already-baked glyphs — e.g. grow a selected menu item."""
+    label = _find_gui_element(gui_layer_path, label_id, "text_labels")
+    if label is not None:
+        label.scale = max(0.1, scale)
+
+
+def gui_text_label_scale(gui_layer_path: str, label_id: str) -> float | None:
+    label = _find_gui_element(gui_layer_path, label_id, "text_labels")
+    return label.scale if label is not None else None
+
+
+def gui_text_label_position(gui_layer_path: str, label_id: str) -> tuple[int, int] | None:
+    """Return a label's (x, y) inside its GUI layer — e.g. to place a selection cursor."""
+    label = _find_gui_element(gui_layer_path, label_id, "text_labels")
+    return (label.x, label.y) if label is not None else None
+
+
+def set_gui_text_label_visible(gui_layer_path: str, label_id: str, visible: bool) -> None:
+    label = _find_gui_element(gui_layer_path, label_id, "text_labels")
+    if label is not None:
+        label.visible = visible
+
+
+def gui_text_label_visible(gui_layer_path: str, label_id: str) -> bool | None:
+    label = _find_gui_element(gui_layer_path, label_id, "text_labels")
+    return label.visible if label is not None else None
+
+
+def set_gui_object_position(gui_layer_path: str, object_id: str, x: int, y: int) -> None:
+    """Move a placed `.tortuguilayer` object — e.g. a menu selection cursor."""
+    obj = _find_gui_element(gui_layer_path, object_id, "objects")
+    if obj is not None:
+        obj.x, obj.y = x, y
+
+
+def gui_object_position(gui_layer_path: str, object_id: str) -> tuple[int, int] | None:
+    obj = _find_gui_element(gui_layer_path, object_id, "objects")
+    return (obj.x, obj.y) if obj is not None else None
+
+
+def set_gui_object_visible(gui_layer_path: str, object_id: str, visible: bool) -> None:
+    obj = _find_gui_element(gui_layer_path, object_id, "objects")
+    if obj is not None:
+        obj.visible = visible
+
+
+def gui_object_visible(gui_layer_path: str, object_id: str) -> bool | None:
+    obj = _find_gui_element(gui_layer_path, object_id, "objects")
+    return obj.visible if obj is not None else None
+
+
+def set_gui_layer_scroll(gui_layer_path: str, x: int, y: int = 0) -> None:
+    """Pan a GUI layer's whole canvas — e.g. sliding between two panels laid
+    out side by side on one wide `.tortuguilayer` (see pause_menu.tortuguilayer).
+    Not persisted; resets to (0, 0) whenever the layer is freshly loaded.
+    """
+    if _gui_layer_loader is None or not gui_layer_path:
+        return
+    layer = _gui_layer_loader(gui_layer_path)
+    if layer is not None:
+        layer.scroll_x, layer.scroll_y = x, y
+
+
+def gui_layer_scroll(gui_layer_path: str) -> tuple[int, int] | None:
+    if _gui_layer_loader is None or not gui_layer_path:
+        return None
+    layer = _gui_layer_loader(gui_layer_path)
+    return (layer.scroll_x, layer.scroll_y) if layer is not None else None
+
+
+def _find_scene_gui_layer(gui_layer_path: str):
+    if _scene is None or not gui_layer_path:
+        return None
+    for g in _scene.gui_layers:
+        if g.gui_layer == gui_layer_path:
+            return g
+    return None
+
+
+def set_gui_layer_visible(gui_layer_path: str, visible: bool) -> None:
+    """Show/hide an entire GUI layer slot in the current scene by its asset path."""
+    scene_gui = _find_scene_gui_layer(gui_layer_path)
+    if scene_gui is not None:
+        scene_gui.visible = visible
+
+
+def is_gui_layer_visible(gui_layer_path: str) -> bool | None:
+    scene_gui = _find_scene_gui_layer(gui_layer_path)
+    return scene_gui.visible if scene_gui is not None else None
+
+
+_game_paused: bool = False
+
+
+def set_game_paused(paused: bool) -> None:
+    """Freeze/unfreeze gameplay — the level script checks this every frame."""
+    global _game_paused
+    _game_paused = paused
+
+
+def is_game_paused() -> bool:
+    return _game_paused
+
+
 def _find(instance_id: str):
     if not _scene or not instance_id:
         return None

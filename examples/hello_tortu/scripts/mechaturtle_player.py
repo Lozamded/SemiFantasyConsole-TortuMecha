@@ -112,7 +112,10 @@ _camera = None
 _is_camera_target: bool = True
 _engine = None
 
-_paused = False
+# Whether gameplay is frozen — the actual flag lives in instance_api
+# (instance_api.is_game_paused()/set_game_paused()) since pause_menu.py, the
+# pause GUI layer's own script, runs in an isolated module namespace and can
+# only coordinate with this script through instance_api, not shared globals.
 _prev_pause_held = False
 
 
@@ -376,10 +379,11 @@ def init(engine) -> None:
     global _sfx_jump, _sfx_shell, _sfx_attack, _sfx_coin, _is_camera_target
     global _engine, _attack_obj, _hurt_timer, _knockback_dir
     global _defeated, defeat_done, _soul_obj, _kill_plane_y
-    global _paused, _prev_pause_held
+    global _prev_pause_held
 
     _engine = engine
-    _paused, _prev_pause_held = False, False
+    _prev_pause_held = False
+    instance_api.set_game_paused(False)
     _px, _py = 34.0, 191.0
     _vx, _vy = 0.0, 0.0
     _facing, _on_ground = 1, False
@@ -513,17 +517,25 @@ def update(dt: float) -> None:
     global _crouching, _prev_down
     global _hurt_timer, _knockback_dir
     global _defeated, defeat_done, _soul_obj
-    global _paused, _prev_pause_held
+    global _prev_pause_held
 
     pause_held = pygame.key.get_pressed()[pygame.K_RETURN]
     # Pausing is disabled during the defeat bounce — Enter is left free for
     # whatever comes next (respawn/game-over) instead of freezing mid-death.
-    if pause_held and not _prev_pause_held and not _defeated:
-        _paused = not _paused
-        _set_pause_gui_visible(_paused)
+    # Once open, pause_menu.py (the pause GUI layer's own script) owns Enter —
+    # it closes the menu itself via instance_api.set_game_paused(False) when
+    # "Resume" is confirmed, so this only ever opens, never toggles closed.
+    if pause_held and not _prev_pause_held and not _defeated and not instance_api.is_game_paused():
+        instance_api.set_game_paused(True)
+        _set_pause_gui_visible(True)
     _prev_pause_held = pause_held
 
-    if _paused:
+    if instance_api.is_game_paused():
+        # Keep ticking so the pause menu's own script still gets its
+        # update(dt) call (menu navigation) — gui_only skips world physics,
+        # enemy/object scripts, and animation, so gameplay stays frozen.
+        if _renderer and _scene:
+            _renderer.tick(_scene, dt, _engine, gui_only=True)
         return
 
     if _defeated:

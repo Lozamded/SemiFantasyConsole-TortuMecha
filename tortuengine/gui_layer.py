@@ -70,10 +70,14 @@ class GuiObject:
     visible: bool = True
     # Off at scene start: not drawn.
     enabled: bool = True
+    # Optional name so instance scripts can find and reposition this placed
+    # object at runtime via instance_api — e.g. a menu selection cursor.
+    id: str = ""
 
     def copy(self) -> GuiObject:
         return GuiObject(
-            self.prefab, self.x, self.y, self.animation, self.scale, self.visible, self.enabled
+            self.prefab, self.x, self.y, self.animation, self.scale, self.visible, self.enabled,
+            self.id,
         )
 
 
@@ -96,6 +100,10 @@ class GuiTextLabel:
     # color. -1 means "use the font's baked color". Only meaningful for
     # .tortufont labels — .tortuspritefont glyphs are pre-colored bitmaps.
     color_index: int = -1
+    # Uniform size multiplier applied to the already-baked glyph bitmap (same
+    # technique as GuiLayerObject.scale) — never re-rasterizes the source TTF,
+    # so this stays cheap regardless of value.
+    scale: float = 1.0
     visible: bool = True
     # Off at scene start: not drawn.
     enabled: bool = True
@@ -103,7 +111,7 @@ class GuiTextLabel:
     def copy(self) -> GuiTextLabel:
         return GuiTextLabel(
             self.text, self.x, self.y, self.id, self.font, self.color_index,
-            self.visible, self.enabled,
+            self.scale, self.visible, self.enabled,
         )
 
 
@@ -187,6 +195,11 @@ class GuiLayer:
     tiled_rects: list[GuiTiledRect] = field(default_factory=list)
     repeat_sprites: list[GuiRepeatSprite] = field(default_factory=list)
     script: str = ""
+    # Runtime-only pan offset (e.g. sliding between two panels laid out
+    # side by side on one wide canvas) — driven by instance scripts via
+    # instance_api, never read from or written to the .tortuguilayer file.
+    scroll_x: int = 0
+    scroll_y: int = 0
 
     @classmethod
     def create(
@@ -258,6 +271,9 @@ class GuiLayer:
             raise ValueError(f"GUI layer cannot have more than {MAX_GUI_OBJECTS} objects")
         self.objects.append(GuiObject(prefab, x, y, animation, scale))
         return len(self.objects) - 1
+
+    def unique_object_id(self, base: str = "object") -> str:
+        return _unique_element_id({o.id for o in self.objects if o.id}, base)
 
     def remove_object(self, index: int) -> None:
         if not (0 <= index < len(self.objects)):
@@ -422,6 +438,7 @@ def load_gui_layer(path: Path, *, project_root: Path | None = None) -> GuiLayer:
             float(raw.get("scale", 1.0)),
             bool(raw.get("visible", True)),
             bool(raw.get("enabled", True)),
+            str(raw.get("id", "")).strip(),
         )
         for raw in data.get("objects", [])
         if raw.get("object", raw.get("prefab", ""))
@@ -434,6 +451,7 @@ def load_gui_layer(path: Path, *, project_root: Path | None = None) -> GuiLayer:
             str(raw.get("id", "")).strip(),
             _normalize_asset_path(str(raw.get("font", ""))),
             int(raw.get("color_index", -1)),
+            float(raw.get("scale", 1.0)),
             bool(raw.get("visible", True)),
             bool(raw.get("enabled", True)),
         )
@@ -497,6 +515,7 @@ def save_gui_layer(gui_layer: GuiLayer, path: Path) -> None:
                 **({"scale": obj.scale} if obj.scale != 1.0 else {}),
                 **({"visible": False} if not obj.visible else {}),
                 **({"enabled": False} if not obj.enabled else {}),
+                **({"id": obj.id} if obj.id else {}),
             }
             for obj in gui_layer.objects
         ],
@@ -508,6 +527,7 @@ def save_gui_layer(gui_layer: GuiLayer, path: Path) -> None:
                 **({"id": label.id} if label.id else {}),
                 **({"font": _normalize_asset_path(label.font)} if label.font else {}),
                 **({"color_index": label.color_index} if label.color_index >= 0 else {}),
+                **({"scale": label.scale} if label.scale != 1.0 else {}),
                 **({"visible": False} if not label.visible else {}),
                 **({"enabled": False} if not label.enabled else {}),
             }
