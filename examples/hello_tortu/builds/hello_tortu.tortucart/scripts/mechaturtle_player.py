@@ -9,6 +9,7 @@ import pygame
 from tortuengine.bake import bake_sprite_frame
 from tortuengine import instance_api
 from tortuengine.object import load_object
+from scripts import game_state
 from scripts._generated import mechaturtle_player_auto as auto
 from scripts._generated import red_slime_auto as slime_auto
 from tortuengine.palette import load_palette, palette_path
@@ -28,10 +29,12 @@ from tortuengine.tileset import (
 
 ROOT = Path(__file__).parent.parent
 _PREFAB_PATH = "assets/objects/mechaturtle.tortuobject"
+PAUSE_GUI_LAYER = "assets/gui/pause_menu.tortuguilayer"
 ATTACK_COLLIDER_PREFAB = "assets/objects/collider_mechaturtle_attack.tortuobject"
 ATTACK_COLLIDER_ID = "mechaturtle_attack_hitbox"
 SLIME_PREFAB = "assets/objects/red_slime.tortuobject"
 GEAR_PREFAB = "assets/objects/gear.tortuobject"
+SOUL_PREFAB = "assets/objects/mechaturtle_soul.tortuobject"
 
 SCREEN_W, SCREEN_H = 264, 198
 TILE_SIZE = 16
@@ -44,12 +47,13 @@ JUMP_BUFFER = 0.1
 ATTACK_DUR = 0.4
 HURT_DUR = 0.4
 KNOCKBACK_SPEED = 140.0
+DEFEAT_POP_VEL = -220.0  # initial upward pop when the player is defeated (Mario-style)
+DEFEAT_OFFSCREEN_Y = SCREEN_H + 40  # falls this far below the top of the screen before respawn
+SOUL_RISE_SPEED = 60.0  # px/sec the soul continuously drifts upward once spawned
 # Life system: each enemy touch costs one energy pip (life_bar); losing the
 # last pip costs one life (lives_label) and refills energy. power_bar isn't
 # wired into the life system yet — reserved for a future shoot/attack meter.
-MAX_ENERGY = 3
-MAX_LIVES = 6
-GEARS_PER_LIFE = 100
+# Current values live in scripts/game_state.py, not here.
 
 # Hitbox offsets from the character origin. Resolved in init() from the
 # auto.COLLIDER_BODY + auto.COLLIDER_HEAD colliders (stand) and
@@ -87,9 +91,17 @@ _crouching = False
 _prev_down = False
 _hurt_timer = 0.0
 _knockback_dir = 1  # -1 = pushed left, 1 = pushed right; set when a hit lands
-_energy = MAX_ENERGY
-_lives = MAX_LIVES
-_gears = 0
+_defeated = False  # True while playing the death-bounce that follows losing a life
+# Set True once the defeat bounce has carried the player off the bottom of the
+# screen — main.py watches this to know when to respawn or go to game over.
+defeat_done = False
+# Spawned once the defeat bounce reaches its apex (vy crosses from rising to
+# falling) — floats upward on its own while the body keeps falling.
+_soul_obj: SceneObject | None = None
+# World-Y threshold below which falling (e.g. into a bottomless pit) triggers
+# defeat — resolved per scene in init() from the mechaturtle instance's
+# kill_plane_y custom var (see mechaturtle.tortuobject in TortuStudio).
+_kill_plane_y = 0.0
 
 _sfx_jump: pygame.mixer.Sound | None = None
 _sfx_shell: pygame.mixer.Sound | None = None
@@ -100,21 +112,35 @@ _camera = None
 _is_camera_target: bool = True
 _engine = None
 
+_paused = False
+_prev_pause_held = False
+
 
 def set_camera(cam) -> None:
     global _camera
     _camera = cam
 
+
+def _set_pause_gui_visible(visible: bool) -> None:
+    if _scene is None:
+        return
+    for g in _scene.gui_layers:
+        if g.gui_layer == PAUSE_GUI_LAYER:
+            g.visible = visible
+
 _ANIM_FPS: dict[str, int] = {
     auto.ANIM_IDLE: 8, auto.ANIM_WALK: 8, auto.ANIM_JUMP: 6, auto.ANIM_FALL: 8,
     auto.ANIM_ATTACK: 5, auto.ANIM_AIR_ATTACK: 5, auto.ANIM_CROUCH: 3, auto.ANIM_DAMAGE: 8,
+    auto.ANIM_DEFEATED: 8,
 }
 _ANIM_NOLOOP: frozenset[str] = frozenset({
     auto.ANIM_JUMP, auto.ANIM_ATTACK, auto.ANIM_AIR_ATTACK, auto.ANIM_CROUCH, auto.ANIM_DAMAGE,
+    auto.ANIM_DEFEATED,
 })
 _ANIMS = (
     auto.ANIM_IDLE, auto.ANIM_WALK, auto.ANIM_JUMP, auto.ANIM_FALL,
     auto.ANIM_ATTACK, auto.ANIM_AIR_ATTACK, auto.ANIM_CROUCH, auto.ANIM_DAMAGE,
+    auto.ANIM_DEFEATED,
 )
 
 
@@ -303,6 +329,34 @@ def _physics(dt: float, hb_l: int, hb_r: int, hb_t: int, hb_b: int) -> None:
     )
 
 
+def _enter_defeated() -> None:
+    """Transition into the defeat bounce (Mario-style pop-up-then-fall).
+
+    Triggered either by the touch-damage hit that empties the last energy
+    pip, or by falling past _kill_plane_y (e.g. into a bottomless pit) —
+    both call this, then bail out of the rest of that frame's update() so
+    the freshly-set defeated state isn't immediately overwritten by the
+    normal jump/fall animation-state logic later in the same frame.
+    """
+    global _vx, _vy, _state, _prev_state, _anim_frame, _anim_elapsed, _defeated
+    _defeated = True
+    _vx, _vy = 0.0, DEFEAT_POP_VEL
+    _state = _prev_state = auto.ANIM_DEFEATED
+    _anim_frame, _anim_elapsed = 0, 0.0
+    if _attack_obj is not None:
+        _attack_obj.enabled = False
+
+
+def _push_defeated_frame_state(dt: float) -> None:
+    """Shared HUD/renderer push for the frame a defeat trigger fires on."""
+    instance_api.set_player_position(_px, _py)
+    instance_api.set_player_energy(game_state.energy, game_state.MAX_ENERGY)
+    instance_api.set_player_lives(game_state.lives, game_state.MAX_LIVES)
+    instance_api.set_player_gears(game_state.gears)
+    if _renderer and _scene:
+        _renderer.tick(_scene, dt, _engine)
+
+
 # ---------------------------------------------------------------------------
 # Public init / update / draw
 # ---------------------------------------------------------------------------
@@ -321,9 +375,11 @@ def init(engine) -> None:
     global GEAR_HB_L, GEAR_HB_R, GEAR_HB_T, GEAR_HB_B
     global _sfx_jump, _sfx_shell, _sfx_attack, _sfx_coin, _is_camera_target
     global _engine, _attack_obj, _hurt_timer, _knockback_dir
-    global _energy, _lives, _gears
+    global _defeated, defeat_done, _soul_obj, _kill_plane_y
+    global _paused, _prev_pause_held
 
     _engine = engine
+    _paused, _prev_pause_held = False, False
     _px, _py = 34.0, 191.0
     _vx, _vy = 0.0, 0.0
     _facing, _on_ground = 1, False
@@ -334,10 +390,17 @@ def init(engine) -> None:
     _was_on_ground = False
     _crouching, _prev_down = False, False
     _hurt_timer, _knockback_dir = 0.0, 1
-    _energy, _lives, _gears = MAX_ENERGY, MAX_LIVES, 0
+    _defeated, defeat_done, _soul_obj = False, False, None
 
     scene_path = ROOT / "scenes/level_01.tortuscene"
     _scene = load_scene(scene_path, project_root=ROOT)
+    player_instances = [o for o in _scene.objects if o.prefab == _PREFAB_PATH]
+    _kill_plane_y = float(
+        player_instances[0].custom_var_overrides.get(
+            auto.CUSTOMVAR_KILL_PLANE_Y, auto.CUSTOMVAR_KILL_PLANE_Y_DEFAULT
+        )
+        if player_instances else auto.CUSTOMVAR_KILL_PLANE_Y_DEFAULT
+    )
     _scene.objects = [o for o in _scene.objects if o.prefab != _PREFAB_PATH]
     _is_camera_target = not _scene.camera_target or _scene.camera_target == _PREFAB_PATH
 
@@ -449,7 +512,49 @@ def update(dt: float) -> None:
     global _prev_jump, _prev_attack, _was_on_ground
     global _crouching, _prev_down
     global _hurt_timer, _knockback_dir
-    global _energy, _lives, _gears
+    global _defeated, defeat_done, _soul_obj
+    global _paused, _prev_pause_held
+
+    pause_held = pygame.key.get_pressed()[pygame.K_RETURN]
+    if pause_held and not _prev_pause_held:
+        _paused = not _paused
+        _set_pause_gui_visible(_paused)
+    _prev_pause_held = pause_held
+
+    if _paused:
+        return
+
+    if _defeated:
+        was_rising = _vy < 0
+        _vy += GRAVITY * dt
+        _py += _vy * dt
+
+        # Spawn the soul once the bounce hits its apex (vy flips from rising
+        # to falling) — it then drifts upward on its own, independent of the
+        # body continuing to fall.
+        if was_rising and _vy >= 0 and _soul_obj is None and _scene is not None:
+            idx = _scene.add_object(SOUL_PREFAB, int(_px), int(_py), z_index=1)
+            _soul_obj = _scene.objects[idx]
+        if _soul_obj is not None:
+            _soul_obj.y -= SOUL_RISE_SPEED * dt
+
+        fps = _ANIM_FPS.get(_state, 8)
+        n = len(_frames[_state][0]) if _state in _frames else 1
+        _anim_elapsed += dt
+        adv = int(_anim_elapsed * fps)
+        if adv:
+            _anim_frame = min(_anim_frame + adv, n - 1)
+            _anim_elapsed -= adv / fps
+        instance_api.set_player_position(_px, _py)
+        if _renderer and _scene:
+            _renderer.tick(_scene, dt, _engine)
+        # Require the bounce to already be past its apex (falling, not still
+        # rising) before allowing completion — otherwise a pit-fall trigger
+        # (which starts at or below DEFEAT_OFFSCREEN_Y already) would finish
+        # instantly, skipping the pop-up and the soul spawn entirely.
+        if _vy >= 0 and _py > DEFEAT_OFFSCREEN_Y:
+            defeat_done = True
+        return
 
     keys = pygame.key.get_pressed()
     jump_held  = keys[pygame.K_z] or keys[pygame.K_SPACE] or keys[pygame.K_UP] or keys[pygame.K_w]
@@ -502,15 +607,21 @@ def update(dt: float) -> None:
             s_l, s_r = inst.x + SLIME_HB_L, inst.x + SLIME_HB_R
             s_t, s_b = inst.y + SLIME_HB_T, inst.y + SLIME_HB_B
             if px_l < s_r and px_r > s_l and py_t < s_b and py_b > s_t:
-                _hurt_timer = HURT_DUR
-                hurt = True
                 _knockback_dir = -1 if _px < inst.x else 1
-                if _lives > 0:
-                    _energy = max(0, _energy - 1)
-                    if _energy <= 0:
-                        _lives -= 1
-                        _energy = MAX_ENERGY if _lives > 0 else 0
+                if game_state.damage():
+                    _enter_defeated()
+                else:
+                    _hurt_timer = HURT_DUR
+                    hurt = True
                 break
+
+    if _defeated:
+        # Skip the rest of this frame's normal input/physics/animation so the
+        # defeat pop isn't immediately overwritten by the jump/fall state logic
+        # below — the early-return branch at the top of update() takes over
+        # starting next frame.
+        _push_defeated_frame_state(dt)
+        return
 
     # Gear pickup — a coin-style collectible; always active regardless of
     # hurt/crouch state, unlike enemy touch-damage above.
@@ -524,9 +635,7 @@ def update(dt: float) -> None:
                 inst.enabled = False
                 if _sfx_coin:
                     _sfx_coin.play()
-                _gears += 1
-                if _gears % GEARS_PER_LIFE == 0:
-                    _lives += 1
+                game_state.add_gear()
 
     if jump_released and _vy < 0:
         _vy *= JUMP_CUT
@@ -582,6 +691,15 @@ def update(dt: float) -> None:
 
     _physics(dt, hb_l, hb_r, hb_t, hb_b)
 
+    # Fell past the kill plane (e.g. into a bottomless pit) — same defeat
+    # bounce as a lethal hit, but a full life is lost outright rather than
+    # draining energy pips (there's no "surviving" a pit).
+    if _py > _kill_plane_y:
+        game_state.lose_life()
+        _enter_defeated()
+        _push_defeated_frame_state(dt)
+        return
+
     if _attack_obj is not None:
         # Stays invisible always — it's a hit-detection volume, not a drawn
         # effect. `enabled` is the "is the swing currently active" signal
@@ -634,9 +752,9 @@ def update(dt: float) -> None:
     instance_api.set_player_position(_px, _py)
     instance_api.set_player_crouching(_crouching)
     instance_api.set_player_hitbox(_px + hb_l, _px + hb_r, _py + hb_t, _py + hb_b)
-    instance_api.set_player_energy(_energy, MAX_ENERGY)
-    instance_api.set_player_lives(_lives, MAX_LIVES)
-    instance_api.set_player_gears(_gears)
+    instance_api.set_player_energy(game_state.energy, game_state.MAX_ENERGY)
+    instance_api.set_player_lives(game_state.lives, game_state.MAX_LIVES)
+    instance_api.set_player_gears(game_state.gears)
     if _renderer and _scene:
         _renderer.tick(_scene, dt, _engine)
 

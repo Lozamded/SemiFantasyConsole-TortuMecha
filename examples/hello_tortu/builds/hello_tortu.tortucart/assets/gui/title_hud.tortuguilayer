@@ -1,0 +1,42 @@
+{
+  "width": 264,
+  "height": 198,
+  "palette": "default",
+  "tile_layer_visible": true,
+  "objects": [
+    {
+      "object": "assets/objects/selectArrow.tortuobject",
+      "x": 46,
+      "y": 139
+    }
+  ],
+  "text_labels": [
+    {
+      "text": "Start game",
+      "x": 66,
+      "y": 132,
+      "font": "assets/fonts/dialog.tortufont"
+    },
+    {
+      "text": "Load game",
+      "x": 66,
+      "y": 148,
+      "font": "assets/fonts/dialog.tortufont"
+    },
+    {
+      "text": "Current Language (English)",
+      "x": 66,
+      "y": 163,
+      "font": "assets/fonts/dialog.tortufont"
+    },
+    {
+      "text": "Mecha Turtle",
+      "x": 54,
+      "y": 27,
+      "font": "assets/fonts/VCR.tortufont"
+    }
+  ],
+  "tiled_rects": [],
+  "repeat_sprites": [],
+  "script": "scripts/title_hud.py"
+}

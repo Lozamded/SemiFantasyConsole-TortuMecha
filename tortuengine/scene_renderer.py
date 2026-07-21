@@ -683,7 +683,8 @@ class SceneRenderer:
         colors = self._palette(text_font.palette)
         if colors is None:
             return None
-        return render_text_line(text_font, label.text, colors)
+        fore_index = label.color_index if label.color_index >= 0 else None
+        return render_text_line(text_font, label.text, colors, fore_index=fore_index)
 
     def _draw_gui_layer(
         self, target: pygame.Surface, gui_layer: GuiLayer, *, ox: int = 0, oy: int = 0

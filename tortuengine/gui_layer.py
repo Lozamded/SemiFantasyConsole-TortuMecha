@@ -92,13 +92,18 @@ class GuiTextLabel:
     y: int
     id: str = ""
     font: str = ""
+    # Palette index to render the ink with, overriding the font's own baked
+    # color. -1 means "use the font's baked color". Only meaningful for
+    # .tortufont labels — .tortuspritefont glyphs are pre-colored bitmaps.
+    color_index: int = -1
     visible: bool = True
     # Off at scene start: not drawn.
     enabled: bool = True
 
     def copy(self) -> GuiTextLabel:
         return GuiTextLabel(
-            self.text, self.x, self.y, self.id, self.font, self.visible, self.enabled
+            self.text, self.x, self.y, self.id, self.font, self.color_index,
+            self.visible, self.enabled,
         )
 
 
@@ -428,6 +433,7 @@ def load_gui_layer(path: Path, *, project_root: Path | None = None) -> GuiLayer:
             int(raw.get("y", 0)),
             str(raw.get("id", "")).strip(),
             _normalize_asset_path(str(raw.get("font", ""))),
+            int(raw.get("color_index", -1)),
             bool(raw.get("visible", True)),
             bool(raw.get("enabled", True)),
         )
@@ -501,6 +507,7 @@ def save_gui_layer(gui_layer: GuiLayer, path: Path) -> None:
                 "y": label.y,
                 **({"id": label.id} if label.id else {}),
                 **({"font": _normalize_asset_path(label.font)} if label.font else {}),
+                **({"color_index": label.color_index} if label.color_index >= 0 else {}),
                 **({"visible": False} if not label.visible else {}),
                 **({"enabled": False} if not label.enabled else {}),
             }

@@ -4,7 +4,7 @@
     "game_name": "Hello Tortu",
     "cart_name": "hello_tortu",
     "fps": 60,
-    "start_scene": "scenes/level_01.tortuscene",
+    "start_scene": "scenes/title.tortuscene",
     "audio_channels": [
       "music",
       "sfx_1",
@@ -12,7 +12,7 @@
       "sfx_3"
     ]
   },
-  "start_scene": "scenes/level_01",
+  "start_scene": "scenes/title",
   "sprites": {
     "assets/sprites/Turtlemecha_head_UI.tortusprite": {
       "fps": 8,
@@ -124,6 +124,14 @@
         "baked/assets/sprites/mechaturtle_damage/f0.png"
       ]
     },
+    "assets/sprites/mechaturtle_defeated.tortusprite": {
+      "fps": 8,
+      "width": 40,
+      "height": 32,
+      "frames": [
+        "baked/assets/sprites/mechaturtle_defeated/f0.png"
+      ]
+    },
     "assets/sprites/mechaturtle_fall.tortusprite": {
       "fps": 8,
       "width": 40,
@@ -161,6 +169,15 @@
         "baked/assets/sprites/mechaturtle_walk/f1.png",
         "baked/assets/sprites/mechaturtle_walk/f2.png",
         "baked/assets/sprites/mechaturtle_walk/f3.png"
+      ]
+    },
+    "assets/sprites/pointer.tortusprite": {
+      "fps": 8,
+      "width": 16,
+      "height": 16,
+      "frames": [
+        "baked/assets/sprites/pointer/f0.png",
+        "baked/assets/sprites/pointer/f1.png"
       ]
     },
     "assets/sprites/red_sli.tortusprite": {
@@ -234,6 +251,19 @@
     }
   },
   "tilesets": {
+    "assets/tiles/gui.tortutileset@default": {
+      "tile_size": 8,
+      "tiles": [
+        "baked/assets/tiles/gui/default/t0.png",
+        "baked/assets/tiles/gui/default/t1.png",
+        "baked/assets/tiles/gui/default/t2.png",
+        "baked/assets/tiles/gui/default/t3.png",
+        "baked/assets/tiles/gui/default/t4.png",
+        "baked/assets/tiles/gui/default/t5.png",
+        "baked/assets/tiles/gui/default/t6.png",
+        "baked/assets/tiles/gui/default/t7.png"
+      ]
+    },
     "assets/tiles/terrain.tortutileset@default": {
       "tile_size": 16,
       "tiles": [
@@ -271,6 +301,18 @@
     }
   },
   "backgrounds": {
+    "assets/backgrounds/GameOver.tortubackground": {
+      "width": 264,
+      "height": 198,
+      "full": "baked/assets/backgrounds/GameOver/full.png",
+      "bands": {}
+    },
+    "assets/backgrounds/TitleScreen.tortubackground": {
+      "width": 264,
+      "height": 198,
+      "full": "baked/assets/backgrounds/TitleScreen/full.png",
+      "bands": {}
+    },
     "assets/backgrounds/bg1.tortubackground": {
       "width": 312,
       "height": 198,
@@ -447,7 +489,8 @@
         "attack": "assets/sprites/mechaturtle_attack.tortusprite",
         "damage": "assets/sprites/mechaturtle_damage.tortusprite",
         "air_attack": "assets/sprites/mechaturtle_air_attack.tortusprite",
-        "crouch": "assets/sprites/mechaturtle_crouch.tortusprite"
+        "crouch": "assets/sprites/mechaturtle_crouch.tortusprite",
+        "defeated": "assets/sprites/mechaturtle_defeated.tortusprite"
       },
       "solid": false,
       "origin": {
@@ -529,10 +572,38 @@
       ],
       "script": "scripts/robot.py",
       "spawnable_objects": []
+    },
+    "assets/objects/selectArrow.tortuobject": {
+      "name": "selectArrow",
+      "default_animation": "default",
+      "animations": {
+        "default": "assets/sprites/pointer.tortusprite"
+      },
+      "solid": false,
+      "origin": {
+        "x": 0,
+        "y": 8
+      },
+      "colliders": [
+        {
+          "name": "main",
+          "x": 1,
+          "y": 1,
+          "w": 14,
+          "h": 14,
+          "active": true
+        }
+      ],
+      "script": "",
+      "spawnable_objects": []
     }
   },
   "scenes": {
+    "scenes/gameover": "scenes/gameover.tortuscene",
+    "scenes/gameover.tortuscene": "scenes/gameover.tortuscene",
     "scenes/level_01": "scenes/level_01.tortuscene",
-    "scenes/level_01.tortuscene": "scenes/level_01.tortuscene"
+    "scenes/level_01.tortuscene": "scenes/level_01.tortuscene",
+    "scenes/title": "scenes/title.tortuscene",
+    "scenes/title.tortuscene": "scenes/title.tortuscene"
   }
 }

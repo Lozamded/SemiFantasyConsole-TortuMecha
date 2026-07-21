@@ -5,10 +5,11 @@ from __future__ import annotations
 import subprocess
 from enum import Enum
 from pathlib import Path
+from typing import Callable
 
 import pygame
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QImage, QMouseEvent, QPainter, QPen, QWheelEvent
+from PyQt6.QtGui import QColor, QIcon, QImage, QMouseEvent, QPainter, QPen, QPixmap, QWheelEvent
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -51,7 +52,7 @@ from tortuengine.gui_layer import (
     save_gui_layer,
 )
 from tortuengine.object import TortuObject, load_object
-from tortuengine.palette import TRANSPARENT_INDEX, load_palette, palette_path
+from tortuengine.palette import PAINTABLE_INDICES, TRANSPARENT_INDEX, load_palette, palette_path
 from tortuengine.pip_bar import PipBar, load_pip_bar
 from tortuengine.progress_bar import ProgressBar, load_progress_bar
 from tortuengine.project import load_project
@@ -81,6 +82,12 @@ class GuiLayerTarget(str, Enum):
     TEXT = "text"
     TILED_RECT = "tiled_rect"
     REPEAT_SPRITE = "repeat_sprite"
+
+
+def _color_swatch_icon(r: int, g: int, b: int, size: int = 14) -> QIcon:
+    pix = QPixmap(size, size)
+    pix.fill(QColor(r, g, b))
+    return QIcon(pix)
 
 
 class GuiLayerCanvas(QWidget):
@@ -459,7 +466,21 @@ class GuiLayerCanvas(QWidget):
         colors = self._font_palette(font.palette)
         if colors is None:
             return None
-        return render_text_line(font, label.text, colors)
+        fore_index = label.color_index if label.color_index >= 0 else None
+        return render_text_line(font, label.text, colors, fore_index=fore_index)
+
+    def colors_for_text_font(self, font_path: str) -> list[tuple[int, int, int]] | None:
+        """Palette colors a .tortufont label's color swatch picker should offer.
+
+        None for sprite fonts (pre-colored bitmaps — no override applies) or
+        an unresolved font.
+        """
+        if not font_path or font_path.endswith(".tortuspritefont"):
+            return None
+        font = self._get_text_font(font_path)
+        if font is None:
+            return None
+        return self._font_palette(font.palette)
 
     # -- rendering -----------------------------------------------------
 
@@ -1116,6 +1137,12 @@ class _GuiTextLabelCard(QWidget):
         self.x_spin.setRange(-9999, 9999)
         self.y_spin = QSpinBox()
         self.y_spin.setRange(-9999, 9999)
+        self.color_combo = QComboBox()
+        self.color_combo.setToolTip(
+            "Override the font's baked ink color with a palette color from the\n"
+            "selected font's own bake palette. Not available for sprite fonts —\n"
+            "their glyphs are pre-colored bitmaps."
+        )
         self.visible_check = QCheckBox("Visible at play")
         self.visible_check.setChecked(True)
         self.visible_check.setToolTip("Whether this label is drawn when the scene runs")
@@ -1127,6 +1154,7 @@ class _GuiTextLabelCard(QWidget):
         form.setContentsMargins(20, 2, 0, 6)
         form.addRow("Text:", self.text_edit)
         form.addRow("Font:", self.font_combo)
+        form.addRow("Color:", self.color_combo)
         form.addRow("Name/ID:", self.id_edit)
         form.addRow("X:", self.x_spin)
         form.addRow("Y:", self.y_spin)
@@ -1145,6 +1173,7 @@ class _GuiTextLabelCard(QWidget):
 
         self.text_edit.textChanged.connect(self._emit_changed)
         self.font_combo.currentIndexChanged.connect(self._emit_changed)
+        self.color_combo.currentIndexChanged.connect(self._emit_changed)
         self.id_edit.textChanged.connect(self._emit_changed)
         self.x_spin.valueChanged.connect(self._emit_changed)
         self.y_spin.valueChanged.connect(self._emit_changed)
@@ -1179,10 +1208,15 @@ class _GuiTextLabelCard(QWidget):
         if not self._suspend:
             self.changed.emit()
 
-    def sync(self, label: GuiTextLabel, font_choices: list[str]) -> None:
+    def sync(
+        self,
+        label: GuiTextLabel,
+        font_choices: list[str],
+        color_lookup: Callable[[str], list[tuple[int, int, int]] | None] | None = None,
+    ) -> None:
         widgets = (
-            self.text_edit, self.font_combo, self.id_edit, self.x_spin, self.y_spin,
-            self.visible_check, self.enabled_check,
+            self.text_edit, self.font_combo, self.color_combo, self.id_edit,
+            self.x_spin, self.y_spin, self.visible_check, self.enabled_check,
         )
         self._suspend = True
         for widget in widgets:
@@ -1195,6 +1229,18 @@ class _GuiTextLabelCard(QWidget):
             self.font_combo.addItem(rel, rel)
         found = self.font_combo.findData(label.font)
         self.font_combo.setCurrentIndex(found if found >= 0 else 0)
+
+        colors = color_lookup(label.font) if color_lookup else None
+        self.color_combo.clear()
+        self.color_combo.addItem("(font default)", -1)
+        if colors:
+            for index in PAINTABLE_INDICES:
+                r, g, b = colors[index]
+                self.color_combo.addItem(_color_swatch_icon(r, g, b), str(index), index)
+        self.color_combo.setEnabled(bool(colors))
+        found_color = self.color_combo.findData(label.color_index)
+        self.color_combo.setCurrentIndex(found_color if found_color >= 0 else 0)
+
         if self.id_edit.text() != label.id:
             self.id_edit.setText(label.id)
         self.x_spin.setValue(label.x)
@@ -1208,6 +1254,11 @@ class _GuiTextLabelCard(QWidget):
     def read_into(self, label: GuiTextLabel) -> None:
         label.text = self.text_edit.text()
         label.font = self.font_combo.currentData() or ""
+        label.color_index = (
+            self.color_combo.currentData() if self.color_combo.isEnabled() else -1
+        )
+        if label.color_index is None:
+            label.color_index = -1
         label.id = self.id_edit.text().strip()
         label.x = self.x_spin.value()
         label.y = self.y_spin.value()
@@ -2168,7 +2219,7 @@ class GuiLayerEditorWidget(QWidget):
         for i in visible_indices:
             label = self.gui_layer.text_labels[i]
             card = self._text_label_cards[i]
-            card.sync(label, font_choices)
+            card.sync(label, font_choices, self.canvas.colors_for_text_font)
             preview = label.text if len(label.text) <= 20 else label.text[:20] + "…"
             name_suffix = f"  [{label.id}]" if label.id else ""
             card.set_header_text(f'#{i}  "{preview}"{name_suffix}')

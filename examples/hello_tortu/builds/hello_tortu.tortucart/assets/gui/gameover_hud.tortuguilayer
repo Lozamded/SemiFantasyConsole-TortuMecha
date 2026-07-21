@@ -1,0 +1,31 @@
+{
+  "width": 264,
+  "height": 198,
+  "palette": "default",
+  "tile_layer_visible": true,
+  "objects": [],
+  "text_labels": [
+    {
+      "text": "Game Over",
+      "x": 87,
+      "y": 23,
+      "font": "assets/fonts/KiwiSoda.tortufont"
+    },
+    {
+      "text": "PRESS START",
+      "x": 60,
+      "y": 152,
+      "font": "assets/fonts/VCR.tortufont"
+    },
+    {
+      "text": "GEARS: x0",
+      "x": 93,
+      "y": 48,
+      "id": "gears_label",
+      "font": "assets/fonts/dialog.tortufont"
+    }
+  ],
+  "tiled_rects": [],
+  "repeat_sprites": [],
+  "script": "scripts/gameover_hud.py"
+}

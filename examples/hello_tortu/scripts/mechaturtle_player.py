@@ -516,7 +516,9 @@ def update(dt: float) -> None:
     global _paused, _prev_pause_held
 
     pause_held = pygame.key.get_pressed()[pygame.K_RETURN]
-    if pause_held and not _prev_pause_held:
+    # Pausing is disabled during the defeat bounce — Enter is left free for
+    # whatever comes next (respawn/game-over) instead of freezing mid-death.
+    if pause_held and not _prev_pause_held and not _defeated:
         _paused = not _paused
         _set_pause_gui_visible(_paused)
     _prev_pause_held = pause_held

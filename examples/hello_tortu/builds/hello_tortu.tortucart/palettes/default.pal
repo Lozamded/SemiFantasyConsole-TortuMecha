@@ -1,4 +1,4 @@
-# Tortu palette — index 63 is always transparent
+# Tortu palette — index 85 is always transparent
 0 1a1c2e
 1 ffffff
 2 f8f9fa
@@ -62,4 +62,26 @@
 60 264653
 61 6d597a
 62 01abf3
-63 transparent
+63 343a40
+64 e9ecef
+65 adb5bd
+66 f1f3f5
+67 a61e4d
+68 862e9c
+69 5f3dc4
+70 1971c2
+71 0c8599
+72 099268
+73 2f9e44
+74 66a80f
+75 f08c00
+76 e8590c
+77 9b2226
+78 580c1f
+79 7048e8
+80 4263eb
+81 1098ad
+82 0ca678
+83 37b24d
+84 f76707
+85 transparent

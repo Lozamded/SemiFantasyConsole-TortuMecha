@@ -1,4 +1,4 @@
-"""Palette files in palettes/*.pal — index 63 is always transparent."""
+"""Palette files in palettes/*.pal — index 85 is always transparent."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 from tortuengine.constants import MAX_COLORS
 
-TRANSPARENT_INDEX = 63
+TRANSPARENT_INDEX = 85
 PAINTABLE_INDICES = range(TRANSPARENT_INDEX)
 
 
@@ -19,7 +19,7 @@ def _parse_hex(value: str) -> tuple[int, int, int]:
 
 
 def load_palette(path: Path) -> list[tuple[int, int, int]]:
-    """Load a .pal file into 64 RGB tuples; index 63 is forced transparent."""
+    """Load a .pal file into 86 RGB tuples; index 85 is forced transparent."""
     colors: list[tuple[int, int, int] | None] = [None] * MAX_COLORS
     line_re = re.compile(r"^\s*(\d+)\s+(#?[0-9a-fA-F]{6}|transparent)\s*(?:#.*)?$")
 
@@ -34,7 +34,7 @@ def load_palette(path: Path) -> list[tuple[int, int, int]]:
         index = int(match.group(1))
         token = match.group(2).lower()
         if index < 0 or index >= MAX_COLORS:
-            raise ValueError(f"Palette index out of range (0-63): {index}")
+            raise ValueError(f"Palette index out of range (0-{MAX_COLORS - 1}): {index}")
 
         if token == "transparent":
             colors[index] = (0, 0, 0)
@@ -52,7 +52,7 @@ def save_palette(path: Path, colors: list[tuple[int, int, int]]) -> None:
     if len(colors) != MAX_COLORS:
         raise ValueError(f"Palette must have {MAX_COLORS} entries")
 
-    lines = ["# Tortu palette — index 63 is always transparent"]
+    lines = [f"# Tortu palette — index {TRANSPARENT_INDEX} is always transparent"]
     for i in range(MAX_COLORS):
         if i == TRANSPARENT_INDEX:
             lines.append(f"{i} transparent")
@@ -89,7 +89,7 @@ def closest_index(r: int, g: int, b: int, palette: list[tuple[int, int, int]]) -
 
 
 def default_palette_colors() -> list[tuple[int, int, int]]:
-    """Starter 63-color set for new projects."""
+    """Starter 85-color set for new projects."""
     raw = [
         "1a1c2e", "ffffff", "f8f9fa", "ced4da", "868e96", "495057", "212529", "000000",
         "ff6b6b", "f06595", "cc5de8", "845ef7", "5c7cfa", "339af0", "22b8cf", "20c997",
@@ -98,7 +98,10 @@ def default_palette_colors() -> list[tuple[int, int, int]]:
         "d9480f", "fab005", "ffe066", "ff8787", "ffa8a8", "ffc9c9", "eebefa", "da77f2",
         "b197fc", "91a7ff", "74c0fc", "66d9e8", "63e6be", "8ce99a", "c0eb75", "ffd43b",
         "ffa94d", "ffc078", "ffd8a8", "ffe8cc", "3d5a80", "98c1d9", "e0fbfc", "293241",
-        "ee6c4d", "f4a261", "e9c46a", "2a9d8f", "264653", "6d597a", "b56576",
+        "ee6c4d", "f4a261", "e9c46a", "2a9d8f", "264653", "6d597a", "b56576", "343a40",
+        "e9ecef", "adb5bd", "f1f3f5", "a61e4d", "862e9c", "5f3dc4", "1971c2", "0c8599",
+        "099268", "2f9e44", "66a80f", "f08c00", "e8590c", "9b2226", "580c1f", "7048e8",
+        "4263eb", "1098ad", "0ca678", "37b24d", "f76707",
     ]
     colors: list[tuple[int, int, int]] = []
     for hex_color in raw:
@@ -106,5 +109,5 @@ def default_palette_colors() -> list[tuple[int, int, int]]:
     while len(colors) < TRANSPARENT_INDEX:
         colors.append((0, 0, 0))
     colors = colors[:TRANSPARENT_INDEX]
-    colors.append((0, 0, 0))  # slot 63 — transparent in engine
+    colors.append((0, 0, 0))  # last slot — transparent in engine
     return colors

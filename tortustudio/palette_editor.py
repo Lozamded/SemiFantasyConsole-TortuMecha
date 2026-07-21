@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import numpy as np
@@ -72,7 +73,7 @@ def _color_swatch_icon(r: int, g: int, b: int, size: int = 20) -> QIcon:
 
 
 class PaletteGridWidget(QWidget):
-    """8×8 grid showing all 64 palette slots; emits slot_selected on click."""
+    """Grid showing all MAX_COLORS palette slots (last row may be short); emits slot_selected on click."""
 
     slot_selected = pyqtSignal(int)
 
@@ -81,7 +82,7 @@ class PaletteGridWidget(QWidget):
         self._colors: list[tuple[int, int, int]] = [(0, 0, 0)] * MAX_COLORS
         self._selected: int = 0
         w = COLS * (SLOT_SIZE + SLOT_GAP) - SLOT_GAP
-        rows = MAX_COLORS // COLS
+        rows = math.ceil(MAX_COLORS / COLS)
         h = rows * (SLOT_SIZE + SLOT_GAP) - SLOT_GAP
         self.setFixedSize(w, h)
 
@@ -95,10 +96,12 @@ class PaletteGridWidget(QWidget):
 
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
-        rows = MAX_COLORS // COLS
+        rows = math.ceil(MAX_COLORS / COLS)
         for row in range(rows):
             for col in range(COLS):
                 idx = row * COLS + col
+                if idx >= MAX_COLORS:
+                    continue
                 x = col * (SLOT_SIZE + SLOT_GAP)
                 y = row * (SLOT_SIZE + SLOT_GAP)
 
@@ -235,7 +238,7 @@ class PaletteEditorWidget(QWidget):
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         left_vbox.addWidget(scroll)
 
-        self.lbl_slot = QLabel("Slot 0  —  index 63 is reserved (transparent)")
+        self.lbl_slot = QLabel(f"Slot 0  —  index {TRANSPARENT_INDEX} is reserved (transparent)")
         self.lbl_slot.setStyleSheet("color: #aaa; font-size: 11px;")
         self.lbl_slot.setWordWrap(True)
         left_vbox.addWidget(self.lbl_slot)
@@ -394,7 +397,7 @@ class PaletteEditorWidget(QWidget):
 
     def _on_slot_selected(self, index: int) -> None:
         self.lbl_slot.setText(
-            f"Slot {index}  —  index 63 is reserved (transparent)"
+            f"Slot {index}  —  index {TRANSPARENT_INDEX} is reserved (transparent)"
         )
         r, g, b = self._colors[index]
         self._set_rgb_spinboxes(r, g, b)
@@ -445,7 +448,8 @@ class PaletteEditorWidget(QWidget):
         idx = self.grid._selected
         if idx == TRANSPARENT_INDEX:
             QMessageBox.information(
-                self, "Set Color", "Slot 63 is reserved for transparency and cannot be changed."
+                self, "Set Color",
+                f"Slot {TRANSPARENT_INDEX} is reserved for transparency and cannot be changed."
             )
             return
         r, g, b = self._selected_image_color

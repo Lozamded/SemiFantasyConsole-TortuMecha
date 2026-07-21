@@ -1,0 +1,25 @@
+{
+  "name": "selectArrow",
+  "default_animation": "default",
+  "animations": [
+    {
+      "name": "default",
+      "sprite": "assets/sprites/pointer.tortusprite"
+    }
+  ],
+  "solid": false,
+  "origin": {
+    "x": 0,
+    "y": 8
+  },
+  "colliders": [
+    {
+      "name": "main",
+      "x": 1,
+      "y": 1,
+      "w": 14,
+      "h": 14,
+      "active": true
+    }
+  ]
+}
