@@ -17,6 +17,12 @@ from tortuengine import instance_api
 
 MAIN_ITEMS = ("option_resume", "option_options")
 OPTIONS_ITEMS = ("option_2_language", "option_2_volSFX", "option_volMusic", "option_back")
+LANGUAGE_ROW = OPTIONS_ITEMS.index("option_2_language")
+
+CURRENT_LANGUAGE_LABEL = "currentlanguage"
+# Language names are shown in their own language regardless of the current
+# UI language (a convention, not a languages/strings.csv lookup).
+LANGUAGE_NAMES = {"en": "English", "es": "Espanol"}
 
 CURSOR_MAIN = "cursor_main"
 CURSOR_OPTIONS = "cursor_options"
@@ -40,6 +46,8 @@ _was_paused = False
 _prev_up = False
 _prev_down = False
 _prev_enter = False
+_prev_left = False
+_prev_right = False
 
 
 def init(engine) -> None:
@@ -60,6 +68,21 @@ def _select(cursor_id: str, items: tuple[str, ...], old_index: int, new_index: i
     _move_cursor(cursor_id, items[new_index])
 
 
+def _update_language_label() -> None:
+    code = instance_api.get_language()
+    instance_api.set_gui_text_label_text(SELF_ID, CURRENT_LANGUAGE_LABEL, LANGUAGE_NAMES.get(code, code))
+
+
+def _cycle_language(step: int) -> None:
+    langs = instance_api.available_languages()
+    if not langs:
+        return
+    current = instance_api.get_language()
+    index = langs.index(current) if current in langs else 0
+    instance_api.set_language(langs[(index + step) % len(langs)])
+    _update_language_label()
+
+
 def _reset_menu() -> None:
     global _screen, _main_index, _options_index, _scroll, _scroll_target
     _screen = "main"
@@ -74,10 +97,11 @@ def _reset_menu() -> None:
     _options_index = 0
     _select(CURSOR_MAIN, MAIN_ITEMS, 0, 0)
     _select(CURSOR_OPTIONS, OPTIONS_ITEMS, 0, 0)
+    _update_language_label()
 
 
 def update(dt: float) -> None:
-    global _was_paused, _prev_up, _prev_down, _prev_enter
+    global _was_paused, _prev_up, _prev_down, _prev_enter, _prev_left, _prev_right
     global _screen, _main_index, _options_index, _scroll, _scroll_target
 
     paused = instance_api.is_game_paused()
@@ -89,6 +113,8 @@ def update(dt: float) -> None:
         _prev_up = keys[pygame.K_UP]
         _prev_down = keys[pygame.K_DOWN]
         _prev_enter = keys[pygame.K_RETURN]
+        _prev_left = keys[pygame.K_LEFT]
+        _prev_right = keys[pygame.K_RIGHT]
     _was_paused = paused
 
     if not paused:
@@ -105,10 +131,14 @@ def update(dt: float) -> None:
 
     keys = pygame.key.get_pressed()
     up_held, down_held, enter_held = keys[pygame.K_UP], keys[pygame.K_DOWN], keys[pygame.K_RETURN]
+    left_held, right_held = keys[pygame.K_LEFT], keys[pygame.K_RIGHT]
     up_pressed = up_held and not _prev_up
     down_pressed = down_held and not _prev_down
     enter_pressed = enter_held and not _prev_enter
+    left_pressed = left_held and not _prev_left
+    right_pressed = right_held and not _prev_right
     _prev_up, _prev_down, _prev_enter = up_held, down_held, enter_held
+    _prev_left, _prev_right = left_held, right_held
 
     if _screen == "main":
         if up_pressed or down_pressed:
@@ -130,6 +160,8 @@ def update(dt: float) -> None:
         if enter_pressed and OPTIONS_ITEMS[_options_index] == "option_back":
             _screen = "main"
             _scroll_target = 0.0
+        elif _options_index == LANGUAGE_ROW and (left_pressed or right_pressed):
+            _cycle_language(1 if right_pressed else -1)
 
 
 def draw(engine) -> None:

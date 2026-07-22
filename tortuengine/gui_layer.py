@@ -104,6 +104,10 @@ class GuiTextLabel:
     # technique as GuiLayerObject.scale) — never re-rasterizes the source TTF,
     # so this stays cheap regardless of value.
     scale: float = 1.0
+    # How (x, y) anchors the rendered text: "left" (x is the left edge, the
+    # historical default), "center" (x is the horizontal center), or "right"
+    # (x is the right edge). y always anchors the top edge.
+    align: str = "left"
     visible: bool = True
     # Off at scene start: not drawn.
     enabled: bool = True
@@ -111,8 +115,16 @@ class GuiTextLabel:
     def copy(self) -> GuiTextLabel:
         return GuiTextLabel(
             self.text, self.x, self.y, self.id, self.font, self.color_index,
-            self.scale, self.visible, self.enabled,
+            self.scale, self.align, self.visible, self.enabled,
         )
+
+    def draw_x(self, width: int) -> int:
+        """Left-edge x to blit a `width`-px-wide rendered surface at, honoring align."""
+        if self.align == "center":
+            return self.x - width // 2
+        if self.align == "right":
+            return self.x - width
+        return self.x
 
 
 @dataclass
@@ -452,6 +464,7 @@ def load_gui_layer(path: Path, *, project_root: Path | None = None) -> GuiLayer:
             _normalize_asset_path(str(raw.get("font", ""))),
             int(raw.get("color_index", -1)),
             float(raw.get("scale", 1.0)),
+            str(raw.get("align", "left")),
             bool(raw.get("visible", True)),
             bool(raw.get("enabled", True)),
         )
@@ -528,6 +541,7 @@ def save_gui_layer(gui_layer: GuiLayer, path: Path) -> None:
                 **({"font": _normalize_asset_path(label.font)} if label.font else {}),
                 **({"color_index": label.color_index} if label.color_index >= 0 else {}),
                 **({"scale": label.scale} if label.scale != 1.0 else {}),
+                **({"align": label.align} if label.align != "left" else {}),
                 **({"visible": False} if not label.visible else {}),
                 **({"enabled": False} if not label.enabled else {}),
             }

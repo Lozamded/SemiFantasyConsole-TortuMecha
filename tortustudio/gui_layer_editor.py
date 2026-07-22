@@ -556,7 +556,7 @@ class GuiLayerCanvas(QWidget):
         for label in self.gui_layer.text_labels:
             surface = self._label_surface(label)
             if surface is not None:
-                composite.blit(surface, (label.x, label.y))
+                composite.blit(surface, (label.draw_x(surface.get_width()), label.y))
 
         data = pygame.image.tobytes(composite, "RGBA")
         self._frame = QImage(data, w, h, w * 4, QImage.Format.Format_RGBA8888)
@@ -630,7 +630,7 @@ class GuiLayerCanvas(QWidget):
                 painter.setPen(pen)
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 painter.drawRect(
-                    int(label.x * self.zoom), int(label.y * self.zoom),
+                    int(label.draw_x(lw) * self.zoom), int(label.y * self.zoom),
                     int(lw * self.zoom), int(lh * self.zoom),
                 )
 
@@ -748,7 +748,8 @@ class GuiLayerCanvas(QWidget):
             surface = self._label_surface(label)
             w = surface.get_width() if surface else 8
             h = surface.get_height() if surface else 8
-            if label.x <= px < label.x + w and label.y <= py < label.y + h:
+            lx = label.draw_x(w)
+            if lx <= px < lx + w and label.y <= py < label.y + h:
                 return index
         return None
 
@@ -1168,6 +1169,14 @@ class _GuiTextLabelCard(QWidget):
             "Uniform size multiplier applied to the font's already-baked glyphs.\n"
             "Cheap to change — never re-rasterizes the source TTF at runtime."
         )
+        self.align_combo = QComboBox()
+        self.align_combo.addItem("Left", "left")
+        self.align_combo.addItem("Center", "center")
+        self.align_combo.addItem("Right", "right")
+        self.align_combo.setToolTip(
+            "How X anchors the text: Left = X is the left edge, Center = X is\n"
+            "the horizontal center, Right = X is the right edge."
+        )
         self.visible_check = QCheckBox("Visible at play")
         self.visible_check.setChecked(True)
         self.visible_check.setToolTip("Whether this label is drawn when the scene runs")
@@ -1181,6 +1190,7 @@ class _GuiTextLabelCard(QWidget):
         form.addRow("Font:", self.font_combo)
         form.addRow("Color:", self.color_combo)
         form.addRow("Scale:", self.scale_spin)
+        form.addRow("Align:", self.align_combo)
         form.addRow("Name/ID:", self.id_edit)
         form.addRow("X:", self.x_spin)
         form.addRow("Y:", self.y_spin)
@@ -1201,6 +1211,7 @@ class _GuiTextLabelCard(QWidget):
         self.font_combo.currentIndexChanged.connect(self._emit_changed)
         self.color_combo.currentIndexChanged.connect(self._emit_changed)
         self.scale_spin.valueChanged.connect(self._emit_changed)
+        self.align_combo.currentIndexChanged.connect(self._emit_changed)
         self.id_edit.textChanged.connect(self._emit_changed)
         self.x_spin.valueChanged.connect(self._emit_changed)
         self.y_spin.valueChanged.connect(self._emit_changed)
@@ -1242,8 +1253,8 @@ class _GuiTextLabelCard(QWidget):
         color_lookup: Callable[[str], list[tuple[int, int, int]] | None] | None = None,
     ) -> None:
         widgets = (
-            self.text_edit, self.font_combo, self.color_combo, self.scale_spin, self.id_edit,
-            self.x_spin, self.y_spin, self.visible_check, self.enabled_check,
+            self.text_edit, self.font_combo, self.color_combo, self.scale_spin, self.align_combo,
+            self.id_edit, self.x_spin, self.y_spin, self.visible_check, self.enabled_check,
         )
         self._suspend = True
         for widget in widgets:
@@ -1270,6 +1281,9 @@ class _GuiTextLabelCard(QWidget):
 
         self.scale_spin.setValue(label.scale)
 
+        found_align = self.align_combo.findData(label.align)
+        self.align_combo.setCurrentIndex(found_align if found_align >= 0 else 0)
+
         if self.id_edit.text() != label.id:
             self.id_edit.setText(label.id)
         self.x_spin.setValue(label.x)
@@ -1289,6 +1303,7 @@ class _GuiTextLabelCard(QWidget):
         if label.color_index is None:
             label.color_index = -1
         label.scale = self.scale_spin.value()
+        label.align = self.align_combo.currentData() or "left"
         label.id = self.id_edit.text().strip()
         label.x = self.x_spin.value()
         label.y = self.y_spin.value()

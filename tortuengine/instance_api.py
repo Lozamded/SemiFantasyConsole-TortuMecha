@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
+from tortuengine import localization
 from tortuengine.scene import Scene
 from tortuengine.tileset import COLLISION_NONE, Tileset, load_tileset
 
@@ -41,6 +42,25 @@ def bind_scene(scene: Scene, project_root: Path | None = None) -> None:
     _scene = scene
     if project_root is not None:
         _project_root = project_root
+        localization.load(project_root)
+
+
+def set_language(code: str) -> None:
+    """Switch the active language (must be one of available_languages())."""
+    localization.set_language(code)
+
+
+def get_language() -> str:
+    return localization.get_language()
+
+
+def available_languages() -> list[str]:
+    return localization.available_languages()
+
+
+def translate(key: str) -> str:
+    """Look up a languages/strings.csv key directly (for script-built strings)."""
+    return localization.translate(key)
 
 
 def set_player_position(x: float, y: float) -> None:

@@ -32,6 +32,7 @@ from tortuengine.gui_layer import (
 )
 from tortuengine.image import load_image
 from tortuengine import instance_api
+from tortuengine import localization
 from tortuengine.instance_scripts import InstanceScript, load_instance_script
 from tortuengine.object import TortuObject, load_object
 from tortuengine.palette import load_palette, palette_path
@@ -80,6 +81,7 @@ class SceneRenderer:
     def __init__(self, project_root: Path, *, cart_manifest: CartManifest | None = None) -> None:
         self.project_root = project_root.resolve()
         self._cart_manifest = cart_manifest
+        localization.load(self.project_root)
         self._tilesets: dict[str, Tileset] = {}
         self._backgrounds: dict[str, Background] = {}
         self._bg_palettes: dict[str, list[tuple[int, int, int]]] = {}
@@ -681,11 +683,15 @@ class SceneRenderer:
     def _gui_label_surface(self, label: GuiTextLabel) -> pygame.Surface | None:
         if not label.text or not label.font:
             return None
-        cache_key = (label.font, label.text, label.color_index, round(label.scale, 3))
+        # Resolving here (instead of once at load time) means the cache key
+        # below naturally changes when the active language changes, so a
+        # language switch invalidates stale-language bitmaps for free.
+        text = localization.resolve(label.text)
+        cache_key = (label.font, text, label.color_index, round(label.scale, 3))
         cached = self._gui_label_cache.get(cache_key)
         if cached is not None:
             return cached
-        surface = self._render_gui_label(label)
+        surface = self._render_gui_label(label, text)
         if surface is None:
             return None
         if label.scale != 1.0:
@@ -695,7 +701,7 @@ class SceneRenderer:
         self._gui_label_cache[cache_key] = surface
         return surface
 
-    def _render_gui_label(self, label: GuiTextLabel) -> pygame.Surface | None:
+    def _render_gui_label(self, label: GuiTextLabel, text: str) -> pygame.Surface | None:
         # Text size is applied by scaling this baked bitmap (see
         # _gui_label_surface), never by re-rasterizing the source TTF at a
         # different point size — that stays a one-time cost paid in the font
@@ -707,7 +713,7 @@ class SceneRenderer:
             colors = self._palette(sprite_font.palette)
             if colors is None:
                 return None
-            return render_sprite_text_line(sprite_font, label.text, colors)
+            return render_sprite_text_line(sprite_font, text, colors)
         text_font = self._text_font(label.font)
         if text_font is None:
             return None
@@ -715,7 +721,7 @@ class SceneRenderer:
         if colors is None:
             return None
         fore_index = label.color_index if label.color_index >= 0 else None
-        return render_text_line(text_font, label.text, colors, fore_index=fore_index)
+        return render_text_line(text_font, text, colors, fore_index=fore_index)
 
     def _draw_gui_layer(
         self, target: pygame.Surface, gui_layer: GuiLayer, *, ox: int = 0, oy: int = 0
@@ -833,7 +839,7 @@ class SceneRenderer:
                 continue
             surface = self._gui_label_surface(label)
             if surface is not None:
-                target.blit(surface, (ox + label.x, oy + label.y))
+                target.blit(surface, (ox + label.draw_x(surface.get_width()), oy + label.y))
 
     def render(
         self,
