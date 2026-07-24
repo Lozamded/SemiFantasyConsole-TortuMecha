@@ -34,5 +34,12 @@
     "y": 3,
     "w": 13,
     "h": 17
-  }
+  },
+  "custom_vars": [
+    {
+      "name": "dialogue",
+      "type": "string",
+      "default": ""
+    }
+  ]
 }

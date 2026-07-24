@@ -3,6 +3,7 @@
   "height": 198,
   "palette": "default",
   "tile_layer_visible": true,
+  "script": "scripts/dialoguebox.py",
   "objects": [
     {
       "object": "assets/objects/dialoguebox.tortuobject",
@@ -13,9 +14,17 @@
   ],
   "text_labels": [
     {
-      "text": "Text",
+      "id": "dialog_speaker",
+      "text": "",
       "x": 14,
       "y": 149,
+      "font": "assets/fonts/dialog.tortufont"
+    },
+    {
+      "id": "dialog_text",
+      "text": "",
+      "x": 14,
+      "y": 163,
       "font": "assets/fonts/dialog.tortufont"
     }
   ]

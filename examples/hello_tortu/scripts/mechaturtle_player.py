@@ -519,21 +519,25 @@ def update(dt: float) -> None:
     global _defeated, defeat_done, _soul_obj
     global _prev_pause_held
 
-    pause_held = pygame.key.get_pressed()[pygame.K_RETURN]
     # Pausing is disabled during the defeat bounce — Enter is left free for
     # whatever comes next (respawn/game-over) instead of freezing mid-death.
     # Once open, pause_menu.py (the pause GUI layer's own script) owns Enter —
     # it closes the menu itself via instance_api.set_game_paused(False) when
     # "Resume" is confirmed, so this only ever opens, never toggles closed.
-    if pause_held and not _prev_pause_held and not _defeated and not instance_api.is_game_paused():
-        instance_api.set_game_paused(True)
-        _set_pause_gui_visible(True)
+    #
+    # Whether to *act* on a fresh Enter press is decided at the bottom of this
+    # function, after the world tick — a robot in interact range consumes
+    # that same press to start a dialogue (see robot.py/dialoguebox.py), and
+    # is_dialogue_active() only reflects that once the tick() below runs.
+    pause_held = pygame.key.get_pressed()[pygame.K_RETURN]
+    pause_pressed = pause_held and not _prev_pause_held
     _prev_pause_held = pause_held
 
-    if instance_api.is_game_paused():
-        # Keep ticking so the pause menu's own script still gets its
-        # update(dt) call (menu navigation) — gui_only skips world physics,
-        # enemy/object scripts, and animation, so gameplay stays frozen.
+    if instance_api.is_game_paused() or instance_api.is_dialogue_active():
+        # Keep ticking so the pause menu's / dialog box's own script still
+        # gets its update(dt) call (menu navigation, dialogue advance) —
+        # gui_only skips world physics, enemy/object scripts, and animation,
+        # so gameplay stays frozen.
         if _renderer and _scene:
             _renderer.tick(_scene, dt, _engine, gui_only=True)
         return
@@ -771,6 +775,13 @@ def update(dt: float) -> None:
     instance_api.set_player_gears(game_state.gears)
     if _renderer and _scene:
         _renderer.tick(_scene, dt, _engine)
+
+    # Open the pause menu on a fresh Enter press — deferred until after the
+    # tick() above so a robot in interact range gets first refusal on the
+    # same press (see the comment where pause_pressed is computed).
+    if pause_pressed and not instance_api.is_dialogue_active():
+        instance_api.set_game_paused(True)
+        _set_pause_gui_visible(True)
 
 
 def draw(engine) -> None:

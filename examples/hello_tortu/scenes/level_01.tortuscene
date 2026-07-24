@@ -4803,7 +4803,10 @@
       "id": "robot1",
       "links": [
         "diag_robo1"
-      ]
+      ],
+      "custom_var_overrides": {
+        "dialogue": "dialogues/robot1_lvl1.json"
+      }
     },
     {
       "object": "assets/objects/robot.tortuobject",

@@ -45,6 +45,11 @@ def bind_scene(scene: Scene, project_root: Path | None = None) -> None:
         localization.load(project_root)
 
 
+def project_root() -> Path | None:
+    """The current project (or cart) root — e.g. to resolve a dialogues/*.json path."""
+    return _project_root
+
+
 def set_language(code: str) -> None:
     """Switch the active language (must be one of available_languages())."""
     localization.set_language(code)
@@ -310,6 +315,36 @@ def set_game_paused(paused: bool) -> None:
 
 def is_game_paused() -> bool:
     return _game_paused
+
+
+_dialogue_active: bool = False
+_dialogue_request: str = ""
+
+
+def request_dialogue(path: str) -> None:
+    """Ask the dialog GUI layer's script to start showing `path` (a dialogues/*.json
+    asset, project-relative). No-op if a dialogue is already active."""
+    global _dialogue_request
+    if not _dialogue_active:
+        _dialogue_request = path
+
+
+def take_dialogue_request() -> str:
+    """Consume and clear the pending dialogue request, if any — called by the
+    dialog GUI layer's own script each frame it isn't already showing one."""
+    global _dialogue_request
+    path, _dialogue_request = _dialogue_request, ""
+    return path
+
+
+def set_dialogue_active(active: bool) -> None:
+    """The dialog GUI layer's script calls this once it starts/finishes showing a dialogue."""
+    global _dialogue_active
+    _dialogue_active = active
+
+
+def is_dialogue_active() -> bool:
+    return _dialogue_active
 
 
 def _find(instance_id: str):
