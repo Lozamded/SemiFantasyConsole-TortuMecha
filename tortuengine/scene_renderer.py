@@ -40,8 +40,21 @@ from tortuengine.pip_bar import PipBar, load_pip_bar
 from tortuengine.progress_bar import ProgressBar, load_progress_bar
 from tortuengine.scene import EMPTY_TILE, Scene, SceneObject, tile_size_for_tile_layer
 from tortuengine.sprite import Sprite, load_sprite
-from tortuengine.sprite_font import TortuSpriteFont, load_sprite_font, render_sprite_text_line
-from tortuengine.text_font import TortuFont, load_tortu_font, render_text_line
+from tortuengine.sprite_font import (
+    TortuSpriteFont,
+    load_sprite_font,
+    measure_sprite_text_width,
+    render_sprite_text_block,
+    render_sprite_text_line,
+)
+from tortuengine.text_font import (
+    TortuFont,
+    load_tortu_font,
+    measure_text_width,
+    render_text_block,
+    render_text_line,
+)
+from tortuengine.text_wrap import autofit_scale, wrap_text
 from tortuengine.tileset import Tileset, load_tileset
 
 MAP_BG = (30, 30, 40)
@@ -687,41 +700,91 @@ class SceneRenderer:
         # below naturally changes when the active language changes, so a
         # language switch invalidates stale-language bitmaps for free.
         text = localization.resolve(label.text)
-        cache_key = (label.font, text, label.color_index, round(label.scale, 3))
+        cache_key = (
+            label.font, text, label.color_index, round(label.scale, 3),
+            label.wrap_width, label.justify, label.wrap_height, round(label.min_scale, 3),
+        )
         cached = self._gui_label_cache.get(cache_key)
         if cached is not None:
             return cached
-        surface = self._render_gui_label(label, text)
+        surface, effective_scale = self._render_gui_label(label, text)
         if surface is None:
             return None
-        if label.scale != 1.0:
-            width = max(1, round(surface.get_width() * label.scale))
-            height = max(1, round(surface.get_height() * label.scale))
+        if effective_scale != 1.0:
+            width = max(1, round(surface.get_width() * effective_scale))
+            height = max(1, round(surface.get_height() * effective_scale))
             surface = pygame.transform.scale(surface, (width, height))
+        if label.wrap_height > 0 and surface.get_height() > label.wrap_height:
+            crop = pygame.Rect(0, 0, surface.get_width(), label.wrap_height)
+            surface = surface.subsurface(crop).copy()
         self._gui_label_cache[cache_key] = surface
         return surface
 
-    def _render_gui_label(self, label: GuiTextLabel, text: str) -> pygame.Surface | None:
+    def _render_gui_label(
+        self, label: GuiTextLabel, text: str
+    ) -> tuple[pygame.Surface | None, float]:
         # Text size is applied by scaling this baked bitmap (see
         # _gui_label_surface), never by re-rasterizing the source TTF at a
         # different point size — that stays a one-time cost paid in the font
-        # editor, not something the renderer redoes at runtime.
+        # editor, not something the renderer redoes at runtime. The returned
+        # scale is normally label.scale, except when both wrap_width and
+        # wrap_height are set — then it's the auto-fit search's result (see
+        # tortuengine.text_wrap.autofit_scale), which re-wraps at each
+        # candidate scale since a smaller scale fits more font-space pixels
+        # (and therefore more words) into the same on-screen box width.
+        autofit = label.wrap_width > 0 and label.wrap_height > 0
         if label.font.endswith(".tortuspritefont"):
             sprite_font = self._sprite_font(label.font)
             if sprite_font is None:
-                return None
+                return None, label.scale
             colors = self._palette(sprite_font.palette)
             if colors is None:
-                return None
-            return render_sprite_text_line(sprite_font, text, colors)
+                return None, label.scale
+            measure = lambda char, f=sprite_font: measure_sprite_text_width(f, char)  # noqa: E731
+            if autofit:
+                scale, lines = autofit_scale(
+                    text, label.wrap_width, label.wrap_height, sprite_font.line_height, measure,
+                    min_scale=label.min_scale, max_scale=label.scale,
+                )
+                box_width = max(1, round(label.wrap_width / scale))
+                surface = render_sprite_text_block(
+                    sprite_font, lines, colors, justify=label.justify, box_width=box_width
+                )
+                return surface, scale
+            if label.wrap_width > 0:
+                lines = wrap_text(text, label.wrap_width, measure)
+                surface = render_sprite_text_block(
+                    sprite_font, lines, colors, justify=label.justify, box_width=label.wrap_width
+                )
+                return surface, label.scale
+            return render_sprite_text_line(sprite_font, text, colors), label.scale
         text_font = self._text_font(label.font)
         if text_font is None:
-            return None
+            return None, label.scale
         colors = self._palette(text_font.palette)
         if colors is None:
-            return None
+            return None, label.scale
         fore_index = label.color_index if label.color_index >= 0 else None
-        return render_text_line(text_font, text, colors, fore_index=fore_index)
+        measure = lambda char, f=text_font: measure_text_width(f, char)  # noqa: E731
+        if autofit:
+            scale, lines = autofit_scale(
+                text, label.wrap_width, label.wrap_height, text_font.line_height, measure,
+                min_scale=label.min_scale, max_scale=label.scale,
+            )
+            box_width = max(1, round(label.wrap_width / scale))
+            surface = render_text_block(
+                text_font, lines, colors, fore_index=fore_index,
+                justify=label.justify, box_width=box_width,
+            )
+            return surface, scale
+        if label.wrap_width > 0:
+            lines = wrap_text(text, label.wrap_width, measure)
+            surface = render_text_block(
+                text_font, lines, colors, fore_index=fore_index,
+                justify=label.justify, box_width=label.wrap_width,
+            )
+            return surface, label.scale
+        return render_text_line(text_font, text, colors, fore_index=fore_index), label.scale
 
     def _draw_gui_layer(
         self, target: pygame.Surface, gui_layer: GuiLayer, *, ox: int = 0, oy: int = 0

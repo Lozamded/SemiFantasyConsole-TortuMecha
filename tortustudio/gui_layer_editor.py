@@ -57,8 +57,21 @@ from tortuengine.pip_bar import PipBar, load_pip_bar
 from tortuengine.progress_bar import ProgressBar, load_progress_bar
 from tortuengine.project import load_project
 from tortuengine.sprite import Sprite, load_sprite
-from tortuengine.sprite_font import TortuSpriteFont, load_sprite_font, render_sprite_text_line
-from tortuengine.text_font import TortuFont, load_tortu_font, render_text_line
+from tortuengine.sprite_font import (
+    TortuSpriteFont,
+    load_sprite_font,
+    measure_sprite_text_width,
+    render_sprite_text_block,
+    render_sprite_text_line,
+)
+from tortuengine.text_font import (
+    TortuFont,
+    load_tortu_font,
+    measure_text_width,
+    render_text_block,
+    render_text_line,
+)
+from tortuengine.text_wrap import autofit_scale, wrap_text
 from tortuengine.tileset import Tileset, load_tileset
 from tortustudio.collapsible import CollapsibleSection
 from tortustudio.object_strip import ObjectStripCanvas
@@ -452,6 +465,8 @@ class GuiLayerCanvas(QWidget):
     def _label_surface(self, label: GuiTextLabel) -> pygame.Surface | None:
         if not label.text or not label.font:
             return None
+        autofit = label.wrap_width > 0 and label.wrap_height > 0
+        effective_scale = label.scale
         if label.font.endswith(".tortuspritefont"):
             font = self._get_sprite_font(label.font)
             if font is None:
@@ -459,7 +474,23 @@ class GuiLayerCanvas(QWidget):
             colors = self._font_palette(font.palette)
             if colors is None:
                 return None
-            surface = render_sprite_text_line(font, label.text, colors)
+            measure = lambda char, f=font: measure_sprite_text_width(f, char)  # noqa: E731
+            if autofit:
+                effective_scale, lines = autofit_scale(
+                    label.text, label.wrap_width, label.wrap_height, font.line_height, measure,
+                    min_scale=label.min_scale, max_scale=label.scale,
+                )
+                box_width = max(1, round(label.wrap_width / effective_scale))
+                surface = render_sprite_text_block(
+                    font, lines, colors, justify=label.justify, box_width=box_width
+                )
+            elif label.wrap_width > 0:
+                lines = wrap_text(label.text, label.wrap_width, measure)
+                surface = render_sprite_text_block(
+                    font, lines, colors, justify=label.justify, box_width=label.wrap_width
+                )
+            else:
+                surface = render_sprite_text_line(font, label.text, colors)
         else:
             font = self._get_text_font(label.font)
             if font is None:
@@ -468,11 +499,32 @@ class GuiLayerCanvas(QWidget):
             if colors is None:
                 return None
             fore_index = label.color_index if label.color_index >= 0 else None
-            surface = render_text_line(font, label.text, colors, fore_index=fore_index)
-        if label.scale != 1.0:
-            width = max(1, round(surface.get_width() * label.scale))
-            height = max(1, round(surface.get_height() * label.scale))
+            measure = lambda char, f=font: measure_text_width(f, char)  # noqa: E731
+            if autofit:
+                effective_scale, lines = autofit_scale(
+                    label.text, label.wrap_width, label.wrap_height, font.line_height, measure,
+                    min_scale=label.min_scale, max_scale=label.scale,
+                )
+                box_width = max(1, round(label.wrap_width / effective_scale))
+                surface = render_text_block(
+                    font, lines, colors, fore_index=fore_index,
+                    justify=label.justify, box_width=box_width,
+                )
+            elif label.wrap_width > 0:
+                lines = wrap_text(label.text, label.wrap_width, measure)
+                surface = render_text_block(
+                    font, lines, colors, fore_index=fore_index,
+                    justify=label.justify, box_width=label.wrap_width,
+                )
+            else:
+                surface = render_text_line(font, label.text, colors, fore_index=fore_index)
+        if effective_scale != 1.0:
+            width = max(1, round(surface.get_width() * effective_scale))
+            height = max(1, round(surface.get_height() * effective_scale))
             surface = pygame.transform.scale(surface, (width, height))
+        if label.wrap_height > 0 and surface.get_height() > label.wrap_height:
+            crop = pygame.Rect(0, 0, surface.get_width(), label.wrap_height)
+            surface = surface.subsurface(crop).copy()
         return surface
 
     def colors_for_text_font(self, font_path: str) -> list[tuple[int, int, int]] | None:
@@ -1177,6 +1229,46 @@ class _GuiTextLabelCard(QWidget):
             "How X anchors the text: Left = X is the left edge, Center = X is\n"
             "the horizontal center, Right = X is the right edge."
         )
+
+        self.wrap_check = QCheckBox("Limit text to a box width")
+        self.wrap_check.setToolTip(
+            "Word-wrap the text onto multiple lines instead of one long line."
+        )
+        self.wrap_width_spin = QSpinBox()
+        self.wrap_width_spin.setRange(1, 9999)
+        self.wrap_width_spin.setValue(SCREEN_WIDTH)
+        self.wrap_width_spin.setSuffix(" px")
+        self.wrap_width_spin.setToolTip("Line width limit, in pixels, before wrapping to the next line.")
+        self.justify_combo = QComboBox()
+        self.justify_combo.addItem("Left", "left")
+        self.justify_combo.addItem("Center", "center")
+        self.justify_combo.addItem("Right", "right")
+        self.justify_combo.addItem("Justify", "justify")
+        self.justify_combo.setToolTip(
+            "How each wrapped line is positioned within the box width.\n"
+            "Justify stretches inter-word spacing to fill the line (the last\n"
+            "line stays left-aligned, as in a normal paragraph)."
+        )
+
+        self.height_check = QCheckBox("Limit text to a box height")
+        self.height_check.setToolTip(
+            "Crop the rendered text to this height. Combined with the box width\n"
+            "limit above, this instead auto-shrinks the text scale (between Min\n"
+            "scale and Scale) so the wrapped text fits inside both limits."
+        )
+        self.height_spin = QSpinBox()
+        self.height_spin.setRange(1, 9999)
+        self.height_spin.setValue(SCREEN_HEIGHT)
+        self.height_spin.setSuffix(" px")
+        self.height_spin.setToolTip("Box height limit, in pixels.")
+        self.min_scale_spin = QDoubleSpinBox()
+        self.min_scale_spin.setRange(0.1, 10.0)
+        self.min_scale_spin.setSingleStep(0.1)
+        self.min_scale_spin.setValue(1.0)
+        self.min_scale_spin.setToolTip(
+            "Floor of the auto-fit scale search — only used when both the box\n"
+            "width and box height limits are checked. Scale (above) is the ceiling."
+        )
         self.visible_check = QCheckBox("Visible at play")
         self.visible_check.setChecked(True)
         self.visible_check.setToolTip("Whether this label is drawn when the scene runs")
@@ -1191,6 +1283,12 @@ class _GuiTextLabelCard(QWidget):
         form.addRow("Color:", self.color_combo)
         form.addRow("Scale:", self.scale_spin)
         form.addRow("Align:", self.align_combo)
+        form.addRow("", self.wrap_check)
+        form.addRow("Box width:", self.wrap_width_spin)
+        form.addRow("Justify:", self.justify_combo)
+        form.addRow("", self.height_check)
+        form.addRow("Box height:", self.height_spin)
+        form.addRow("Min scale:", self.min_scale_spin)
         form.addRow("Name/ID:", self.id_edit)
         form.addRow("X:", self.x_spin)
         form.addRow("Y:", self.y_spin)
@@ -1212,15 +1310,40 @@ class _GuiTextLabelCard(QWidget):
         self.color_combo.currentIndexChanged.connect(self._emit_changed)
         self.scale_spin.valueChanged.connect(self._emit_changed)
         self.align_combo.currentIndexChanged.connect(self._emit_changed)
+        self.wrap_check.toggled.connect(self._on_wrap_toggled)
+        self.wrap_width_spin.valueChanged.connect(self._emit_changed)
+        self.justify_combo.currentIndexChanged.connect(self._emit_changed)
+        self.height_check.toggled.connect(self._on_height_toggled)
+        self.height_spin.valueChanged.connect(self._emit_changed)
+        self.min_scale_spin.valueChanged.connect(self._emit_changed)
         self.id_edit.textChanged.connect(self._emit_changed)
         self.x_spin.valueChanged.connect(self._emit_changed)
         self.y_spin.valueChanged.connect(self._emit_changed)
         self.visible_check.toggled.connect(self._emit_changed)
         self.enabled_check.toggled.connect(self._emit_changed)
 
+        self.wrap_width_spin.setEnabled(False)
+        self.justify_combo.setEnabled(False)
+        self.height_spin.setEnabled(False)
+        self.min_scale_spin.setEnabled(False)
+
     def _on_toggle_clicked(self) -> None:
         self.set_expanded(self.toggle.isChecked())
         self.picked.emit()
+
+    def _update_autofit_enablement(self) -> None:
+        self.min_scale_spin.setEnabled(self.wrap_check.isChecked() and self.height_check.isChecked())
+
+    def _on_height_toggled(self, checked: bool) -> None:
+        self.height_spin.setEnabled(checked)
+        self._update_autofit_enablement()
+        self._emit_changed()
+
+    def _on_wrap_toggled(self, checked: bool) -> None:
+        self.wrap_width_spin.setEnabled(checked)
+        self.justify_combo.setEnabled(checked)
+        self._update_autofit_enablement()
+        self._emit_changed()
 
     def is_expanded(self) -> bool:
         return self.toggle.isChecked()
@@ -1254,6 +1377,8 @@ class _GuiTextLabelCard(QWidget):
     ) -> None:
         widgets = (
             self.text_edit, self.font_combo, self.color_combo, self.scale_spin, self.align_combo,
+            self.wrap_check, self.wrap_width_spin, self.justify_combo,
+            self.height_check, self.height_spin, self.min_scale_spin,
             self.id_edit, self.x_spin, self.y_spin, self.visible_check, self.enabled_check,
         )
         self._suspend = True
@@ -1284,6 +1409,19 @@ class _GuiTextLabelCard(QWidget):
         found_align = self.align_combo.findData(label.align)
         self.align_combo.setCurrentIndex(found_align if found_align >= 0 else 0)
 
+        self.wrap_check.setChecked(label.wrap_width > 0)
+        self.wrap_width_spin.setValue(label.wrap_width if label.wrap_width > 0 else SCREEN_WIDTH)
+        self.wrap_width_spin.setEnabled(label.wrap_width > 0)
+        found_justify = self.justify_combo.findData(label.justify)
+        self.justify_combo.setCurrentIndex(found_justify if found_justify >= 0 else 0)
+        self.justify_combo.setEnabled(label.wrap_width > 0)
+
+        self.height_check.setChecked(label.wrap_height > 0)
+        self.height_spin.setValue(label.wrap_height if label.wrap_height > 0 else SCREEN_HEIGHT)
+        self.height_spin.setEnabled(label.wrap_height > 0)
+        self.min_scale_spin.setValue(label.min_scale)
+        self._update_autofit_enablement()
+
         if self.id_edit.text() != label.id:
             self.id_edit.setText(label.id)
         self.x_spin.setValue(label.x)
@@ -1304,6 +1442,10 @@ class _GuiTextLabelCard(QWidget):
             label.color_index = -1
         label.scale = self.scale_spin.value()
         label.align = self.align_combo.currentData() or "left"
+        label.wrap_width = self.wrap_width_spin.value() if self.wrap_check.isChecked() else 0
+        label.justify = self.justify_combo.currentData() or "left"
+        label.wrap_height = self.height_spin.value() if self.height_check.isChecked() else 0
+        label.min_scale = self.min_scale_spin.value()
         label.id = self.id_edit.text().strip()
         label.x = self.x_spin.value()
         label.y = self.y_spin.value()

@@ -108,6 +108,25 @@ class GuiTextLabel:
     # historical default), "center" (x is the horizontal center), or "right"
     # (x is the right edge). y always anchors the top edge.
     align: str = "left"
+    # Box-limit text to this pixel width, word-wrapping onto extra lines. 0
+    # disables wrapping (the historical single-line behavior) — this is the
+    # "limit text inside a box" checkbox in the GUI layer editor.
+    wrap_width: int = 0
+    # Horizontal justification of each wrapped line within wrap_width: "left",
+    # "center", "right", or "justify" (stretches inter-word gaps to fill the
+    # box; the last line stays left-aligned). Only meaningful when
+    # wrap_width > 0 — unwrapped labels use `align` instead.
+    justify: str = "left"
+    # Box-limit text to this pixel height. 0 disables the limit. Alone (no
+    # wrap_width), it just crops the rendered text to this height. Combined
+    # with wrap_width > 0, it instead switches on auto-fit: the renderer picks
+    # the largest scale in [min_scale, scale] that word-wraps the text into
+    # wrap_width without the wrapped block exceeding wrap_height, only
+    # cropping as a last resort if even min_scale doesn't fit.
+    wrap_height: int = 0
+    # Floor of the auto-fit scale search — see wrap_height. Unused unless
+    # both wrap_width and wrap_height are set; `scale` is the search ceiling.
+    min_scale: float = 1.0
     visible: bool = True
     # Off at scene start: not drawn.
     enabled: bool = True
@@ -115,7 +134,8 @@ class GuiTextLabel:
     def copy(self) -> GuiTextLabel:
         return GuiTextLabel(
             self.text, self.x, self.y, self.id, self.font, self.color_index,
-            self.scale, self.align, self.visible, self.enabled,
+            self.scale, self.align, self.wrap_width, self.justify,
+            self.wrap_height, self.min_scale, self.visible, self.enabled,
         )
 
     def draw_x(self, width: int) -> int:
@@ -465,6 +485,10 @@ def load_gui_layer(path: Path, *, project_root: Path | None = None) -> GuiLayer:
             int(raw.get("color_index", -1)),
             float(raw.get("scale", 1.0)),
             str(raw.get("align", "left")),
+            int(raw.get("wrap_width", 0)),
+            str(raw.get("justify", "left")),
+            int(raw.get("wrap_height", 0)),
+            float(raw.get("min_scale", 1.0)),
             bool(raw.get("visible", True)),
             bool(raw.get("enabled", True)),
         )
@@ -542,6 +566,10 @@ def save_gui_layer(gui_layer: GuiLayer, path: Path) -> None:
                 **({"color_index": label.color_index} if label.color_index >= 0 else {}),
                 **({"scale": label.scale} if label.scale != 1.0 else {}),
                 **({"align": label.align} if label.align != "left" else {}),
+                **({"wrap_width": label.wrap_width} if label.wrap_width else {}),
+                **({"justify": label.justify} if label.justify != "left" else {}),
+                **({"wrap_height": label.wrap_height} if label.wrap_height else {}),
+                **({"min_scale": label.min_scale} if label.min_scale != 1.0 else {}),
                 **({"visible": False} if not label.visible else {}),
                 **({"enabled": False} if not label.enabled else {}),
             }

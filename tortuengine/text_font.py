@@ -279,6 +279,47 @@ def save_tortu_font(tortu_font: TortuFont, path: Path) -> None:
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
+def _char_advance(tortu_font: TortuFont, char: str) -> int:
+    glyph = tortu_font.glyphs.get(ord(char))
+    if glyph:
+        return glyph.advance
+    return max(1, tortu_font.size // 2)
+
+
+def measure_text_width(tortu_font: TortuFont, text: str) -> int:
+    return sum(_char_advance(tortu_font, char) for char in text)
+
+
+def _blit_glyphs(
+    surface: pygame.Surface,
+    tortu_font: TortuFont,
+    text: str,
+    palette: list[tuple[int, int, int]],
+    cursor_x: int,
+    y: int,
+    fore_index: int | None,
+) -> int:
+    """Draw `text` onto `surface` starting at (cursor_x, y); returns the ending cursor_x."""
+    for char in text:
+        glyph = tortu_font.glyphs.get(ord(char))
+        if glyph is None:
+            cursor_x += max(1, tortu_font.size // 2)
+            continue
+        for gy in range(glyph.height):
+            for gx in range(glyph.width):
+                index = glyph.pixels[gy * glyph.width + gx]
+                if index == TRANSPARENT_INDEX:
+                    continue
+                if fore_index is not None:
+                    index = fore_index
+                dst_x = cursor_x + gx
+                dst_y = y + gy
+                if 0 <= dst_x < surface.get_width() and 0 <= dst_y < surface.get_height():
+                    surface.set_at((dst_x, dst_y), (*palette[index], 255))
+        cursor_x += glyph.advance
+    return cursor_x
+
+
 def render_text_line(
     tortu_font: TortuFont,
     text: str,
@@ -290,35 +331,63 @@ def render_text_line(
     if not text:
         return pygame.Surface((1, tortu_font.line_height), pygame.SRCALPHA)
 
-    width = 0
-    max_glyph_h = 0
-    for char in text:
-        glyph = tortu_font.glyphs.get(ord(char))
-        if glyph:
-            width += glyph.advance
-            max_glyph_h = max(max_glyph_h, glyph.height)
-        else:
-            width += tortu_font.size // 2
-
+    width = measure_text_width(tortu_font, text)
+    max_glyph_h = max(
+        (tortu_font.glyphs[ord(char)].height for char in text if ord(char) in tortu_font.glyphs),
+        default=0,
+    )
     height = max(tortu_font.line_height, max_glyph_h)
     surface = pygame.Surface((max(1, width), height), pygame.SRCALPHA)
-    cursor_x = 0
-    for char in text:
-        glyph = tortu_font.glyphs.get(ord(char))
-        if glyph is None:
-            cursor_x += max(1, tortu_font.size // 2)
+    _blit_glyphs(surface, tortu_font, text, palette, 0, 0, fore_index)
+    return surface
+
+
+def render_text_block(
+    tortu_font: TortuFont,
+    lines: list[str],
+    palette: list[tuple[int, int, int]],
+    *,
+    fore_index: int | None = None,
+    justify: str = "left",
+    box_width: int | None = None,
+) -> pygame.Surface:
+    """Lay out pre-wrapped `lines` stacked at the font's line height.
+
+    `justify` positions each line horizontally within `box_width` (falls back
+    to the widest line's own width): "left", "center", "right", or "justify"
+    (stretches inter-word gaps to fill the box — the last line is left-aligned,
+    matching conventional paragraph justification).
+    """
+    if not lines:
+        return pygame.Surface((1, tortu_font.line_height), pygame.SRCALPHA)
+
+    line_widths = [measure_text_width(tortu_font, line) for line in lines]
+    width = box_width if box_width and box_width > 0 else max((*line_widths, 1))
+    height = tortu_font.line_height * len(lines)
+    surface = pygame.Surface((max(1, width), max(1, height)), pygame.SRCALPHA)
+
+    last_index = len(lines) - 1
+    for i, line in enumerate(lines):
+        y = i * tortu_font.line_height
+        words = line.split(" ") if line else [""]
+        if justify == "justify" and i != last_index and len(words) > 1:
+            word_widths = [measure_text_width(tortu_font, word) for word in words]
+            gaps = len(words) - 1
+            extra_total = max(0, width - sum(word_widths))
+            cursor_x = 0
+            for wi, word in enumerate(words):
+                cursor_x = _blit_glyphs(surface, tortu_font, word, palette, cursor_x, y, fore_index)
+                if wi < gaps:
+                    gap = extra_total // gaps + (1 if wi < extra_total % gaps else 0)
+                    cursor_x += gap
             continue
-        for y in range(glyph.height):
-            for x in range(glyph.width):
-                index = glyph.pixels[y * glyph.width + x]
-                if index == TRANSPARENT_INDEX:
-                    continue
-                if fore_index is not None:
-                    index = fore_index
-                dst_x = cursor_x + x
-                dst_y = y
-                if 0 <= dst_x < surface.get_width() and 0 <= dst_y < surface.get_height():
-                    rgb = palette[index]
-                    surface.set_at((dst_x, dst_y), (*rgb, 255))
-        cursor_x += glyph.advance
+
+        line_width = line_widths[i]
+        if justify == "center":
+            start_x = max(0, (width - line_width) // 2)
+        elif justify == "right":
+            start_x = max(0, width - line_width)
+        else:
+            start_x = 0
+        _blit_glyphs(surface, tortu_font, line, palette, start_x, y, fore_index)
     return surface

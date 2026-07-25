@@ -3,7 +3,6 @@
   "height": 198,
   "palette": "default",
   "tile_layer_visible": true,
-  "script": "scripts/dialoguebox.py",
   "objects": [
     {
       "object": "assets/objects/dialoguebox.tortuobject",
@@ -14,18 +13,23 @@
   ],
   "text_labels": [
     {
-      "id": "dialog_speaker",
-      "text": "",
+      "text": "Name",
       "x": 14,
       "y": 149,
+      "id": "dialog_speaker",
       "font": "assets/fonts/dialog.tortufont"
     },
     {
-      "id": "dialog_text",
-      "text": "",
+      "text": "Example dialogue",
       "x": 14,
       "y": 163,
-      "font": "assets/fonts/dialog.tortufont"
+      "id": "dialog_text",
+      "font": "assets/fonts/dialog.tortufont",
+      "wrap_width": 239,
+      "justify": "justify"
     }
-  ]
+  ],
+  "tiled_rects": [],
+  "repeat_sprites": [],
+  "script": "scripts/dialoguebox.py"
 }
