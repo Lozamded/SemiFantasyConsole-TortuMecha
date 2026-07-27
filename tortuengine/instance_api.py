@@ -347,6 +347,26 @@ def is_dialogue_active() -> bool:
     return _dialogue_active
 
 
+_object_hop_request_id: str = ""
+
+
+def request_object_hop(instance_id: str) -> None:
+    """Ask `instance_id`'s own script to play a small cosmetic hop next update —
+    e.g. a dialogue `end_action` reacting to a player choice (see
+    dialogue_vars.action_Do_DR2Action)."""
+    global _object_hop_request_id
+    _object_hop_request_id = instance_id
+
+
+def take_object_hop_request(instance_id: str) -> bool:
+    """True once for the `instance_id` a hop was requested for; consumes it."""
+    global _object_hop_request_id
+    if _object_hop_request_id and _object_hop_request_id == instance_id:
+        _object_hop_request_id = ""
+        return True
+    return False
+
+
 def _find(instance_id: str):
     if not _scene or not instance_id:
         return None

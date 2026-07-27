@@ -1,0 +1,64 @@
+{
+  "lines": [
+    {
+      "speaker": "Robot2",
+      "text": "[<[r2_d1]>]"
+    },
+    {
+      "speaker": "Robot1",
+      "text": "[<[r1_2_d1]>]"
+    },
+    {
+      "speaker": "Robot2",
+      "text": "[<[r2_d2]>]"
+    },
+    {
+      "speaker": "mechaturtle",
+      "text": "[<[mt_d1]>]",
+      "options": [
+        {
+          "text": "[<[mt_d1_o1]>]",
+          "next_dialogue": "dialogues/robot1_lvl1_2.json"
+        },
+        {
+          "text": "[<[mt_d1_o2]>]"
+        }
+      ]
+    },
+    {
+      "speaker": "Robot2",
+      "text": "[<[r2_d3]>]"
+    },
+    {
+      "speaker": "Robot2",
+      "text": "[<[r2_d4]>]"
+    },
+    {
+      "speaker": "mechaturtle",
+      "text": "",
+      "options": [
+        {
+          "text": "[<[mt_d2_o1]>]",
+          "set_var": "dialog_r2_action",
+          "value": "jump"
+        },
+        {
+          "text": "[<[mt_d2_o2]>]",
+          "set_var": "dialog_r2_action",
+          "value": "nothing"
+        }
+      ]
+    },
+    {
+      "speaker": "Robot2",
+      "text": "[<[r2_d5]>]",
+      "end_action": "action_Do_DR2Action",
+      "action_values": [
+        {
+          "value": "dialog_r2_action",
+          "type": "variable"
+        }
+      ]
+    }
+  ]
+}

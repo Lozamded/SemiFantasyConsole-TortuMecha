@@ -12,6 +12,22 @@ script builds — may embed a placeholder shaped `[<[key]>]`; `resolve()`
 substitutes it against the currently active language. A missing CSV, key,
 or language cell just falls back to leaving the raw key visible, so a bad
 reference never crashes the game.
+
+A CSV cell that needs a literal comma in it (a real comma is a column
+delimiter to `csv.reader`, so an unquoted one would split the row) can use
+`[symbol<[comma]>]` instead — `resolve()` expands it back to "," after key
+substitution, so translators can write plain unquoted cells instead of
+juggling CSV quoting rules.
+
+A cell can also embed live game state via `[var<[name]>]`. `name` is looked
+up through whatever resolver a script registered with `bind_variables()`
+(e.g. dialoguebox.py points it at scripts/dialogue_vars.py's attributes) —
+a plain attribute is stringified as-is, while a zero-argument function is
+called for its return value, so a variable's *display* text can depend on
+another variable (e.g. mapping a raw "jump"/"nothing" flag to its own
+`[<[key]>]` for translation) without the caller needing to know that.
+`resolve()` loops key/var/symbol substitution to a fixed point so a variable
+that expands to a `[<[key]>]` placeholder still gets translated.
 """
 
 from __future__ import annotations
@@ -19,8 +35,33 @@ from __future__ import annotations
 import csv
 import re
 from pathlib import Path
+from typing import Callable
 
 _PLACEHOLDER_RE = re.compile(r"\[<\[([^\[\]]+)\]>\]")
+_VAR_RE = re.compile(r"\[var<\[([^\[\]]+)\]>\]")
+_SYMBOL_RE = re.compile(r"\[symbol<\[([^\[\]]+)\]>\]")
+_SYMBOLS = {"comma": ","}
+
+# Renderer-owned lookup for `[var<[name]>]` (see bind_variables), left unset
+# in contexts with no dialogue vars module (e.g. plain GUI-only screens).
+_variable_resolver: Callable[[str], object] | None = None
+
+
+def bind_variables(resolver: Callable[[str], object] | None) -> None:
+    """Register the callable `[var<[name]>]` looks `name` up through."""
+    global _variable_resolver
+    _variable_resolver = resolver
+
+
+def _resolve_var(name: str) -> str:
+    if _variable_resolver is None:
+        return f"[var<[{name}]>]"
+    value = _variable_resolver(name)
+    if callable(value):
+        value = value()
+    if value is None:
+        return f"[var<[{name}]>]"
+    return str(value)
 
 _table: dict[str, dict[str, str]] = {}
 _languages: list[str] = []
@@ -82,7 +123,22 @@ def translate(key: str) -> str:
 
 
 def resolve(text: str) -> str:
-    """Substitute every `[<[key]>]` placeholder in text; plain text passes through untouched."""
-    if "[<[" not in text:
-        return text
-    return _PLACEHOLDER_RE.sub(lambda m: translate(m.group(1)), text)
+    """Substitute every `[<[key]>]`, `[var<[name]>]`, and `[symbol<[name]>]`
+    placeholder in text.
+
+    Runs to a fixed point (bounded) since a placeholder can expand into
+    another one — a `[var<[...]>]` lookup commonly returns a `[<[key]>]` for
+    translation. Plain text with no placeholders passes through untouched.
+    """
+    for _ in range(5):
+        next_text = text
+        if "[<[" in next_text:
+            next_text = _PLACEHOLDER_RE.sub(lambda m: translate(m.group(1)), next_text)
+        if "[var<[" in next_text:
+            next_text = _VAR_RE.sub(lambda m: _resolve_var(m.group(1)), next_text)
+        if "[symbol<[" in next_text:
+            next_text = _SYMBOL_RE.sub(lambda m: _SYMBOLS.get(m.group(1), m.group(0)), next_text)
+        if next_text == text:
+            return next_text
+        text = next_text
+    return text

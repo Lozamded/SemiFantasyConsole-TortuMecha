@@ -9,7 +9,6 @@ other scripts (e.g. gameover.py) can read it directly.
 MAX_ENERGY = 3
 MAX_LIVES = 6
 GEARS_PER_LIFE = 100
-
 energy = MAX_ENERGY
 lives = MAX_LIVES
 gears = 0

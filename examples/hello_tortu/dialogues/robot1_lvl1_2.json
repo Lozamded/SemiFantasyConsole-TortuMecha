@@ -1,0 +1,42 @@
+{
+  "lines": [
+    {
+      "speaker": "Robot1",
+      "text": "[<[r1_3_d1]>]"
+    },
+    {
+      "speaker": "Robot1",
+      "text": "[<[r1_3_d2]>]"
+    },
+    {
+      "speaker": "mechaturtle",
+      "text": "",
+      "options": [
+        {
+          "text": "[<[mt_d3_o1]>]",
+          "set_var": "Fav_Cookie",
+          "value": "chips"
+        },
+        {
+          "text": "[<[mt_d3_o2]>]",
+          "set_var": "Fav_Cookie",
+          "value": "cream"
+        },
+        {
+          "text": "[<[mt_d3_o3]>]",
+          "set_var": "Fav_Cookie",
+          "value": "wafer"
+        },
+        {
+          "text": "[<[mt_d4_o4]>]",
+          "set_var": "Fav_Cookie",
+          "value": "unlike"
+        }
+      ]
+    },
+    {
+      "speaker": "Robot1",
+      "text": "[<[r1_3_d3]>]"
+    }
+  ]
+}
