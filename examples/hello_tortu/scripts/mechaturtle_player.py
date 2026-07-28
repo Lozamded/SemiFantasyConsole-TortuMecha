@@ -277,20 +277,39 @@ def _physics(dt: float, hb_l: int, hb_r: int, hb_t: int, hb_b: int) -> None:
     if _vx > 0:
         col = int((new_px + hb_r - 1) / TILE_SIZE)
         tile_left = col * TILE_SIZE
-        blocked = _scan_h(col, t_row, b_row, new_px + hb_r - 1, _py, hb_t, hb_b)
-        if not blocked and prev_right < tile_left:
-            blocked = _scan_h_one_way(col, t_row, b_row, ONE_WAY_LEFT)
-        if blocked:
-            new_px = tile_left - hb_r
+        tile_blocked = _scan_h(col, t_row, b_row, new_px + hb_r - 1, _py, hb_t, hb_b)
+        if not tile_blocked and prev_right < tile_left:
+            tile_blocked = _scan_h_one_way(col, t_row, b_row, ONE_WAY_LEFT)
+        # Solid objects stop at their own exact edge, not the enclosing tile's
+        # grid line — brick_block etc. aren't tile-aligned, so snapping to
+        # tile_left here would often still leave the player overlapping the
+        # object, re-triggering the same collision every frame (visible as
+        # the player vibrating in place, unable to move).
+        stop_x = tile_left - hb_r if tile_blocked else None
+        for ol, orr, ot, ob in instance_api.solid_object_rects(
+            prev_right, new_px + hb_r, _py + hb_t, _py + hb_b
+        ):
+            candidate = ol - hb_r
+            if stop_x is None or candidate < stop_x:
+                stop_x = candidate
+        if stop_x is not None:
+            new_px = stop_x
             _vx = 0.0
     elif _vx < 0:
         col = int((new_px + hb_l) / TILE_SIZE)
         tile_right = (col + 1) * TILE_SIZE
-        blocked = _scan_h(col, t_row, b_row, new_px + hb_l, _py, hb_t, hb_b)
-        if not blocked and prev_left >= tile_right:
-            blocked = _scan_h_one_way(col, t_row, b_row, ONE_WAY_RIGHT)
-        if blocked:
-            new_px = tile_right - hb_l
+        tile_blocked = _scan_h(col, t_row, b_row, new_px + hb_l, _py, hb_t, hb_b)
+        if not tile_blocked and prev_left >= tile_right:
+            tile_blocked = _scan_h_one_way(col, t_row, b_row, ONE_WAY_RIGHT)
+        stop_x = tile_right - hb_l if tile_blocked else None
+        for ol, orr, ot, ob in instance_api.solid_object_rects(
+            new_px + hb_l, prev_left, _py + hb_t, _py + hb_b
+        ):
+            candidate = orr - hb_l
+            if stop_x is None or candidate > stop_x:
+                stop_x = candidate
+        if stop_x is not None:
+            new_px = stop_x
             _vx = 0.0
 
     if _scene:
@@ -307,20 +326,36 @@ def _physics(dt: float, hb_l: int, hb_r: int, hb_t: int, hb_b: int) -> None:
     if _vy >= 0:
         row = int((new_py + hb_b) / TILE_SIZE)
         tile_top = row * TILE_SIZE
-        blocked = _scan_v(row, l_col, r_col, _px, new_py + hb_b, hb_l, hb_r)
-        if not blocked and prev_bottom <= tile_top:
-            blocked = _scan_v_one_way(row, l_col, r_col, ONE_WAY_UP)
-        if blocked:
-            new_py = tile_top - hb_b
+        tile_blocked = _scan_v(row, l_col, r_col, _px, new_py + hb_b, hb_l, hb_r)
+        if not tile_blocked and prev_bottom <= tile_top:
+            tile_blocked = _scan_v_one_way(row, l_col, r_col, ONE_WAY_UP)
+        # See the horizontal branch above — objects stop at their own exact
+        # edge, not the enclosing tile's grid line.
+        stop_y = tile_top - hb_b if tile_blocked else None
+        for ol, orr, ot, ob in instance_api.solid_object_rects(
+            _px + hb_l, _px + hb_r, prev_bottom, new_py + hb_b
+        ):
+            candidate = ot - hb_b
+            if stop_y is None or candidate < stop_y:
+                stop_y = candidate
+        if stop_y is not None:
+            new_py = stop_y
             _vy = 0.0
     else:
         row = max(0, int((new_py + hb_t) / TILE_SIZE))
         tile_bottom = (row + 1) * TILE_SIZE
-        blocked = _scan_v(row, l_col, r_col, _px, new_py + hb_t, hb_l, hb_r)
-        if not blocked and prev_top >= tile_bottom:
-            blocked = _scan_v_one_way(row, l_col, r_col, ONE_WAY_DOWN)
-        if blocked:
-            new_py = tile_bottom - hb_t
+        tile_blocked = _scan_v(row, l_col, r_col, _px, new_py + hb_t, hb_l, hb_r)
+        if not tile_blocked and prev_top >= tile_bottom:
+            tile_blocked = _scan_v_one_way(row, l_col, r_col, ONE_WAY_DOWN)
+        stop_y = tile_bottom - hb_t if tile_blocked else None
+        for ol, orr, ot, ob in instance_api.solid_object_rects(
+            _px + hb_l, _px + hb_r, new_py + hb_t, prev_top
+        ):
+            candidate = ob - hb_t
+            if stop_y is None or candidate > stop_y:
+                stop_y = candidate
+        if stop_y is not None:
+            new_py = stop_y
             _vy = 0.0
 
     _py = new_py
@@ -329,6 +364,7 @@ def _physics(dt: float, hb_l: int, hb_r: int, hb_t: int, hb_b: int) -> None:
     _on_ground = (
         _scan_v(gnd_row, l_col, r_col, _px, _py + hb_b, hb_l, hb_r)
         or _scan_v_one_way(gnd_row, l_col, r_col, ONE_WAY_UP)
+        or bool(instance_api.solid_object_rects(_px + hb_l, _px + hb_r, _py + hb_b, _py + hb_b + 1))
     )
 
 
@@ -398,6 +434,11 @@ def init(engine) -> None:
 
     scene_path = ROOT / "scenes/level_01.tortuscene"
     _scene = load_scene(scene_path, project_root=ROOT)
+    # Bind immediately (SceneRenderer.tick() would otherwise only do this at
+    # the end of the first update()) so instance_api.object_solid_at() sees
+    # the fresh scene during this same frame's _physics() call, not the
+    # previous scene's stale objects for one frame after a respawn.
+    instance_api.bind_scene(_scene, ROOT)
     player_instances = [o for o in _scene.objects if o.prefab == _PREFAB_PATH]
     _kill_plane_y = float(
         player_instances[0].custom_var_overrides.get(

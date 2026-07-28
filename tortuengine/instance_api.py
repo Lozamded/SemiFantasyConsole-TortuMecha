@@ -12,7 +12,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 from tortuengine import localization
+from tortuengine.object import load_object
 from tortuengine.scene import Scene
+from tortuengine.sprite import load_sprite
 from tortuengine.tileset import COLLISION_NONE, Tileset, load_tileset
 
 if TYPE_CHECKING:
@@ -39,6 +41,13 @@ _gui_layer_loader: Callable[[str], "GuiLayer | None"] | None = None
 def bind_scene(scene: Scene, project_root: Path | None = None) -> None:
     """Call once when a scene is loaded, before any instance script runs."""
     global _scene, _project_root
+    if scene is not _scene:
+        # A genuinely new Scene (fresh load_scene() call, e.g. on respawn) —
+        # drop per-instance runtime state keyed by instance id, since ids are
+        # reused across reloads but the old overrides no longer apply to the
+        # freshly-loaded objects. Same-scene re-binds (every frame) must not
+        # hit this, or e.g. set_object_solid() overrides would be wiped mid-tick.
+        _solid_overrides.clear()
     _scene = scene
     if project_root is not None:
         _project_root = project_root
@@ -482,3 +491,91 @@ def tile_solid_at(x: float, y: float) -> bool:
     if tile_index < 0:
         return False
     return tileset.get_collision(tile_index) != COLLISION_NONE
+
+
+# Per-prefab (obj.solid, collider bounds) — resolved once from each prefab's
+# own .tortuobject + default sprite, then reused for every placed instance.
+# Bounds are (left, right, top, bottom) offsets from the instance's origin.
+_prefab_solid_cache: dict[str, tuple[bool, tuple[int, int, int, int] | None]] = {}
+
+# Per-instance solidity override, set via set_object_solid() — e.g. a
+# brick_block instance clears this the moment it starts breaking, while
+# staying enabled so its own break-timer update() keeps running. Cleared on
+# a genuine scene reload (see bind_scene) since instance ids get reused.
+_solid_overrides: dict[str, bool] = {}
+
+
+def _prefab_solid_info(prefab: str) -> tuple[bool, tuple[int, int, int, int] | None]:
+    cached = _prefab_solid_cache.get(prefab)
+    if cached is not None:
+        return cached
+    info: tuple[bool, tuple[int, int, int, int] | None] = (False, None)
+    if _project_root is not None and prefab:
+        obj_path = (_project_root / prefab).resolve()
+        if obj_path.is_file():
+            obj = load_object(obj_path)
+            bounds = None
+            if obj.colliders:
+                sprite_path = (_project_root / obj.default_sprite).resolve()
+                if sprite_path.is_file():
+                    sprite = load_sprite(sprite_path)
+                    res = [c.resolved(sprite.pixel_width, sprite.pixel_height) for c in obj.colliders]
+                    ox, oy = obj.origin.x, obj.origin.y
+                    bounds = (
+                        min(x for x, y, w, h in res) - ox,
+                        max(x + w for x, y, w, h in res) - ox,
+                        min(y for x, y, w, h in res) - oy,
+                        max(y + h for x, y, w, h in res) - oy,
+                    )
+            info = (obj.solid, bounds)
+    _prefab_solid_cache[prefab] = info
+    return info
+
+
+def _iter_solid_rects(exclude_id: str = ""):
+    """Yield (left, right, top, bottom) world-space AABBs of every enabled scene
+    object instance that's currently solid — either its prefab's own `solid`
+    flag, or a per-instance override set via set_object_solid()."""
+    if _scene is None:
+        return
+    for inst in _scene.objects:
+        if not inst.enabled or (exclude_id and inst.id == exclude_id):
+            continue
+        declared_solid, bounds = _prefab_solid_info(inst.prefab)
+        if bounds is None or not _solid_overrides.get(inst.id, declared_solid):
+            continue
+        l, r, t, b = bounds
+        yield (inst.x + l, inst.x + r, inst.y + t, inst.y + b)
+
+
+def object_solid_at(x: float, y: float, exclude_id: str = "") -> bool:
+    """True if the world pixel (x, y) lands inside a currently-solid scene object.
+    Mirrors tile_solid_at() but for placed objects (e.g. a destructible
+    brick_block wall). Pass exclude_id (typically SELF_ID) to skip one instance."""
+    return any(l <= x < r and t <= y < b for l, r, t, b in _iter_solid_rects(exclude_id))
+
+
+def solid_object_rects(
+    l: float, r: float, t: float, b: float, exclude_id: str = ""
+) -> list[tuple[float, float, float, float]]:
+    """The exact (left, right, top, bottom) world-space AABBs of every currently-
+    solid scene object intersecting the given rect.
+
+    Unlike object_solid_at() (a single-pixel point query), this returns each
+    instance's real edges — needed so a swept collision resolver can snap a
+    moving body to the object's actual boundary instead of a tile-grid line,
+    which is wrong for objects that aren't tile-aligned (see mechaturtle_player
+    .py's _physics(), which combines this with its tile scan)."""
+    return [
+        (ol, orr, ot, ob) for ol, orr, ot, ob in _iter_solid_rects(exclude_id)
+        if ol < r and orr > l and ot < b and ob > t
+    ]
+
+
+def set_object_solid(instance_id: str, solid: bool | None) -> None:
+    """Override a scene instance's solidity for object_solid_at(), independent of
+    enabled/visible. Pass None to fall back to the prefab's own `solid` flag."""
+    if solid is None:
+        _solid_overrides.pop(instance_id, None)
+    else:
+        _solid_overrides[instance_id] = solid

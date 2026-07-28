@@ -23,7 +23,7 @@
       "sprite": "assets/sprites/robot_fall.tortusprite"
     }
   ],
-  "solid": true,
+  "solid": false,
   "script": "scripts/robot.py",
   "origin": {
     "x": 10,

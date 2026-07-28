@@ -803,8 +803,8 @@
         -1,
         -1,
         -1,
-        -1,
-        -1,
+        24,
+        24,
         -1,
         -1,
         -1,
@@ -819,7 +819,7 @@
         7,
         8,
         9,
-        26,
+        9,
         10,
         -1,
         -1,
@@ -829,8 +829,8 @@
         -1,
         -1,
         25,
-        26,
-        26,
+        24,
+        -1,
         -1,
         -1,
         7,
@@ -878,14 +878,14 @@
         -1,
         -1,
         -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
+        24,
+        24,
+        24,
+        24,
+        25,
+        25,
+        25,
+        25,
         -1,
         -1,
         -1,
@@ -905,7 +905,7 @@
         -1,
         -1,
         -1,
-        26,
+        -1,
         16,
         17,
         17,
@@ -953,14 +953,14 @@
         -1,
         -1,
         -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
+        24,
+        24,
+        24,
+        24,
+        28,
+        28,
+        28,
+        28,
         17,
         17,
         0,
@@ -1028,14 +1028,14 @@
         -1,
         -1,
         -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1
+        24,
+        24,
+        24,
+        24,
+        28,
+        28,
+        28,
+        28
       ]
     },
     {
@@ -4972,6 +4972,66 @@
       "x": 821,
       "y": 150,
       "id": "gear14"
+    },
+    {
+      "object": "assets/objects/brick_block.tortuobject",
+      "x": 137,
+      "y": 168,
+      "id": "brick_block1"
+    },
+    {
+      "object": "assets/objects/brick_block.tortuobject",
+      "x": 312,
+      "y": 184,
+      "id": "brick_block2"
+    },
+    {
+      "object": "assets/objects/brick_block.tortuobject",
+      "x": 312,
+      "y": 168,
+      "id": "brick_block3"
+    },
+    {
+      "object": "assets/objects/brick_block.tortuobject",
+      "x": 903,
+      "y": 144,
+      "id": "brick_block4"
+    },
+    {
+      "object": "assets/objects/brick_block.tortuobject",
+      "x": 920,
+      "y": 144,
+      "id": "brick_block5"
+    },
+    {
+      "object": "assets/objects/brick_block.tortuobject",
+      "x": 965,
+      "y": 170,
+      "id": "brick_block6"
+    },
+    {
+      "object": "assets/objects/brick_block.tortuobject",
+      "x": 999,
+      "y": 158,
+      "id": "brick_block7"
+    },
+    {
+      "object": "assets/objects/brick_block.tortuobject",
+      "x": 1032,
+      "y": 144,
+      "id": "brick_block8"
+    },
+    {
+      "object": "assets/objects/brick_block.tortuobject",
+      "x": 1036,
+      "y": 160,
+      "id": "brick_block9"
+    },
+    {
+      "object": "assets/objects/brick_block.tortuobject",
+      "x": 1031,
+      "y": 175,
+      "id": "brick_block10"
     }
   ],
   "gui_layers": [
