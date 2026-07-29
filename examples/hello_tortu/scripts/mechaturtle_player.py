@@ -35,6 +35,10 @@ ATTACK_COLLIDER_ID = "mechaturtle_attack_hitbox"
 SLIME_PREFAB = "assets/objects/red_slime.tortuobject"
 GEAR_PREFAB = "assets/objects/gear.tortuobject"
 SOUL_PREFAB = "assets/objects/mechaturtle_soul.tortuobject"
+FINISH_PREFAB = "assets/objects/FinishMonitor.tortuobject"
+FINISH_GUI_LAYER = "assets/gui/LevelFinished.tortuguilayer"
+FINISH_ANIM_TURNINGON = "turningon"
+FINISH_ANIM_ON = "on"
 
 SCREEN_W, SCREEN_H = 264, 198
 TILE_SIZE = 16
@@ -50,6 +54,7 @@ KNOCKBACK_SPEED = 140.0
 DEFEAT_POP_VEL = -220.0  # initial upward pop when the player is defeated (Mario-style)
 DEFEAT_OFFSCREEN_Y = SCREEN_H + 40  # falls this far below the top of the screen before respawn
 SOUL_RISE_SPEED = 60.0  # px/sec the soul continuously drifts upward once spawned
+FINISH_TOTAL_DUR = 6.0  # seconds from the finish trigger until finish_done fires
 # Life system: each enemy touch costs one energy pip (life_bar); losing the
 # last pip costs one life (lives_label) and refills energy. power_bar isn't
 # wired into the life system yet — reserved for a future shoot/attack meter.
@@ -63,6 +68,7 @@ CROUCH_HB_L = CROUCH_HB_R = CROUCH_HB_T = CROUCH_HB_B = 0
 ATK_HB_L = ATK_HB_R = ATK_HB_T = ATK_HB_B = 0
 SLIME_HB_L = SLIME_HB_R = SLIME_HB_T = SLIME_HB_B = 0
 GEAR_HB_L = GEAR_HB_R = GEAR_HB_T = GEAR_HB_B = 0
+FINISH_HB_L = FINISH_HB_R = FINISH_HB_T = FINISH_HB_B = 0
 
 _scene = None
 # Attack hitbox scene object — spawned once in init(), repositioned and
@@ -102,6 +108,19 @@ _soul_obj: SceneObject | None = None
 # defeat — resolved per scene in init() from the mechaturtle instance's
 # kill_plane_y custom var (see mechaturtle.tortuobject in TortuStudio).
 _kill_plane_y = 0.0
+
+# Level-finish sequence: set True the instant an attack swing lands on an
+# enabled FinishMonitor instance. From then on update() short-circuits into
+# an auto-walk-off-screen branch (ignores input, doesn't clamp to scene
+# bounds, camera stops following) until _finish_timer runs out.
+_level_finished = False
+_finish_timer = 0.0
+_finish_turnon_timer = 0.0  # counts down the monitor's own "turningon" animation
+_finish_monitor_inst: SceneObject | None = None
+_finish_turnon_dur = 0.0  # resolved in init() from monitor_turningon.tortusprite's own frame_count/fps
+# Set True once _finish_timer expires — main.py watches this to know when to
+# leave the level for the save scene, mirroring defeat_done above.
+finish_done = False
 
 _sfx_jump: pygame.mixer.Sound | None = None
 _sfx_shell: pygame.mixer.Sound | None = None
@@ -262,7 +281,9 @@ def _can_uncrouch() -> bool:
     return True
 
 
-def _physics(dt: float, hb_l: int, hb_r: int, hb_t: int, hb_b: int) -> None:
+def _physics(
+    dt: float, hb_l: int, hb_r: int, hb_t: int, hb_b: int, clamp_to_scene: bool = True
+) -> None:
     global _px, _py, _vx, _vy, _on_ground
 
     _vy = min(_vy + GRAVITY * dt, 400.0)
@@ -312,7 +333,7 @@ def _physics(dt: float, hb_l: int, hb_r: int, hb_t: int, hb_b: int) -> None:
             new_px = stop_x
             _vx = 0.0
 
-    if _scene:
+    if _scene and clamp_to_scene:
         new_px = max(float(-hb_l), min(new_px, float(_scene.width - hb_r)))
     _px = new_px
 
@@ -412,10 +433,13 @@ def init(engine) -> None:
     global ATK_HB_L, ATK_HB_R, ATK_HB_T, ATK_HB_B
     global SLIME_HB_L, SLIME_HB_R, SLIME_HB_T, SLIME_HB_B
     global GEAR_HB_L, GEAR_HB_R, GEAR_HB_T, GEAR_HB_B
+    global FINISH_HB_L, FINISH_HB_R, FINISH_HB_T, FINISH_HB_B
     global _sfx_jump, _sfx_shell, _sfx_attack, _sfx_coin, _is_camera_target
     global _engine, _attack_obj, _hurt_timer, _knockback_dir
     global _defeated, defeat_done, _soul_obj, _kill_plane_y
     global _prev_pause_held
+    global _level_finished, _finish_timer, _finish_turnon_timer
+    global _finish_monitor_inst, _finish_turnon_dur, finish_done
 
     _engine = engine
     _prev_pause_held = False
@@ -431,6 +455,8 @@ def init(engine) -> None:
     _crouching, _prev_down = False, False
     _hurt_timer, _knockback_dir = 0.0, 1
     _defeated, defeat_done, _soul_obj = False, False, None
+    _level_finished, _finish_timer, _finish_turnon_timer = False, 0.0, 0.0
+    _finish_monitor_inst, finish_done = None, False
 
     scene_path = ROOT / "scenes/level_01.tortuscene"
     _scene = load_scene(scene_path, project_root=ROOT)
@@ -518,6 +544,18 @@ def init(engine) -> None:
         gear_sprite.pixel_width, gear_sprite.pixel_height,
     )
 
+    # Finish-monitor hitbox, resolved the same way — an attack swing landing
+    # on this triggers the level-finish sequence (see the FinishMonitor
+    # check in update()).
+    finish_obj = load_object(ROOT / FINISH_PREFAB)
+    finish_sprite = load_sprite(ROOT / finish_obj.default_sprite)
+    FINISH_HB_L, FINISH_HB_R, FINISH_HB_T, FINISH_HB_B = _resolve_bounds(
+        finish_obj.colliders, finish_obj.origin.x, finish_obj.origin.y,
+        finish_sprite.pixel_width, finish_sprite.pixel_height,
+    )
+    turnon_sprite = load_sprite(ROOT / finish_obj.sprite_for(FINISH_ANIM_TURNINGON))
+    _finish_turnon_dur = turnon_sprite.frame_count / max(1, turnon_sprite.fps)
+
     _frames.clear()
     for anim in _ANIMS:
         sp = load_sprite(ROOT / f"assets/sprites/mechaturtle_{anim}.tortusprite")
@@ -559,6 +597,8 @@ def update(dt: float) -> None:
     global _hurt_timer, _knockback_dir
     global _defeated, defeat_done, _soul_obj
     global _prev_pause_held
+    global _level_finished, _finish_timer, _finish_turnon_timer, finish_done
+    global _finish_monitor_inst
 
     # Pausing is disabled during the defeat bounce — Enter is left free for
     # whatever comes next (respawn/game-over) instead of freezing mid-death.
@@ -613,6 +653,37 @@ def update(dt: float) -> None:
         # instantly, skipping the pop-up and the soul spawn entirely.
         if _vy >= 0 and _py > DEFEAT_OFFSCREEN_Y:
             defeat_done = True
+        return
+
+    if _level_finished:
+        _finish_timer -= dt
+        if _finish_turnon_timer > 0:
+            _finish_turnon_timer -= dt
+            if _finish_turnon_timer <= 0 and _finish_monitor_inst is not None:
+                _finish_monitor_inst.animation = FINISH_ANIM_ON
+
+        # Auto-walk off in whichever direction the player was already facing,
+        # ignoring input entirely. The camera is deliberately left un-updated
+        # (see below) so the character visibly walks past its frozen edge
+        # rather than being chased off-screen.
+        _vx = WALK_SPEED * _facing
+        _physics(dt, STAND_HB_L, STAND_HB_R, STAND_HB_T, STAND_HB_B, clamp_to_scene=False)
+
+        _state = auto.ANIM_WALK
+        fps = _ANIM_FPS.get(_state, 8)
+        n = len(_frames[_state][0]) if _state in _frames else 1
+        _anim_elapsed += dt
+        adv = int(_anim_elapsed * fps)
+        if adv:
+            _anim_frame = (_anim_frame + adv) % n
+            _anim_elapsed -= adv / fps
+
+        instance_api.set_player_position(_px, _py)
+        if _renderer and _scene:
+            _renderer.tick(_scene, dt, _engine)
+
+        if _finish_timer <= 0:
+            finish_done = True
         return
 
     keys = pygame.key.get_pressed()
@@ -771,6 +842,27 @@ def update(dt: float) -> None:
                 atk_x = _px + STAND_HB_L - ATK_HB_R
             atk_y = _py + (STAND_HB_T + STAND_HB_B) / 2 - (ATK_HB_T + ATK_HB_B) / 2
             _attack_obj.x, _attack_obj.y = atk_x, atk_y
+
+    # Level finish: an attack swing landing on an enabled FinishMonitor
+    # instance starts the finish sequence (see the _level_finished branch
+    # near the top of this function, which takes over from next frame on).
+    if attacking and _attack_obj is not None and _scene is not None:
+        atk_l, atk_r = _attack_obj.x + ATK_HB_L, _attack_obj.x + ATK_HB_R
+        atk_t, atk_b = _attack_obj.y + ATK_HB_T, _attack_obj.y + ATK_HB_B
+        for inst in _scene.objects:
+            if inst.prefab != FINISH_PREFAB or not inst.enabled:
+                continue
+            f_l, f_r = inst.x + FINISH_HB_L, inst.x + FINISH_HB_R
+            f_t, f_b = inst.y + FINISH_HB_T, inst.y + FINISH_HB_B
+            if atk_l < f_r and atk_r > f_l and atk_t < f_b and atk_b > f_t:
+                inst.animation = FINISH_ANIM_TURNINGON
+                _finish_monitor_inst = inst
+                _finish_turnon_timer = _finish_turnon_dur
+                _level_finished = True
+                _finish_timer = FINISH_TOTAL_DUR
+                _attack_obj.enabled = False
+                instance_api.set_gui_layer_visible(FINISH_GUI_LAYER, True)
+                break
 
     # Animation state
     new_state: str

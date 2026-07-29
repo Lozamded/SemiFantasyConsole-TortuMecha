@@ -10,6 +10,7 @@
       "x": 132,
       "y": 75,
       "font": "assets/fonts/KiwiSoda.tortufont",
+      "color_index": 34,
       "scale": 2.0,
       "align": "center",
       "wrap_width": 132,

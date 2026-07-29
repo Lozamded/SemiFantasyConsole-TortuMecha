@@ -6,12 +6,13 @@ from pathlib import Path
 from scripts import title as _title
 from scripts import gameover as _gameover
 from scripts import mechaturtle_player as _player
+from scripts import save_scene as _save_scene
 from scripts import game_state
 
 ROOT = Path(__file__).parent
 
 _engine = None
-_state = "title"  # "title" -> "level" -> "gameover" -> "title"
+_state = "title"  # "title" -> "level" -> ("save" | "gameover") -> "title"
 
 
 def _enter_title():
@@ -42,6 +43,13 @@ def _enter_gameover():
     _gameover.init(_engine)
 
 
+def _enter_save_scene():
+    global _state
+    _state = "save"
+    pygame.mixer.music.stop()
+    _save_scene.init(_engine)
+
+
 def init(engine):
     global _engine
     _engine = engine
@@ -60,6 +68,10 @@ def update(dt):
                 _enter_gameover()
             else:
                 _enter_level(new_game=False)
+        elif _player.finish_done:
+            _enter_save_scene()
+    elif _state == "save":
+        _save_scene.update(dt)
     else:
         _gameover.update(dt)
         if _gameover.start_pressed:
@@ -71,5 +83,7 @@ def draw(engine):
         _title.draw(engine)
     elif _state == "level":
         _player.draw(engine)
+    elif _state == "save":
+        _save_scene.draw(engine)
     else:
         _gameover.draw(engine)
