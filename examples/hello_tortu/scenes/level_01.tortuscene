@@ -5032,6 +5032,12 @@
       "x": 1031,
       "y": 175,
       "id": "brick_block10"
+    },
+    {
+      "object": "assets/objects/FinishMonitor.tortuobject",
+      "x": 1174,
+      "y": 159,
+      "id": "FinishMonitor1"
     }
   ],
   "gui_layers": [
@@ -5050,6 +5056,12 @@
       "name": "gui_layer_2",
       "gui_layer": "assets/gui/pause_menu.tortuguilayer",
       "z_index": 2,
+      "visible": false
+    },
+    {
+      "name": "gui_layer_3",
+      "gui_layer": "assets/gui/LevelFinished.tortuguilayer",
+      "z_index": 4,
       "visible": false
     }
   ]

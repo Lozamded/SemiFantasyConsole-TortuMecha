@@ -1,0 +1,33 @@
+{
+  "name": "FinishMonitor",
+  "default_animation": "off",
+  "animations": [
+    {
+      "name": "off",
+      "sprite": "assets/sprites/monitor.tortusprite"
+    },
+    {
+      "name": "turningon",
+      "sprite": "assets/sprites/monitor_turningon.tortusprite"
+    },
+    {
+      "name": "on",
+      "sprite": "assets/sprites/monitor_on.tortusprite"
+    }
+  ],
+  "solid": false,
+  "origin": {
+    "x": 16,
+    "y": 31
+  },
+  "colliders": [
+    {
+      "name": "main",
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0,
+      "active": true
+    }
+  ]
+}

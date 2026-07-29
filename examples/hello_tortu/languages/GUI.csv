@@ -7,3 +7,11 @@ option_2_language,Language:,Idioma:
 option_2_volSFX,Sfx Volume:,Volumen SFX:
 option_volMusic,music volume:,volumen de musica:
 option_back,back,atras
+lvl_finish,Level Finished,Nivel Superado
+save_game,Save the game,Guardar el juego
+file,file,archivo
+current_file_1, Save over file X[symbol<[comma]>] can be overwrited, Fuardar sobre archivo X[symbol<[comma]>] puede ser sobreescrito 
+continue,Continue,Continuar
+continue_no_save,Continue without Save,Continuar sin guardar
+saving,Saving...,Guardando...
+load_game,Load game,Cargar partida
