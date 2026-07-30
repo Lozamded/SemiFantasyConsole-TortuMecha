@@ -356,6 +356,25 @@ def is_dialogue_active() -> bool:
     return _dialogue_active
 
 
+_scene_transition_request: str = ""
+
+
+def request_scene_transition(scene_path: str) -> None:
+    """Ask the current top-level scene script to switch to `scene_path` (a
+    scenes/*.tortuscene path, project-relative) — e.g. a GUI layer script
+    like Save_hud.py asking save_scene.py to move on to the next level."""
+    global _scene_transition_request
+    _scene_transition_request = scene_path
+
+
+def take_scene_transition_request() -> str:
+    """Consume and clear the pending scene transition request, if any —
+    called by the top-level scene script each frame."""
+    global _scene_transition_request
+    scene_path, _scene_transition_request = _scene_transition_request, ""
+    return scene_path
+
+
 _object_hop_request_id: str = ""
 
 

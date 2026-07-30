@@ -1,0 +1,10 @@
+{
+  "slot_id": 1,
+  "game_id": "mechaturtle_d01",
+  "game name": "Mecha Turtle Demo",
+  "gamedata": {
+    "gears": 14,
+    "current_lvl": "level_02",
+    "faviorite_cokie": "not_decided"
+  }
+}

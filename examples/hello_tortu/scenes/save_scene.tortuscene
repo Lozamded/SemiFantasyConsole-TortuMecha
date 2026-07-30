@@ -842,6 +842,12 @@
     {
       "name": "gui_layer_0",
       "gui_layer": "assets/gui/Save_hud.tortuguilayer"
+    },
+    {
+      "name": "gui_layer_1",
+      "gui_layer": "assets/gui/Save_overwrite.tortuguilayer",
+      "z_index": 2,
+      "visible": false
     }
   ]
 }

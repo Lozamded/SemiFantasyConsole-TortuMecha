@@ -421,7 +421,7 @@ def _push_defeated_frame_state(dt: float) -> None:
 # Public init / update / draw
 # ---------------------------------------------------------------------------
 
-def init(engine) -> None:
+def init(engine, scene_path: str = "scenes/level_01.tortuscene") -> None:
     global _scene, _collision_tileset, _renderer, _frames
     global _px, _py, _vx, _vy, _facing, _on_ground
     global _state, _prev_state, _anim_frame, _anim_elapsed
@@ -458,8 +458,7 @@ def init(engine) -> None:
     _level_finished, _finish_timer, _finish_turnon_timer = False, 0.0, 0.0
     _finish_monitor_inst, finish_done = None, False
 
-    scene_path = ROOT / "scenes/level_01.tortuscene"
-    _scene = load_scene(scene_path, project_root=ROOT)
+    _scene = load_scene(ROOT / scene_path, project_root=ROOT)
     # Bind immediately (SceneRenderer.tick() would otherwise only do this at
     # the end of the first update()) so instance_api.object_solid_at() sees
     # the fresh scene during this same frame's _physics() call, not the

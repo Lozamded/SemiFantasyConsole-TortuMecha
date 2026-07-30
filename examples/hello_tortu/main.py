@@ -13,6 +13,7 @@ ROOT = Path(__file__).parent
 
 _engine = None
 _state = "title"  # "title" -> "level" -> ("save" | "gameover") -> "title"
+_current_scene_path = "scenes/level_01.tortuscene"
 
 
 def _enter_title():
@@ -22,14 +23,20 @@ def _enter_title():
     _title.init(_engine)
 
 
-def _enter_level(new_game: bool):
-    """new_game=True resets lives/energy/gears (title -> level); False keeps
-    them as-is, for a mid-run respawn after the defeat bounce."""
-    global _state
+def _enter_level(new_game: bool, scene_path: str | None = None):
+    """new_game=True resets lives/energy/gears and always starts at level_01
+    (title -> level); False keeps them as-is and defaults to whichever level
+    is already current — a mid-run respawn after the defeat bounce — unless
+    scene_path picks a new one (save_scene's Continue moving on to the next
+    level)."""
+    global _state, _current_scene_path
     _state = "level"
     if new_game:
         game_state.reset()
-    _player.init(_engine)
+        _current_scene_path = "scenes/level_01.tortuscene"
+    elif scene_path is not None:
+        _current_scene_path = scene_path
+    _player.init(_engine, _current_scene_path)
     if new_game:
         pygame.mixer.music.load(str(ROOT / "assets/audio/every Friday.ogg"))
         pygame.mixer.music.set_volume(0.5)
@@ -72,6 +79,8 @@ def update(dt):
             _enter_save_scene()
     elif _state == "save":
         _save_scene.update(dt)
+        if _save_scene.target_scene:
+            _enter_level(new_game=False, scene_path=_save_scene.target_scene)
     else:
         _gameover.update(dt)
         if _gameover.start_pressed:
