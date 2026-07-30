@@ -1,51 +1,50 @@
-"""Script for GUI layer Save_hud — the save-slot picker shown after a level
-finishes (see save_scene.tortuscene, main.py's "save" state).
+"""Script for GUI layer Load_hud — the save-slot picker shown from the
+title screen's Load Game item (see load_scene.tortuscene, main.py's "load"
+state).
 
-Runs as Save_hud.tortuguilayer's own instance script (an isolated module,
-see tortuengine/instance_scripts.py). Layout is 3 slot rows + a Continue
-row, moved between with Up/Down and select_arrow (same convention as
-pause_menu.py/dialoguebox.py). Enter on an empty slot saves immediately; on
-an occupied slot it opens the Save_overwrite.tortuguilayer popup for a
-Yes/No confirm, driven directly by this script via its explicit
-gui_layer_path — the same way mechaturtle_player.py drives the HUD from
-outside its own layer — rather than giving the popup its own script. Enter
-on Continue skips saving and asks save_scene.py to move on to level_02 via
-instance_api.request_scene_transition().
+Runs as Load_hud.tortuguilayer's own instance script (an isolated module,
+see tortuengine/instance_scripts.py). Load_hud.tortuguilayer is authored as
+a 3-panel wide canvas (pick a slot / load-or-erase actions / a "select
+console save" panel) but only panel 1 — the slot picker plus Back — is
+wired up here; the other two panels are future work (erase, "move
+console") and are simply never scrolled to. Enter on an occupied slot opens
+the Load_areyousure.tortuguilayer popup for a Yes/No confirm, driven
+directly by this script via its explicit gui_layer_path (same technique as
+Save_hud.py's Save_overwrite popup). Enter on an empty slot is a no-op —
+there's nothing to load. Yes resets game_state to fresh lives/energy,
+restores the slot's saved gears, and asks load_scene.py to move on to the
+saved current_lvl via instance_api.request_scene_transition(). Enter on
+Back returns to the title screen.
 """
 
 import pygame
 
-from tortuengine import instance_api, localization
-from scripts import save_system, save_vars
+from tortuengine import instance_api
+from scripts import game_state, save_system
 
-SAVE_OVERWRITE_PATH = "assets/gui/Save_overwrite.tortuguilayer"
-NEXT_LEVEL_ID = "level_02"
-NEXT_LEVEL_SCENE = "scenes/level_02.tortuscene"
+LOAD_AREYOUSURE_PATH = "assets/gui/Load_areyousure.tortuguilayer"
+TITLE_SCENE = "scenes/title.tortuscene"
 
 SLOT_LABELS = ("slot_label_1", "slot_label_2", "slot_label_3")
-CONTINUE_LABEL = "continue_label"
-MENU_ITEMS = SLOT_LABELS + (CONTINUE_LABEL,)
-SAVING_LABEL = "saving_label"
+BACK_LABEL = "back_label"
+MENU_ITEMS = SLOT_LABELS + (BACK_LABEL,)
 CURSOR = "select_arrow"
-# Matches select_arrow's placed (x, y) in Save_hud.tortuguilayer relative to
+# Matches select_arrow's placed (x, y) in Load_hud.tortuguilayer relative to
 # slot_label_1, the item it was authored pointing at.
-CURSOR_OFFSET = (-19, 8)
+CURSOR_OFFSET = (-25, 9)
 
 OVERWRITE_ITEMS = ("yes_label", "no_label")
-# Matches select_arrow's placed (x, y) in Save_overwrite.tortuguilayer
+# Matches select_arrow's placed (x, y) in Load_areyousure.tortuguilayer
 # relative to no_label — the popup was authored defaulting to "No".
 OVERWRITE_CURSOR_OFFSET = (-20, 7)
 
-# Same accent pause_menu.py/dialoguebox.py use to highlight a selection.
+# Same accent pause_menu.py/Save_hud.py use to highlight a selection.
 HIGHLIGHT_COLOR = 18
-SAVING_FLASH_DUR = 0.6
 
 _menu_index = 0
-_has_saved = False  # once true, the Continue label drops its "without Save" caveat
 _confirm_active = False
 _confirm_slot = 0
 _confirm_index = 1  # 0 = yes, 1 = no
-_saving_timer = 0.0
 _prev_up = False
 _prev_down = False
 _prev_left = False
@@ -55,14 +54,13 @@ _prev_enter = False
 
 def init(engine) -> None:
     global _prev_up, _prev_down, _prev_left, _prev_right, _prev_enter
-    localization.bind_variables(lambda name: getattr(save_vars, name, None))
     _refresh_slot_labels()
     _select_menu(0, 0)
-    instance_api.set_gui_layer_visible(SAVE_OVERWRITE_PATH, False)
-    # Whatever key just triggered the level finish (or a prior scene's
-    # confirm) may still be physically held on this same frame — seed the
-    # edge-detectors so it isn't also read as a menu move or confirm (see
-    # pause_menu.py's _reset_menu for the same idiom).
+    instance_api.set_gui_layer_visible(LOAD_AREYOUSURE_PATH, False)
+    # The Enter that picked "Load Game" on the title screen is still
+    # physically held on this same frame — seed the edge-detectors so it
+    # isn't also read as an immediate confirm on slot 1 (see pause_menu.py's
+    # _reset_menu for the same idiom).
     keys = pygame.key.get_pressed()
     _prev_up, _prev_down = keys[pygame.K_UP], keys[pygame.K_DOWN]
     _prev_left, _prev_right = keys[pygame.K_LEFT], keys[pygame.K_RIGHT]
@@ -99,11 +97,11 @@ def _select_menu(old_index: int, new_index: int) -> None:
 
 
 def _move_overwrite_cursor(label_id: str) -> None:
-    pos = instance_api.gui_text_label_position(SAVE_OVERWRITE_PATH, label_id)
+    pos = instance_api.gui_text_label_position(LOAD_AREYOUSURE_PATH, label_id)
     if pos is None:
         return
     instance_api.set_gui_object_position(
-        SAVE_OVERWRITE_PATH, CURSOR,
+        LOAD_AREYOUSURE_PATH, CURSOR,
         pos[0] + OVERWRITE_CURSOR_OFFSET[0], pos[1] + OVERWRITE_CURSOR_OFFSET[1],
     )
 
@@ -111,9 +109,9 @@ def _move_overwrite_cursor(label_id: str) -> None:
 def _select_overwrite(old_index: int, new_index: int) -> None:
     global _confirm_index
     _confirm_index = new_index
-    instance_api.set_gui_text_label_color(SAVE_OVERWRITE_PATH, OVERWRITE_ITEMS[old_index], -1)
+    instance_api.set_gui_text_label_color(LOAD_AREYOUSURE_PATH, OVERWRITE_ITEMS[old_index], -1)
     instance_api.set_gui_text_label_color(
-        SAVE_OVERWRITE_PATH, OVERWRITE_ITEMS[new_index], HIGHLIGHT_COLOR
+        LOAD_AREYOUSURE_PATH, OVERWRITE_ITEMS[new_index], HIGHLIGHT_COLOR
     )
     _move_overwrite_cursor(OVERWRITE_ITEMS[new_index])
 
@@ -122,36 +120,29 @@ def _start_confirm(slot_index: int) -> None:
     global _confirm_active, _confirm_slot
     _confirm_active = True
     _confirm_slot = slot_index
-    save_vars.current_slot = slot_index
-    instance_api.set_gui_layer_visible(SAVE_OVERWRITE_PATH, True)
+    instance_api.set_gui_layer_visible(LOAD_AREYOUSURE_PATH, True)
     _select_overwrite(_confirm_index, 1)  # default to "no"
 
 
 def _end_confirm() -> None:
     global _confirm_active
     _confirm_active = False
-    instance_api.set_gui_layer_visible(SAVE_OVERWRITE_PATH, False)
+    instance_api.set_gui_layer_visible(LOAD_AREYOUSURE_PATH, False)
 
 
-def _do_save(slot_index: int) -> None:
-    global _saving_timer, _has_saved
-    save_system.write_slot(slot_index, NEXT_LEVEL_ID)
-    _refresh_slot_labels()
-    instance_api.set_gui_text_label_visible(SELF_ID, SAVING_LABEL, True)
-    _saving_timer = SAVING_FLASH_DUR
-    if not _has_saved:
-        _has_saved = True
-        instance_api.set_gui_text_label_text(SELF_ID, CONTINUE_LABEL, "[<[continue]>]")
+def _do_load(slot_index: int) -> None:
+    data = save_system.read_slot(slot_index)
+    if data is None:
+        return
+    gamedata = data.get("gamedata", {})
+    game_state.reset()
+    game_state.gears = gamedata.get("gears", 0)
+    current_lvl = gamedata.get("current_lvl", "level_01")
+    instance_api.request_scene_transition(f"scenes/{current_lvl}.tortuscene")
 
 
 def update(dt: float) -> None:
-    global _prev_up, _prev_down, _prev_left, _prev_right, _prev_enter, _saving_timer
-
-    if _saving_timer > 0.0:
-        _saving_timer -= dt
-        if _saving_timer <= 0.0:
-            instance_api.set_gui_text_label_visible(SELF_ID, SAVING_LABEL, False)
-        return
+    global _prev_up, _prev_down, _prev_left, _prev_right, _prev_enter
 
     keys = pygame.key.get_pressed()
     up_held, down_held = keys[pygame.K_UP], keys[pygame.K_DOWN]
@@ -171,7 +162,7 @@ def update(dt: float) -> None:
             _select_overwrite(_confirm_index, 0 if _confirm_index == 1 else 1)
         if enter_pressed:
             if _confirm_index == 0:
-                _do_save(_confirm_slot)
+                _do_load(_confirm_slot)
             _end_confirm()
         return
 
@@ -183,13 +174,10 @@ def update(dt: float) -> None:
     if enter_pressed:
         if _menu_index < len(SLOT_LABELS):
             slot_index = _menu_index + 1
-            slots = save_system.read_slots()
-            if slots[_menu_index] is None:
-                _do_save(slot_index)
-            else:
+            if save_system.read_slot(slot_index) is not None:
                 _start_confirm(slot_index)
         else:
-            instance_api.request_scene_transition(NEXT_LEVEL_SCENE)
+            instance_api.request_scene_transition(TITLE_SCENE)
 
 
 def draw(engine) -> None:

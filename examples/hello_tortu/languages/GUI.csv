@@ -18,3 +18,12 @@ continue_no_save,Continue without Save,Continuar sin guardar
 overwrite,Overwrite slot [var<[current_slot]>]?,¿Sobrescribir ranura [var<[current_slot]>]?
 saving,Saving...,Guardando...
 load_game,Load game,Cargar partida
+start_game,Start game,Comenzar juego
+selslot,Select save slot, Seleccionar ranura de guardado
+currentslot, slot [var<[current_slot]>], ranura [var<[current_slot]>]
+load, Load, Cargar
+erase, Erase, Borrar
+moveconsole,Move to console, Mover a la conosla
+replacesavecon,Replace with save from console, Remplazar con guardado de la consola
+selconsave,Select replacement save, Seleccionar guardado reemplazante
+areyousure,Are you sure?, ¿Estas Seguro? 

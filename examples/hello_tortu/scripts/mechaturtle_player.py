@@ -442,7 +442,12 @@ def init(engine, scene_path: str = "scenes/level_01.tortuscene") -> None:
     global _finish_monitor_inst, _finish_turnon_dur, finish_done
 
     _engine = engine
-    _prev_pause_held = False
+    # Whatever key just confirmed a menu item to get here (Start Game,
+    # Continue, a Load confirm) is often still physically held on this same
+    # frame — seed the edge-detector from the actual key state instead of
+    # False, so that held Enter isn't immediately read as opening the pause
+    # menu (see pause_menu.py's _reset_menu for the same idiom).
+    _prev_pause_held = pygame.key.get_pressed()[pygame.K_RETURN]
     instance_api.set_game_paused(False)
     _px, _py = 34.0, 191.0
     _vx, _vy = 0.0, 0.0

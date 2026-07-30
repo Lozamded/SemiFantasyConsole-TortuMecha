@@ -20,6 +20,10 @@ GAME_ID = "mechaturtle_d01"
 GAME_NAME = "Mecha Turtle Demo"
 
 
+def read_slot(index: int) -> dict | None:
+    return save_data.read_slot(SAVES_DIR, index)
+
+
 def read_slots() -> list[dict | None]:
     return save_data.read_slots(SAVES_DIR, SLOT_COUNT)
 

@@ -1,4 +1,5 @@
-"""Script for scene title."""
+"""Script for scene load_scene — the save-slot picker reached from the
+title screen's Load Game item."""
 
 from __future__ import annotations
 
@@ -14,10 +15,10 @@ _scene = None
 _renderer: SceneRenderer | None = None
 _engine = None
 
-# Set by update() once title_hud.py's menu asks to move on (see
+# Set by update() once Load_hud.py's menu asks to move on (see
 # instance_api.request_scene_transition); main.py watches this to know when
-# to switch from the title scene to a new game (target is level_01) or to
-# the load scene.
+# to switch from load_scene back to the title screen or into the loaded
+# slot's saved level.
 target_scene = ""
 
 
@@ -25,7 +26,7 @@ def init(engine) -> None:
     global _scene, _renderer, _engine, target_scene
     _engine = engine
     target_scene = ""
-    _scene = load_scene(ROOT / "scenes/title.tortuscene", project_root=ROOT)
+    _scene = load_scene(ROOT / "scenes/load_scene.tortuscene", project_root=ROOT)
 
     cart_manifest = getattr(engine, "manifest", None)
     cart_root = getattr(engine, "cart_root", None)

@@ -7,12 +7,13 @@ from scripts import title as _title
 from scripts import gameover as _gameover
 from scripts import mechaturtle_player as _player
 from scripts import save_scene as _save_scene
+from scripts import load_scene as _load_scene
 from scripts import game_state
 
 ROOT = Path(__file__).parent
 
 _engine = None
-_state = "title"  # "title" -> "level" -> ("save" | "gameover") -> "title"
+_state = "title"  # "title" -> "level" -> ("save" | "gameover") -> "title", or "title" -> "load" -> "level"
 _current_scene_path = "scenes/level_01.tortuscene"
 
 
@@ -57,6 +58,13 @@ def _enter_save_scene():
     _save_scene.init(_engine)
 
 
+def _enter_load_scene():
+    global _state
+    _state = "load"
+    pygame.mixer.music.stop()
+    _load_scene.init(_engine)
+
+
 def init(engine):
     global _engine
     _engine = engine
@@ -66,8 +74,10 @@ def init(engine):
 def update(dt):
     if _state == "title":
         _title.update(dt)
-        if _title.start_pressed:
+        if _title.target_scene == "scenes/level_01.tortuscene":
             _enter_level(new_game=True)
+        elif _title.target_scene:
+            _enter_load_scene()
     elif _state == "level":
         _player.update(dt)
         if _player.defeat_done:
@@ -81,6 +91,12 @@ def update(dt):
         _save_scene.update(dt)
         if _save_scene.target_scene:
             _enter_level(new_game=False, scene_path=_save_scene.target_scene)
+    elif _state == "load":
+        _load_scene.update(dt)
+        if _load_scene.target_scene == "scenes/title.tortuscene":
+            _enter_title()
+        elif _load_scene.target_scene:
+            _enter_level(new_game=False, scene_path=_load_scene.target_scene)
     else:
         _gameover.update(dt)
         if _gameover.start_pressed:
@@ -94,5 +110,7 @@ def draw(engine):
         _player.draw(engine)
     elif _state == "save":
         _save_scene.draw(engine)
+    elif _state == "load":
+        _load_scene.draw(engine)
     else:
         _gameover.draw(engine)
