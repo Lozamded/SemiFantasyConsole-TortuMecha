@@ -10,7 +10,8 @@ dialog_r2_selected_action_= {
     "jump":"[<[var_d2_act1]>]",
     "nothing":"[<[var_d2_act2]>]"
 }
-Fav_Cookie = "nothing_yet"
+Fav_Cookie = "nothing_yet" #chips,cream,wafer,unlike
+
 
 def action_Do_DR2Action(selected_action):
     if selected_action == "jump":

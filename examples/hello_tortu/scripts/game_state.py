@@ -12,8 +12,7 @@ GEARS_PER_LIFE = 100
 energy = MAX_ENERGY
 lives = MAX_LIVES
 gears = 0
-
-
+ 
 def reset() -> None:
     """Call when starting a new game (title -> level)."""
     global energy, lives, gears

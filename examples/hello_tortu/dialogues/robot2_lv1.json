@@ -39,26 +39,42 @@
       "options": [
         {
           "text": "[<[mt_d2_o1]>]",
-          "set_var": "dialog_r2_action",
-          "value": "jump"
+          "action": true,
+          "type": "set_var",
+          "action_content":
+            {
+              "var": "dialog_r2_action",
+              "value": "jump"
+            }
         },
         {
           "text": "[<[mt_d2_o2]>]",
-          "set_var": "dialog_r2_action",
-          "value": "nothing"
+          "action": true,
+          "type": "set_var",
+          "action_content":
+            {
+              "var": "dialog_r2_action",
+              "value": "nothing"
+            }
+
         }
       ]
     },
     {
       "speaker": "Robot2",
       "text": "[<[r2_d5]>]",
-      "end_action": "action_Do_DR2Action",
-      "action_values": [
+      "action": true,
+      "type": "do_action",
+      "action_content":
         {
-          "value": "dialog_r2_action",
-          "type": "variable"
+          "function": "action_Do_DR2Action",
+          "value": [
+            {
+              "type": "var",
+              "value": "dialog_r2_action"
+            }
+          ]
         }
-      ]
     }
   ]
 }

@@ -205,49 +205,85 @@
         -1,
         -1,
         -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        -1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1,
-        1
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        9,
+        9,
+        9,
+        9,
+        9,
+        9,
+        9,
+        9,
+        9,
+        9,
+        9,
+        9,
+        9,
+        9,
+        9,
+        9,
+        9
       ]
     }
   ],
   "objects": [
     {
       "object": "assets/objects/mechaturtle.tortuobject",
-      "x": 26,
-      "y": 190,
+      "x": 29,
+      "y": 174,
       "id": "mechaturtle1"
+    },
+    {
+      "object": "assets/objects/robot.tortuobject",
+      "x": 201,
+      "y": 174,
+      "animation": "walk",
+      "id": "robot3",
+      "links": [
+        "dialogue_icon1"
+      ],
+      "custom_var_overrides": {
+        "dialogue": "dialogues/robot3_lvl2.json"
+      }
+    },
+    {
+      "object": "assets/objects/dialogue_icon.tortuobject",
+      "x": 200,
+      "y": 154,
+      "id": "dialogue_icon1",
+      "links": [
+        "robot3"
+      ]
+    },
+    {
+      "object": "assets/objects/enemycollider.tortuobject",
+      "x": 120,
+      "y": 169,
+      "id": "enemycollider1",
+      "visible": false
+    },
+    {
+      "object": "assets/objects/enemycollider.tortuobject",
+      "x": 263,
+      "y": 166,
+      "id": "enemycollider2",
+      "visible": false
     }
   ],
   "gui_layers": []

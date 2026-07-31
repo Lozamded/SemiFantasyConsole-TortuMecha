@@ -14,23 +14,39 @@
       "options": [
         {
           "text": "[<[mt_d3_o1]>]",
-          "set_var": "Fav_Cookie",
-          "value": "chips"
+          "action": true,
+          "type": "set_var",
+          "action_content": {
+            "var": "Fav_Cookie",
+            "value": "chips"
+          }
         },
         {
           "text": "[<[mt_d3_o2]>]",
-          "set_var": "Fav_Cookie",
-          "value": "cream"
+          "action": true,
+          "type": "set_var",
+          "action_content": {
+            "var": "Fav_Cookie",
+            "value": "cream"
+          }
         },
         {
           "text": "[<[mt_d3_o3]>]",
-          "set_var": "Fav_Cookie",
-          "value": "wafer"
+          "action": true,
+          "type": "set_var",
+          "action_content": {
+            "var": "Fav_Cookie",
+            "value": "wafer"
+          }
         },
         {
           "text": "[<[mt_d4_o4]>]",
-          "set_var": "Fav_Cookie",
-          "value": "unlike"
+          "action": true,
+          "type": "set_var",
+          "action_content": {
+            "var": "Fav_Cookie",
+            "value": "unlike"
+          }
         }
       ]
     },

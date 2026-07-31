@@ -7,16 +7,41 @@ copy lives in the same languages/*.csv files as everything else instead of a
 separate lookup convention.
 
 A line can carry `options`: presenting it turns it into a decision point.
-Selecting an option can jump to another dialogue (`next_dialogue`, a
+Selecting an option can jump to another dialogue file (`next_dialogue`, a
 project-relative path such as "dialogues/foo.json" — empty means "stay in
-this dialogue and continue to the next line") and/or assign `value` to the
-dialogue variable named `set_var` (empty means "don't set a variable").
+this dialogue and continue to the next line") and/or run an `action`. When
+both are present on the same option, the action runs first and then
+`next_dialogue` (if any) starts; otherwise the dialogue just continues to the
+next line.
 
-A line can also carry `end_action`, the name of a function (in the
-dialogue's paired vars script) to call once the dialogue finishes.
-`action_values` supplies its positional arguments: each entry is either a
-literal (`type: "literal"`, the default) or a dialogue variable to look up by
-name at call time (`type: "variable"`).
+A line or an option can carry an `action`: a JSON envelope of the shape
+`{"action": true, "type": "<type>", "action_content": {...}}` (an absent or
+`false` "action" key means "no action" — `action_content` is then omitted
+too). `action_content`'s shape depends on `type`:
+
+- `set_var` — `{"var": "<name>", "value": <literal>}`. Assigns `value` to
+  `<name>` on the dialogue's paired vars script (dialogues/foo.json is paired
+  with scripts/foo_vars.py by convention — see dialoguebox.py).
+- `do_action` — `{"function": "<name>", "value": [<arg>, ...]}`. Calls
+  `<name>` (looked up on the vars script) with positional args built from
+  `value`; each arg entry is `{"type": "literal", "value": <v>}` (a literal,
+  the default when `type` is omitted) or `{"type": "var", "value": "<name>"}`
+  (looked up on the vars script at call time).
+- `jumpdialog` — `{"id": "<line id>"}`. Jumps to the line carrying that `id`
+  within the *same* dialogue file (see `DialogueLine.id`). Line ids may be
+  declared anywhere in the file, including after the line that jumps to
+  them.
+- `finishdialog` — `{}`. Ends the dialogue immediately.
+- `var_compare_text` — `{"var": "<name>", "values": {<value>: <action>, ...}}`.
+  Reads `<name>` from the vars script and runs the nested action envelope
+  keyed by its current value (itself an `{"action": ..., "type": ...,
+  "action_content": ...}` dict, e.g. `{"action": false}` for "do nothing").
+  A value with no matching key is treated the same as `{"action": false}`.
+
+Only `set_var` and `do_action` are pure side effects; `jumpdialog`,
+`finishdialog`, and whatever a `var_compare_text` branch resolves to affect
+control flow, so dialoguebox.py — not this module — is what actually
+interprets and runs them. This module only loads/saves the data.
 """
 
 from __future__ import annotations
@@ -28,17 +53,16 @@ from typing import Any
 
 
 @dataclass
-class ActionValue:
-    value: Any = ""
-    type: str = "literal"
+class Action:
+    type: str = ""
+    content: dict = field(default_factory=dict)
 
 
 @dataclass
 class DialogueOption:
     text: str = ""
     next_dialogue: str = ""
-    set_var: str = ""
-    value: Any = None
+    action: Action | None = None
 
 
 @dataclass
@@ -46,9 +70,9 @@ class DialogueLine:
     speaker: str = ""
     text: str = ""
     icon: str = ""
+    id: str = ""
     options: list[DialogueOption] = field(default_factory=list)
-    end_action: str = ""
-    action_values: list[ActionValue] = field(default_factory=list)
+    action: Action | None = None
 
 
 @dataclass
@@ -56,68 +80,65 @@ class Dialogue:
     lines: list[DialogueLine] = field(default_factory=list)
 
 
+def load_action(raw: dict) -> Action | None:
+    if not raw.get("action"):
+        return None
+    return Action(str(raw.get("type", "")), raw.get("action_content", {}) or {})
+
+
 def _load_option(raw: dict) -> DialogueOption:
     return DialogueOption(
         str(raw.get("text", "")),
         str(raw.get("next_dialogue", "")),
-        str(raw.get("set_var", "")),
-        raw.get("value"),
+        load_action(raw),
     )
 
 
-def _load_action_value(raw: dict) -> ActionValue:
-    return ActionValue(raw.get("value", ""), str(raw.get("type", "literal")))
+def _load_line(raw: dict) -> DialogueLine:
+    return DialogueLine(
+        str(raw.get("speaker", "")),
+        str(raw.get("text", "")),
+        str(raw.get("icon", "")),
+        str(raw.get("id", "")),
+        [_load_option(opt) for opt in raw.get("options", [])],
+        load_action(raw),
+    )
 
 
 def load_dialogue(path: Path) -> Dialogue:
     data = json.loads(path.read_text(encoding="utf-8"))
-    lines = [
-        DialogueLine(
-            str(raw.get("speaker", "")),
-            str(raw.get("text", "")),
-            str(raw.get("icon", "")),
-            [_load_option(opt) for opt in raw.get("options", [])],
-            str(raw.get("end_action", "")),
-            [_load_action_value(av) for av in raw.get("action_values", [])],
-        )
-        for raw in data.get("lines", [])
-    ]
-    return Dialogue(lines)
+    return Dialogue([_load_line(raw) for raw in data.get("lines", [])])
+
+
+def _save_action(data: dict, action: Action | None) -> None:
+    if action is None:
+        return
+    data["action"] = True
+    data["type"] = action.type
+    data["action_content"] = action.content
 
 
 def _save_option(option: DialogueOption) -> dict:
-    return {
-        "text": option.text,
-        **({"next_dialogue": option.next_dialogue} if option.next_dialogue else {}),
-        **({"set_var": option.set_var} if option.set_var else {}),
-        **({"value": option.value} if option.value is not None else {}),
-    }
+    data: dict[str, Any] = {"text": option.text}
+    if option.next_dialogue:
+        data["next_dialogue"] = option.next_dialogue
+    _save_action(data, option.action)
+    return data
 
 
-def _save_action_value(action_value: ActionValue) -> dict:
-    return {
-        "value": action_value.value,
-        **({"type": action_value.type} if action_value.type != "literal" else {}),
-    }
+def _save_line(line: DialogueLine) -> dict:
+    data: dict[str, Any] = {"speaker": line.speaker, "text": line.text}
+    if line.icon:
+        data["icon"] = line.icon
+    if line.id:
+        data["id"] = line.id
+    if line.options:
+        data["options"] = [_save_option(o) for o in line.options]
+    _save_action(data, line.action)
+    return data
 
 
 def save_dialogue(dialogue: Dialogue, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    data = {
-        "lines": [
-            {
-                "speaker": line.speaker,
-                "text": line.text,
-                **({"icon": line.icon} if line.icon else {}),
-                **({"options": [_save_option(o) for o in line.options]} if line.options else {}),
-                **({"end_action": line.end_action} if line.end_action else {}),
-                **(
-                    {"action_values": [_save_action_value(a) for a in line.action_values]}
-                    if line.action_values
-                    else {}
-                ),
-            }
-            for line in dialogue.lines
-        ]
-    }
+    data = {"lines": [_save_line(line) for line in dialogue.lines]}
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")

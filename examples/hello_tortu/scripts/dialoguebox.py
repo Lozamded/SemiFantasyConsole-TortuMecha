@@ -19,17 +19,21 @@ both the text color and the `select_arrow` GUI object — across up to 4
 pre-placed option labels, and the action button confirms it. A plain line
 instead shows `dialog_end_arrow`, a "press to continue" hint; the two arrows
 are mutually exclusive since a decision and a continue prompt never apply to
-the same line. Confirming an option can assign a variable (`set_var`) and/or
-jump to another dialogue (`next_dialogue`) — both applied against
-scripts/dialogue_vars.py, the same shared vars module a line's
-`end_action`/`action_values` are resolved against when that line is
-dismissed.
+the same line. Confirming an option runs its `action` (if any) and then, if
+it also has a `next_dialogue`, jumps to that other dialogue file — otherwise
+dialogue continues to the next line. A plain line's `action` instead runs
+when the line is dismissed. Both are resolved against scripts/dialogue_vars.py
+(see tortuengine.dialogue's module docstring for the action envelope).
+
+`jumpdialog` and `finishdialog` actions redirect this dialogue's own control
+flow (see `_run_action`/`_apply_action_result` below) rather than being a
+pure side effect like `set_var`/`do_action`.
 """
 
 import pygame
 
 from tortuengine import instance_api, localization
-from tortuengine.dialogue import load_dialogue
+from tortuengine.dialogue import Action, load_action, load_dialogue
 from scripts import dialogue_vars
 
 SPEAKER_LABEL = "dialog_speaker"
@@ -48,6 +52,7 @@ SELECT_ARROW_OFFSET = (-18, 8)
 HIGHLIGHT_COLOR = 18
 
 _lines = []
+_line_ids = {}
 _index = 0
 _active = False
 _option_index = 0
@@ -116,30 +121,73 @@ def _show_line() -> None:
         _hide_options()
 
 
-def _run_end_action(line) -> None:
-    if not line.end_action:
-        return
-    fn = getattr(dialogue_vars, line.end_action, None)
-    if fn is None:
-        return
-    args = [
-        getattr(dialogue_vars, av.value, None) if av.type == "variable" else av.value
-        for av in line.action_values
-    ]
-    fn(*args)
+def _run_action(action: Action | None):
+    """Runs `action` against dialogue_vars and returns a control-flow signal:
+    None (no flow change), ("jump", line_id), or ("finish",). set_var/do_action
+    are pure side effects and always return None; var_compare_text recurses
+    into whichever branch the compared variable's current value selects."""
+    if action is None:
+        return None
+    if action.type == "set_var":
+        setattr(dialogue_vars, action.content["var"], action.content.get("value"))
+        return None
+    if action.type == "do_action":
+        fn = getattr(dialogue_vars, action.content.get("function", ""), None)
+        if fn is None:
+            return None
+        args = [
+            getattr(dialogue_vars, arg.get("value"), None)
+            if arg.get("type") == "var"
+            else arg.get("value")
+            for arg in action.content.get("value", [])
+        ]
+        fn(*args)
+        return None
+    if action.type == "jumpdialog":
+        return ("jump", action.content.get("id", ""))
+    if action.type == "finishdialog":
+        return ("finish",)
+    if action.type == "var_compare_text":
+        current = getattr(dialogue_vars, action.content["var"], None)
+        branch = action.content.get("values", {}).get(current, {"action": False})
+        return _run_action(load_action(branch))
+    return None
+
+
+def _apply_action_result(result) -> bool:
+    """Applies a `_run_action` control-flow signal. Returns True if it
+    redirected flow (jump/finish), meaning the caller should not also fall
+    through to its own default next-line/next_dialogue handling."""
+    if result is None:
+        return False
+    kind = result[0]
+    if kind == "finish":
+        _end()
+        return True
+    if kind == "jump":
+        index = _line_ids.get(result[1])
+        if index is None:
+            _end()
+        else:
+            global _index
+            _index = index
+            _show_line()
+        return True
+    return False
 
 
 def _end() -> None:
-    global _active, _lines, _index
+    global _active, _lines, _line_ids, _index
     _active = False
     _lines = []
+    _line_ids = {}
     _index = 0
     instance_api.set_gui_layer_visible(SELF_ID, False)
     instance_api.set_dialogue_active(False)
 
 
 def _start(path: str) -> None:
-    global _lines, _index, _active, _prev_action, _prev_up, _prev_down
+    global _lines, _line_ids, _index, _active, _prev_action, _prev_up, _prev_down
     root = instance_api.project_root()
     if root is None:
         return
@@ -147,6 +195,7 @@ def _start(path: str) -> None:
     if not dialogue.lines:
         return
     _lines = dialogue.lines
+    _line_ids = {line.id: i for i, line in enumerate(_lines) if line.id}
     _index = 0
     _active = True
     instance_api.set_dialogue_active(True)
@@ -172,14 +221,18 @@ def _go_to_next_line() -> None:
 
 
 def _advance() -> None:
-    _run_end_action(_lines[_index])
-    _go_to_next_line()
+    result = _run_action(_lines[_index].action)
+    if not _apply_action_result(result):
+        _go_to_next_line()
 
 
 def _choose_option(line, option) -> None:
-    if option.set_var:
-        setattr(dialogue_vars, option.set_var, option.value)
-    _run_end_action(line)
+    if _apply_action_result(_run_action(option.action)):
+        return
+    # The decision line itself may also carry an action (distinct from each
+    # option's own), which runs regardless of which option was picked.
+    if _apply_action_result(_run_action(line.action)):
+        return
     if option.next_dialogue:
         _start(option.next_dialogue)
     else:

@@ -1,0 +1,128 @@
+{
+  "lines": [
+    {
+      "speaker": "Robot3",
+      "text": "[<[r3_l2_d1]>]"
+    },
+    {
+      "speaker": "Robot3",
+      "text": "[<[r3_l2_d2]>]"
+    },
+    {
+      "speaker": "Robot3",
+      "text": "[<[r3_l2_d3]>]"
+    },
+    {
+      "speaker": "Robot3",
+      "text": "[<[r3_l2_d4]>]",
+      "action": true,
+      "type": "var_compare_text",
+      "action_content": {
+        "var": "Fav_Cookie",
+        "values": {
+          "nothing_yet": {
+            "action": false
+          },
+          "chips": {
+            "action": true,
+            "type": "jumpdialog",
+            "action_content": {"id": "chips"}
+          },
+          "cream": {
+            "action": true,
+            "type": "jumpdialog",
+            "action_content": {"id": "cream"}
+          },
+          "wafer": {
+            "action": true,
+            "type": "jumpdialog",
+            "action_content": {"id": "wafer"}
+          },
+          "unlike": {
+            "action": true,
+            "type": "jumpdialog",
+            "action_content": {"id": "unlike"}
+          }
+        }
+      }
+    },
+    {
+      "id":"nothingyet",
+      "speaker": "Robot3",
+      "text": "[<[r3_l2_d4_nothing]>]"
+    },
+    {
+      "speaker": "Robot3",
+      "text": "[<[r3_l2_d4_nothing_2]>]",
+      "action": true, 
+      "type": "jumpdialog",
+      "action_content": {"id": "finale"}
+    },
+    {
+      "id":"chips",
+      "speaker": "Robot3",
+      "text": "[<[r3_l2_d4_chips]>]"
+    },
+    {
+      "speaker": "Robot3",
+      "text": "[<[r3_l2_d4_chips_2]>]",
+      "action": true, 
+      "type": "jumpdialog",
+      "action_content": {"id": "finale"}
+    },
+    {
+      "id":"cream",
+      "speaker": "Robot3",
+      "text": "[<[r3_l2_d4_cream]>]"
+    },
+    {
+      "speaker": "Robot3",
+      "text": "[<[r3_l2_d4_cream_2]>]",
+      "action": true, 
+      "type": "jumpdialog",
+      "action_content": {"id": "finale"}
+    },
+    {
+      "id":"wafer",
+      "speaker": "Robot3",
+      "text": "[<[r3_l2_d4_wafer]>]"
+    },
+    {
+      "speaker": "Robot3",
+      "text": "[<[r3_l2_d4_wafer_2]>]",
+      "action": true, 
+      "type": "jumpdialog",
+      "action_content": {"id": "finale"}
+    },
+    {
+      "id":"unlike",
+      "speaker": "Robot3",
+      "text": "[<[r3_l2_d4_unlike]>]"
+    },
+    {
+      "speaker": "Robot3",
+      "text": "[<[r3_l2_d4_unlike_2]>]"
+    },
+    {
+      "speaker": "Robot3",
+      "text": "[<[r3_l2_d4_unlike_3]>]",
+      "action": true, 
+      "type": "finishdialog",
+      "action_content": {}
+    },    
+    {
+      "id":"finale",
+      "speaker": "Robot3",
+      "text": "[<[r3_l2_d5]>]"
+    },    
+    {
+      "speaker": "Robot3",
+      "text": "[<[r3_l2_d6]>]"
+    },    
+    {
+      "speaker": "Robot3",
+      "text": "[<[r3_l2_d7]>]"
+    }
+
+  ]
+}

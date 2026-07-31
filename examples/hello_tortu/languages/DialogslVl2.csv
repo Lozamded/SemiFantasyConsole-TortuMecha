@@ -1,0 +1,19 @@
+key,en,es
+r3_l2_d1,Hello. I'm the robot number 3,Hola. Soy un robot número 3
+r3_l2_d2,I hope you enjoyed this short demo,Espero hayas disfrutado de esta corta demo
+r3_l2_d3,well[symbol<[comma]>] so far you've collected [var<[gears]>] gears,bíen hasta ahora recolectaste [var<[gears]>] engranes
+r3_l2_d4,about the cookies,respecto a las galletas
+r3_l2_d4_nothing,so far we haven't talked about cookies,hasta ahora no hemos hablado de galletas
+r3_l2_d4_nothing_2,we can skip the whole part of this dialogue where we talk about cookies,podemos saltar toda la parte de este dialogo donde hablamos sobre galletas
+r3_l2_d4_chips,I see you like chip cookies,Veo que te gustan las galletas con chispas
+r3_l2_d4_chips_2,well[symbol<[comma]>] as for the developer of this project[symbol<[comma]>] those are their favorite too,pues respecto al desarrollador de este proyecto[symbol<[comma]>] tanbíen son sus favoritas
+r3_l2_d4_cream,I see you like cream cookies,Veo que te gustan las galletas con crema
+r3_l2_d4_cream_2,I bet with two cookies you make one with double cream,apuesto a que con dos galletas haces una con doble crema
+r3_l2_d4_wafer,I see you like wafer cookies,Veo que te gustan las galletas de oblea
+r3_l2_d4_wafer_2,those are the best cookies to put on top of ice cream,Esas son las mejores galletas para colocar sobre un helado
+r3_l2_d4_unlike,I see you don't like cookies,Veo que no te gustan las galletas
+r3_l2_d4_unlike_2,well then it's better if we stop talking...,pues es mejor que dejemos de hablar...
+r3_l2_d4_unlike_3,just kidding[symbol<[comma]>] this is only to show you that a dialogue can end early,es broma esto es solo para mostrarte que un dialogo puede terminar anticipadamente
+r3_l2_d5,with this our chat about cookies ends,Con esto termina nuestra charla sobre galletas
+r3_l2_d6,I recommend checking the dialogues and seeing all the possible cases,Te recomiendo revisar los dialogos y ver todos los casos posibles
+r3_l2_d7,have a very good day,Ten un muy buen día
