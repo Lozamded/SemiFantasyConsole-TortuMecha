@@ -119,6 +119,7 @@ class SceneRenderer:
         self._bg_band_cache: _LRUCache = _LRUCache(32)
         self._png_cache: _LRUCache = _LRUCache(128)
         self._scaled_frame_cache: _LRUCache = _LRUCache(128)
+        self._flipped_frame_cache: _LRUCache = _LRUCache(128)
         self._gui_tile_cache: _LRUCache = _LRUCache(32)
         self._gui_label_cache: _LRUCache = _LRUCache(128)
 
@@ -602,9 +603,22 @@ class SceneRenderer:
         if frame_index < 0 or frame_index >= sprite.frame_count:
             frame_index = 0
         base = self._baked_sprite_frame(sprite_path, sprite, frame_index)
-        if base is None or inst.scale == 1.0:
+        if base is None:
+            return None
+        flip_x = getattr(inst, "flip_x", False)
+        if flip_x:
+            base = self._flipped_surface(base, (sprite_path, frame_index))
+        if inst.scale == 1.0:
             return base
-        return self._scaled_surface(base, (sprite_path, frame_index, round(inst.scale, 3)), inst.scale)
+        return self._scaled_surface(base, (sprite_path, frame_index, round(inst.scale, 3), flip_x), inst.scale)
+
+    def _flipped_surface(self, surface: pygame.Surface, cache_key: tuple) -> pygame.Surface:
+        cached = self._flipped_frame_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        flipped = pygame.transform.flip(surface, True, False)
+        self._flipped_frame_cache[cache_key] = flipped
+        return flipped
 
     def _scaled_surface(
         self, surface: pygame.Surface, cache_key: tuple, scale: float

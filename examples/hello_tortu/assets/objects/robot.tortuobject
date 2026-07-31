@@ -40,6 +40,11 @@
       "name": "dialogue",
       "type": "string",
       "default": ""
+    },
+    {
+      "name": "patrol",
+      "type": "bool",
+      "default": false
     }
   ]
 }

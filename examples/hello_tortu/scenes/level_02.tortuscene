@@ -245,27 +245,28 @@
   "objects": [
     {
       "object": "assets/objects/mechaturtle.tortuobject",
-      "x": 29,
-      "y": 174,
+      "x": 35,
+      "y": 133,
       "id": "mechaturtle1"
     },
     {
       "object": "assets/objects/robot.tortuobject",
       "x": 201,
-      "y": 174,
+      "y": 176,
       "animation": "walk",
       "id": "robot3",
       "links": [
         "dialogue_icon1"
       ],
       "custom_var_overrides": {
-        "dialogue": "dialogues/robot3_lvl2.json"
+        "dialogue": "dialogues/robot3_lvl2.json",
+        "patrol": true
       }
     },
     {
       "object": "assets/objects/dialogue_icon.tortuobject",
       "x": 200,
-      "y": 154,
+      "y": 156,
       "id": "dialogue_icon1",
       "links": [
         "robot3"
@@ -286,5 +287,29 @@
       "visible": false
     }
   ],
-  "gui_layers": []
+  "gui_layers": [
+    {
+      "name": "gui_layer_0",
+      "gui_layer": "assets/gui/hud.tortuguilayer",
+      "z_index": 1
+    },
+    {
+      "name": "gui_layer_1",
+      "gui_layer": "assets/gui/dialog.tortuguilayer",
+      "z_index": 2,
+      "visible": false
+    },
+    {
+      "name": "gui_layer_2",
+      "gui_layer": "assets/gui/pause_menu.tortuguilayer",
+      "z_index": 3,
+      "visible": false
+    },
+    {
+      "name": "gui_layer_3",
+      "gui_layer": "assets/gui/LevelFinished.tortuguilayer",
+      "z_index": 4,
+      "visible": false
+    }
+  ]
 }

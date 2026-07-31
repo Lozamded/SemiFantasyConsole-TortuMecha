@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Callable
 
 from tortuengine import localization
 from tortuengine.object import load_object
-from tortuengine.scene import Scene
+from tortuengine.scene import Scene, grid_columns
 from tortuengine.sprite import load_sprite
 from tortuengine.tileset import COLLISION_NONE, Tileset, load_tileset
 
@@ -446,6 +446,18 @@ def set_visible(instance_id: str, visible: bool) -> None:
         inst.visible = visible
 
 
+def is_flip_x(instance_id: str) -> bool:
+    inst = _find(instance_id)
+    return inst.flip_x if inst else False
+
+
+def set_flip_x(instance_id: str, flip_x: bool) -> None:
+    """Mirror the instance's drawn sprite horizontally — colliders/hitboxes are unaffected."""
+    inst = _find(instance_id)
+    if inst is not None:
+        inst.flip_x = flip_x
+
+
 def custom_var(instance_id: str, name: str, default: object = None) -> object:
     """Read a custom-variable value for a scene instance.
 
@@ -499,7 +511,7 @@ def tile_solid_at(x: float, y: float) -> bool:
         return False
     layer = _scene.tile_layers[_scene.collision_tile_layer]
     tile_size = tileset.tile_size
-    cols = _scene.width // tile_size
+    cols = grid_columns(_scene.width, tile_size)
     col, row = int(x // tile_size), int(y // tile_size)
     if col < 0 or col >= cols or row < 0:
         return False

@@ -3,7 +3,7 @@
   "game_id": "mechaturtle_d01",
   "game name": "Mecha Turtle Demo",
   "gamedata": {
-    "gears": 14,
+    "gears": 11,
     "current_lvl": "level_02",
     "faviorite_cokie": "not_decided"
   }

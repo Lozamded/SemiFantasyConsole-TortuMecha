@@ -13,7 +13,7 @@ from scripts import game_state
 from scripts._generated import mechaturtle_player_auto as auto
 from scripts._generated import red_slime_auto as slime_auto
 from tortuengine.palette import load_palette, palette_path
-from tortuengine.scene import SceneObject, load_scene
+from tortuengine.scene import SceneObject, grid_columns, load_scene
 from tortuengine.scene_renderer import SceneRenderer
 from tortuengine.sprite import load_sprite
 from tortuengine.tileset import (
@@ -174,7 +174,7 @@ def _tile_solid_at(col: int, row: int, local_x: int, local_y: int) -> bool:
     if _scene is None:
         return False
     layer = _scene.tile_layers[_scene.collision_tile_layer]
-    cols = _scene.width // TILE_SIZE
+    cols = grid_columns(_scene.width, TILE_SIZE)
     if col < 0 or col >= cols or row < 0:
         return False
     idx = row * cols + col
@@ -202,7 +202,7 @@ def _tile_one_way(col: int, row: int) -> str:
     if _scene is None or _collision_tileset is None:
         return ONE_WAY_NONE
     layer = _scene.tile_layers[_scene.collision_tile_layer]
-    cols = _scene.width // TILE_SIZE
+    cols = grid_columns(_scene.width, TILE_SIZE)
     if col < 0 or col >= cols or row < 0:
         return ONE_WAY_NONE
     idx = row * cols + col
@@ -476,6 +476,8 @@ def init(engine, scene_path: str = "scenes/level_01.tortuscene") -> None:
         )
         if player_instances else auto.CUSTOMVAR_KILL_PLANE_Y_DEFAULT
     )
+    if player_instances:
+        _px, _py = float(player_instances[0].x), float(player_instances[0].y)
     _scene.objects = [o for o in _scene.objects if o.prefab != _PREFAB_PATH]
     _is_camera_target = not _scene.camera_target or _scene.camera_target == _PREFAB_PATH
 

@@ -57,6 +57,10 @@ class SceneObject:
     scale: float = 1.0
     # Off at scene start: not drawn, instance script stops ticking, queryable via instance_api.is_enabled.
     enabled: bool = True
+    # Mirror the sprite horizontally at draw time — e.g. a patrolling object
+    # facing the way it's walking. Toggled at runtime via instance_api.set_flip_x();
+    # doesn't affect colliders/hitboxes, only the drawn surface.
+    flip_x: bool = False
     # Per-instance overrides for custom variables declared on the prefab's
     # TortuObject.custom_vars (name -> value). Missing keys fall back to the
     # prefab's declared default — see instance_api.custom_var().
@@ -65,7 +69,7 @@ class SceneObject:
     def copy(self) -> SceneObject:
         return SceneObject(
             self.prefab, self.x, self.y, self.animation, self.z_index, self.id,
-            list(self.links), self.visible, self.scale, self.enabled,
+            list(self.links), self.visible, self.scale, self.enabled, self.flip_x,
             dict(self.custom_var_overrides),
         )
 
@@ -671,11 +675,12 @@ def _normalize_scene_object(raw: dict, path: Path) -> SceneObject:
     visible = bool(raw.get("visible", True))
     scale = float(raw.get("scale", 1.0))
     enabled = bool(raw.get("enabled", True))
+    flip_x = bool(raw.get("flip_x", False))
     custom_var_overrides_raw = raw.get("custom_var_overrides", {})
     custom_var_overrides = dict(custom_var_overrides_raw) if isinstance(custom_var_overrides_raw, dict) else {}
     return SceneObject(
         prefab, int(raw.get("x", 0)), int(raw.get("y", 0)), animation, z_index, obj_id, links, visible, scale,
-        enabled, custom_var_overrides,
+        enabled, flip_x, custom_var_overrides,
     )
 
 
@@ -814,6 +819,7 @@ def save_scene(scene: Scene, path: Path, *, project_root: Path | None = None) ->
                 **({"visible": False} if not inst.visible else {}),
                 **({"scale": inst.scale} if inst.scale != 1.0 else {}),
                 **({"enabled": False} if not inst.enabled else {}),
+                **({"flip_x": True} if inst.flip_x else {}),
                 **({"custom_var_overrides": dict(inst.custom_var_overrides)} if inst.custom_var_overrides else {}),
             }
             for inst in scene.objects
