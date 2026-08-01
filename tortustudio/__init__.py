@@ -1,1 +1,1 @@
-"""TortuStudio — PC editor (PyQt6 chrome + Pygame viewport)."""
+"""TortoiseStudio — PC editor (PyQt6 chrome + Pygame viewport)."""

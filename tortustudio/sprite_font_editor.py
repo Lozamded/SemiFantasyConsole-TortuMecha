@@ -645,7 +645,10 @@ class SpriteFontEditorWidget(QWidget):
 
         paint_group = QVBoxLayout()
         paint_group.addWidget(QLabel("Glyph editor"))
-        paint_group.addWidget(self.canvas, stretch=1)
+        canvas_scroll = QScrollArea()
+        canvas_scroll.setWidgetResizable(True)
+        canvas_scroll.setWidget(self.canvas)
+        paint_group.addWidget(canvas_scroll, stretch=1)
         tool_row = QHBoxLayout()
         tool_row.addWidget(self.btn_pencil)
         tool_row.addWidget(self.btn_eraser)

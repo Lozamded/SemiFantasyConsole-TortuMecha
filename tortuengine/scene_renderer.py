@@ -89,7 +89,7 @@ class _ObjectAnimState:
 
 
 class SceneRenderer:
-    """Caches baked assets while rendering scenes for TortuPlayer / TortuStudio preview."""
+    """Caches baked assets while rendering scenes for TortuPlayer / TortoiseStudio preview."""
 
     def __init__(self, project_root: Path, *, cart_manifest: CartManifest | None = None) -> None:
         self.project_root = project_root.resolve()

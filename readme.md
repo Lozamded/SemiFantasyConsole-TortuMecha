@@ -6,7 +6,7 @@ Project to make a semi fantasy console using PyGame. The target is mini-pc ARM b
 python -m tortuplayer examples/hello_tortu --fullscreen
 ```
 
-## Run TortuStudio
+## Run TortoiseStudio
 
 ```bash
 python3 -m venv .venv
@@ -18,7 +18,7 @@ python -m tortustudio examples/hello_tortu/
 
 ## Build Executables (cross-compilation via Podman)
 
-TortuStudio can build standalone executables for ARM64 and ARMhf targets from
+TortoiseStudio can build standalone executables for ARM64 and ARMhf targets from
 an x86-64 host using Podman containers. Three things must be in place first.
 
 ### 1. Install Podman

@@ -1,4 +1,4 @@
-"""TortuStudio project file (.tortu.project)."""
+"""TortoiseStudio project file (.tortu.project)."""
 
 from __future__ import annotations
 

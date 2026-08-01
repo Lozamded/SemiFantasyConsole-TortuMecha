@@ -1,4 +1,4 @@
-"""Launch TortuStudio: python -m tortustudio [project folder]"""
+"""Launch TortoiseStudio: python -m tortustudio [project folder]"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from tortustudio.mainwindow import run_studio
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="TortuStudio — Semi-Fantasy Console editor")
+    parser = argparse.ArgumentParser(description="TortoiseStudio — Semi-Fantasy Console editor")
     parser.add_argument(
         "project",
         nargs="?",

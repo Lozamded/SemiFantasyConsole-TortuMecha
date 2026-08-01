@@ -1,4 +1,4 @@
-"""Main TortuStudio window layout."""
+"""Main TortoiseStudio window layout."""
 
 from __future__ import annotations
 
@@ -149,6 +149,24 @@ def _make_debug_probe(project_root: Path, game_module):
     return _probe
 
 
+class _CenterStack(QStackedWidget):
+    """QStackedWidget whose size hints follow only the visible page.
+
+    The default QStackedWidget sizes itself to fit the largest page among
+    ALL stacked widgets, not just the current one, which pins the whole
+    main window to the size of the most demanding editor tab regardless of
+    which tab is showing or how the user tries to resize the window.
+    """
+
+    def sizeHint(self):
+        current = self.currentWidget()
+        return current.sizeHint() if current is not None else super().sizeHint()
+
+    def minimumSizeHint(self):
+        current = self.currentWidget()
+        return current.minimumSizeHint() if current is not None else super().minimumSizeHint()
+
+
 class _ScriptReloadHandler(FileSystemEventHandler):
     def __init__(self, studio: "MainWindow") -> None:
         self._studio = studio
@@ -194,7 +212,7 @@ class MainWindow(QMainWindow):
         self._active_font_path: Path | None = None
         self._active_palette_path: Path | None = None
 
-        self.setWindowTitle("TortuStudio")
+        self.setWindowTitle("TortoiseStudio")
         self.resize(1280, 720)
 
         self._build_menu()
@@ -361,7 +379,8 @@ class MainWindow(QMainWindow):
 
         splitter.addWidget(tree_panel)
 
-        self.center_stack = QStackedWidget()
+        self.center_stack = _CenterStack()
+        self.center_stack.currentChanged.connect(lambda _i: self.center_stack.updateGeometry())
         self.viewport = ViewportWidget()
         self.sprite_editor = SpriteEditorWidget(Path("."))
         self.sprite_editor.saved.connect(self._on_sprite_saved)
@@ -530,7 +549,7 @@ class MainWindow(QMainWindow):
         self._active_font_path = None
         self._active_palette_path = None
         self.workspace_tabs.reset()
-        self.setWindowTitle(f"TortuStudio — {project.name}")
+        self.setWindowTitle(f"TortoiseStudio — {project.name}")
         self._load_game_settings_form()
         self._populate_start_scene_combo()
         self._populate_tree()
@@ -2174,7 +2193,7 @@ def draw(engine):
     engine.clear((12, 18, 32))
     x = int(120 + 80 * __import__("math").sin(_t * 2))
     engine.rect((80, 200, 120), (x, 80, 24, 24))
-    engine.text("TortuStudio", 72, 16, (240, 240, 255), 16)
+    engine.text("TortoiseStudio", 72, 16, (240, 240, 255), 16)
 ''',
             encoding="utf-8",
         )

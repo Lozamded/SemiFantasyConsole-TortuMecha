@@ -1,4 +1,4 @@
-"""TortuEngine — shared runtime for TortuPlayer and TortuStudio."""
+"""TortuEngine — shared runtime for TortuPlayer and TortoiseStudio."""
 
 from tortuengine.constants import MAX_COLORS, SCREEN_HEIGHT, SCREEN_WIDTH
 from tortuengine.engine import TortuEngine

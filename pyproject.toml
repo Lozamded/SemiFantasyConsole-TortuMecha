@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "semi-fantasy-console"
 version = "0.1.0"
-description = "Semi-Fantasy Console — TortuEngine, TortuPlayer, TortuStudio"
+description = "Semi-Fantasy Console — TortuEngine, TortuPlayer, TortoiseStudio"
 readme = "readme.md"
 requires-python = ">=3.11"
 dependencies = [

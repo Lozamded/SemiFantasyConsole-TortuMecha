@@ -465,7 +465,10 @@ class SpriteEditorWidget(QWidget):
         outer.addLayout(root, stretch=1)
 
         canvas_col = QVBoxLayout()
-        canvas_col.addWidget(self.canvas, stretch=1)
+        canvas_scroll = QScrollArea()
+        canvas_scroll.setWidgetResizable(True)
+        canvas_scroll.setWidget(self.canvas)
+        canvas_col.addWidget(canvas_scroll, stretch=1)
         tools = QHBoxLayout()
         tools.addWidget(self.btn_pencil)
         tools.addWidget(self.btn_eraser)
@@ -496,7 +499,7 @@ class SpriteEditorWidget(QWidget):
         side.addWidget(QLabel("Reference opacity:"))
         side.addWidget(self.ref_opacity)
 
-        side.addWidget(QLabel("Palette colors (0–62):"))
+        side.addWidget(QLabel("Palette colors (0–84):"))
         side.addWidget(self.swatches_area)
         side.addStretch()
         root.addLayout(side)

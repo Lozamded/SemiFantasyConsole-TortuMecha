@@ -1129,7 +1129,7 @@ class TilesetEditorWidget(QWidget):
 
         self.tile_size.editingFinished.connect(self._on_tile_size_changed)
 
-        side.addWidget(QLabel("Palette colors (0–62):"))
+        side.addWidget(QLabel("Palette colors (0–84):"))
         side.addWidget(self.swatches_area)
         side.addStretch()
         canvases.addLayout(side)

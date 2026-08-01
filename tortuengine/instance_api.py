@@ -2,7 +2,7 @@
 
 Object scripts (see instance_scripts.py) never touch the Scene or the
 player controller directly — they go through these functions instead, so
-the same script keeps working whether it runs in TortuStudio's preview,
+the same script keeps working whether it runs in TortoiseStudio's preview,
 TortuPlayer, or an exported cart.
 """
 
@@ -461,7 +461,7 @@ def set_flip_x(instance_id: str, flip_x: bool) -> None:
 def custom_var(instance_id: str, name: str, default: object = None) -> object:
     """Read a custom-variable value for a scene instance.
 
-    Returns the per-instance override set in TortuStudio (SceneObject
+    Returns the per-instance override set in TortoiseStudio (SceneObject
     .custom_var_overrides), or `default` if the instance has no override
     for this variable — callers typically pass the prefab's declared
     default (see the CUSTOMVAR_*_DEFAULT constant in the object's

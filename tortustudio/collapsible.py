@@ -1,4 +1,4 @@
-"""Collapsible sidebar section for TortuStudio property panels."""
+"""Collapsible sidebar section for TortoiseStudio property panels."""
 
 from __future__ import annotations
 

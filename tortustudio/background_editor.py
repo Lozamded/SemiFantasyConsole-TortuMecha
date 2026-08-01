@@ -419,7 +419,7 @@ class BackgroundEditorWidget(QWidget):
         form.addRow(self.show_segment_grid)
         side.addLayout(form)
 
-        side.addWidget(QLabel("Palette colors (0–62):"))
+        side.addWidget(QLabel("Palette colors (0–84):"))
         side.addWidget(self.swatches_area)
         side.addStretch()
         body.addLayout(side)

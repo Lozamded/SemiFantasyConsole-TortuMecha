@@ -2,7 +2,7 @@
 pygame>=2.6.0
 numpy>=1.24.0
 
-# TortuStudio — editor chrome (viewport stays Pygame)
+# TortoiseStudio — editor chrome (viewport stays Pygame)
 PyQt6>=6.6.0
 
 # Reload scripts when edited in Cursor / VSCode / etc.

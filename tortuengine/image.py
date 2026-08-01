@@ -1,4 +1,4 @@
-"""Load images for TortuStudio / engine without requiring a visible pygame window."""
+"""Load images for TortoiseStudio / engine without requiring a visible pygame window."""
 
 from __future__ import annotations
 

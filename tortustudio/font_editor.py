@@ -246,7 +246,10 @@ class TextFontEditorWidget(QWidget):
 
         preview_group = QVBoxLayout()
         preview_group.addWidget(QLabel("Preview"))
-        preview_group.addWidget(self.preview_canvas, stretch=1)
+        preview_scroll = QScrollArea()
+        preview_scroll.setWidgetResizable(True)
+        preview_scroll.setWidget(self.preview_canvas)
+        preview_group.addWidget(preview_scroll, stretch=1)
 
         preview_color_row = QHBoxLayout()
         preview_color_row.addWidget(QLabel("Text color:"))

@@ -1,4 +1,4 @@
-"""Build-executable dialog for TortuStudio.
+"""Build-executable dialog for TortoiseStudio.
 
 Shows architecture checkboxes and streams PyInstaller / Podman output live.
 The actual build runs on a QThread so the UI stays responsive.
