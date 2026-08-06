@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>TortoiseStudio: Object &amp; Scene Editors — TortoiseMecha Documentation</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
 <div class="layout">
@@ -14,40 +14,40 @@
     <nav>
       <div class="group-title">Get started</div>
       <ul>
-        <li><a href="index.html">Overview</a></li>
-        <li><a href="install-sbc.html">Install on an SBC</a></li>
+        <li><a href="../index.html">Overview</a></li>
+        <li><a href="../get-started/install-sbc.html">Install on an SBC</a></li>
       </ul>
       <div class="group-title">Scripting API</div>
       <ul>
-        <li><a href="scripting-overview.html">1. Overview &amp; main.py</a></li>
-        <li><a href="scripting-objects.html">2. Object scripts</a></li>
-        <li><a href="scripting-gui.html">3. GUI layer scripts</a></li>
-        <li><a href="scripting-subsystems.html">4. Subsystems</a></li>
-        <li><a href="scripting-reference.html">5. Reference &amp; imports</a></li>
+        <li><a href="../scripting/overview.html">1. Overview &amp; main.py</a></li>
+        <li><a href="../scripting/objects.html">2. Object scripts</a></li>
+        <li><a href="../scripting/gui.html">3. GUI layer scripts</a></li>
+        <li><a href="../scripting/subsystems.html">4. Subsystems</a></li>
+        <li><a href="../scripting/reference.html">5. Reference &amp; imports</a></li>
       </ul>
       <div class="group-title">File Formats</div>
       <ul>
-        <li><a href="formats-overview.html">1. Project &amp; palette</a></li>
-        <li><a href="formats-scene.html">2. Scenes</a></li>
-        <li><a href="formats-object.html">3. Objects</a></li>
-        <li><a href="formats-sprite-tileset.html">4. Sprites &amp; tilesets</a></li>
-        <li><a href="formats-background.html">5. Backgrounds</a></li>
-        <li><a href="formats-gui.html">6. GUI layers &amp; elements</a></li>
-        <li><a href="formats-fonts.html">7. Fonts</a></li>
+        <li><a href="../formats/overview.html">1. Project &amp; palette</a></li>
+        <li><a href="../formats/scene.html">2. Scenes</a></li>
+        <li><a href="../formats/object.html">3. Objects</a></li>
+        <li><a href="../formats/sprite-tileset.html">4. Sprites &amp; tilesets</a></li>
+        <li><a href="../formats/background.html">5. Backgrounds</a></li>
+        <li><a href="../formats/gui.html">6. GUI layers &amp; elements</a></li>
+        <li><a href="../formats/fonts.html">7. Fonts</a></li>
       </ul>
       <div class="group-title">TortoiseStudio</div>
       <ul>
-        <li><a href="studio-overview.html">1. Overview &amp; workflow</a></li>
-        <li><a href="studio-pixel-editors.html">2. Sprite, tileset &amp; background</a></li>
-        <li><a href="studio-object-scene.html" class="active">3. Object &amp; scene editors</a></li>
-        <li><a href="studio-gui-hud.html">4. GUI/HUD editors</a></li>
-        <li><a href="studio-fonts-palette-audio.html">5. Palette, fonts &amp; audio</a></li>
-        <li><a href="studio-build-test.html">6. Build &amp; test</a></li>
+        <li><a href="overview.html">1. Overview &amp; workflow</a></li>
+        <li><a href="pixel-editors.html">2. Sprite, tileset &amp; background</a></li>
+        <li><a href="object-scene.html" class="active">3. Object &amp; scene editors</a></li>
+        <li><a href="gui-hud.html">4. GUI/HUD editors</a></li>
+        <li><a href="fonts-palette-audio.html">5. Palette, fonts &amp; audio</a></li>
+        <li><a href="build-test.html">6. Build &amp; test</a></li>
       </ul>
       <div class="group-title">Walkthrough</div>
       <ul>
-        <li><a href="walkthrough-first-scene.html">1. Build your first scene</a></li>
-        <li><a href="walkthrough-tour.html">2. Guided tour</a></li>
+        <li><a href="../walkthrough/first-scene.html">1. Build your first scene</a></li>
+        <li><a href="../walkthrough/tour.html">2. Guided tour</a></li>
       </ul>
     </nav>
   </aside>
@@ -82,7 +82,7 @@
       <strong>Custom variables become per-instance overrides in the Scene Editor</strong>
       Declaring a custom var here (say, <code>patrol: bool</code>) adds a matching field to every scene
       placement of this prefab — each placed instance can override it independently. See
-      <a href="scripting-objects.html">Object scripts</a> for how <code>instance_api.custom_var()</code> reads
+      <a href="../scripting/objects.html">Object scripts</a> for how <code>instance_api.custom_var()</code> reads
       it at runtime.
     </div>
 
@@ -90,7 +90,7 @@
     <p>Shows a single "Create Script" button if none is assigned yet (creates a stub and opens it
     immediately); once assigned, shows the path plus "Browse…" (assign an existing file) and "Open script"
     (launches it in your configured external editor — see <code>editor_command</code> in
-    <a href="formats-overview.html">tortu.project</a>).</p>
+    <a href="../formats/overview.html">tortu.project</a>).</p>
 
     <h2>Scene Editor</h2>
     <p><strong>New Scene…</strong>: Name, Palette.</p>
@@ -109,7 +109,7 @@
 
     <h3>Objects in Scene panel</h3>
     <p>One collapsible card per placed instance: ID (optional, for scripting — see
-    <code>SELF_ID</code>/<code>LINKS</code> on the <a href="scripting-objects.html">Object scripts</a> page),
+    <code>SELF_ID</code>/<code>LINKS</code> on the <a href="../scripting/objects.html">Object scripts</a> page),
     Links (comma-separated — or drag another card's header onto this field to link them), X/Y/Z-index, Scale,
     Animation override, Visible/Enabled checkboxes, and (if the prefab declares any) a nested Custom Variables
     section with one field per declared var. "Click origin of object to move" switches the canvas's
@@ -127,8 +127,8 @@
     </table>
 
     <div class="page-nav">
-      <a href="studio-pixel-editors.html">&larr; Sprite, tileset &amp; background</a>
-      <a href="studio-gui-hud.html">Next: GUI/HUD editors &rarr;</a>
+      <a href="pixel-editors.html">&larr; Sprite, tileset &amp; background</a>
+      <a href="gui-hud.html">Next: GUI/HUD editors &rarr;</a>
     </div>
   </main>
 </div>

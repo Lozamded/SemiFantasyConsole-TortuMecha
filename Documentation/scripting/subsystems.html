@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Scripting API: Subsystems — TortoiseMecha Documentation</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
 <div class="layout">
@@ -14,40 +14,40 @@
     <nav>
       <div class="group-title">Get started</div>
       <ul>
-        <li><a href="index.html">Overview</a></li>
-        <li><a href="install-sbc.html">Install on an SBC</a></li>
+        <li><a href="../index.html">Overview</a></li>
+        <li><a href="../get-started/install-sbc.html">Install on an SBC</a></li>
       </ul>
       <div class="group-title">Scripting API</div>
       <ul>
-        <li><a href="scripting-overview.html">1. Overview &amp; main.py</a></li>
-        <li><a href="scripting-objects.html">2. Object scripts</a></li>
-        <li><a href="scripting-gui.html">3. GUI layer scripts</a></li>
-        <li><a href="scripting-subsystems.html" class="active">4. Subsystems</a></li>
-        <li><a href="scripting-reference.html">5. Reference &amp; imports</a></li>
+        <li><a href="overview.html">1. Overview &amp; main.py</a></li>
+        <li><a href="objects.html">2. Object scripts</a></li>
+        <li><a href="gui.html">3. GUI layer scripts</a></li>
+        <li><a href="subsystems.html" class="active">4. Subsystems</a></li>
+        <li><a href="reference.html">5. Reference &amp; imports</a></li>
       </ul>
       <div class="group-title">File Formats</div>
       <ul>
-        <li><a href="formats-overview.html">1. Project &amp; palette</a></li>
-        <li><a href="formats-scene.html">2. Scenes</a></li>
-        <li><a href="formats-object.html">3. Objects</a></li>
-        <li><a href="formats-sprite-tileset.html">4. Sprites &amp; tilesets</a></li>
-        <li><a href="formats-background.html">5. Backgrounds</a></li>
-        <li><a href="formats-gui.html">6. GUI layers &amp; elements</a></li>
-        <li><a href="formats-fonts.html">7. Fonts</a></li>
+        <li><a href="../formats/overview.html">1. Project &amp; palette</a></li>
+        <li><a href="../formats/scene.html">2. Scenes</a></li>
+        <li><a href="../formats/object.html">3. Objects</a></li>
+        <li><a href="../formats/sprite-tileset.html">4. Sprites &amp; tilesets</a></li>
+        <li><a href="../formats/background.html">5. Backgrounds</a></li>
+        <li><a href="../formats/gui.html">6. GUI layers &amp; elements</a></li>
+        <li><a href="../formats/fonts.html">7. Fonts</a></li>
       </ul>
       <div class="group-title">TortoiseStudio</div>
       <ul>
-        <li><a href="studio-overview.html">1. Overview &amp; workflow</a></li>
-        <li><a href="studio-pixel-editors.html">2. Sprite, tileset &amp; background</a></li>
-        <li><a href="studio-object-scene.html">3. Object &amp; scene editors</a></li>
-        <li><a href="studio-gui-hud.html">4. GUI/HUD editors</a></li>
-        <li><a href="studio-fonts-palette-audio.html">5. Palette, fonts &amp; audio</a></li>
-        <li><a href="studio-build-test.html">6. Build &amp; test</a></li>
+        <li><a href="../studio/overview.html">1. Overview &amp; workflow</a></li>
+        <li><a href="../studio/pixel-editors.html">2. Sprite, tileset &amp; background</a></li>
+        <li><a href="../studio/object-scene.html">3. Object &amp; scene editors</a></li>
+        <li><a href="../studio/gui-hud.html">4. GUI/HUD editors</a></li>
+        <li><a href="../studio/fonts-palette-audio.html">5. Palette, fonts &amp; audio</a></li>
+        <li><a href="../studio/build-test.html">6. Build &amp; test</a></li>
       </ul>
       <div class="group-title">Walkthrough</div>
       <ul>
-        <li><a href="walkthrough-first-scene.html">1. Build your first scene</a></li>
-        <li><a href="walkthrough-tour.html">2. Guided tour</a></li>
+        <li><a href="../walkthrough/first-scene.html">1. Build your first scene</a></li>
+        <li><a href="../walkthrough/tour.html">2. Guided tour</a></li>
       </ul>
     </nav>
   </aside>
@@ -68,7 +68,7 @@ if keys[pygame.K_LEFT]:
     scripts.</p>
     <p>Since scripts never see <code>KEYDOWN</code> events (the host loop pumps events once, not per script),
     detecting a fresh press means comparing against the previous frame's state yourself — see the menu example
-    on the <a href="scripting-gui.html">GUI layer scripts</a> page.</p>
+    on the <a href="gui.html">GUI layer scripts</a> page.</p>
     <div class="callout">
       <strong>No gamepad/joystick support yet</strong>
       Nothing in the codebase reads <code>pygame.joystick</code> — input is keyboard-only for now, despite the
@@ -91,7 +91,7 @@ if keys[pygame.K_LEFT]:
       <code>pygame.mixer.music.set_volume(...)</code> yourself.
     </div>
     <p>Channel names come from the generated <code>scripts/_generated/audio_auto.py</code> sidecar (see
-    <a href="scripting-objects.html">Object scripts</a>): <code>CHANNEL_MUSIC</code>,
+    <a href="objects.html">Object scripts</a>): <code>CHANNEL_MUSIC</code>,
     <code>CHANNEL_GAME_SFX</code>, <code>CHANNEL_UI_SFX</code>, and an <code>AUDIO_CHANNELS</code> dict mapping
     each sound's project-relative path to its assigned channel. A typical project wraps this in its own small
     convention module (hello_tortu's <code>audio_settings.py</code>):</p>
@@ -112,7 +112,7 @@ def apply_music_volume():
     <code>speaker, text, icon, id, options, action</code>), where each <code>DialogueOption</code> can carry its
     own <code>next_dialogue</code> and <code>action</code>. It does not display anything — that's a GUI layer
     script's job (typically the project's <code>dialoguebox.py</code>), driven by the request/consume pair from
-    <a href="scripting-objects.html">Object scripts</a>:</p>
+    <a href="objects.html">Object scripts</a>:</p>
     <pre><code># from any object script, e.g. an NPC on the action button:
 instance_api.request_dialogue("dialogues/robot_intro.json")
 
@@ -200,8 +200,8 @@ SceneRenderer.render_overlay(scene, *, camera_x=0, camera_y=0,
     camera-locked player/GUI overlay on top of <code>render(..., z_max=z_min-1)</code>.</p>
 
     <div class="page-nav">
-      <a href="scripting-gui.html">&larr; GUI layer scripts</a>
-      <a href="scripting-reference.html">Next: Reference &amp; imports &rarr;</a>
+      <a href="gui.html">&larr; GUI layer scripts</a>
+      <a href="reference.html">Next: Reference &amp; imports &rarr;</a>
     </div>
   </main>
 </div>

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Scripting API: Object Scripts — TortoiseMecha Documentation</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
 <div class="layout">
@@ -14,40 +14,40 @@
     <nav>
       <div class="group-title">Get started</div>
       <ul>
-        <li><a href="index.html">Overview</a></li>
-        <li><a href="install-sbc.html">Install on an SBC</a></li>
+        <li><a href="../index.html">Overview</a></li>
+        <li><a href="../get-started/install-sbc.html">Install on an SBC</a></li>
       </ul>
       <div class="group-title">Scripting API</div>
       <ul>
-        <li><a href="scripting-overview.html">1. Overview &amp; main.py</a></li>
-        <li><a href="scripting-objects.html" class="active">2. Object scripts</a></li>
-        <li><a href="scripting-gui.html">3. GUI layer scripts</a></li>
-        <li><a href="scripting-subsystems.html">4. Subsystems</a></li>
-        <li><a href="scripting-reference.html">5. Reference &amp; imports</a></li>
+        <li><a href="overview.html">1. Overview &amp; main.py</a></li>
+        <li><a href="objects.html" class="active">2. Object scripts</a></li>
+        <li><a href="gui.html">3. GUI layer scripts</a></li>
+        <li><a href="subsystems.html">4. Subsystems</a></li>
+        <li><a href="reference.html">5. Reference &amp; imports</a></li>
       </ul>
       <div class="group-title">File Formats</div>
       <ul>
-        <li><a href="formats-overview.html">1. Project &amp; palette</a></li>
-        <li><a href="formats-scene.html">2. Scenes</a></li>
-        <li><a href="formats-object.html">3. Objects</a></li>
-        <li><a href="formats-sprite-tileset.html">4. Sprites &amp; tilesets</a></li>
-        <li><a href="formats-background.html">5. Backgrounds</a></li>
-        <li><a href="formats-gui.html">6. GUI layers &amp; elements</a></li>
-        <li><a href="formats-fonts.html">7. Fonts</a></li>
+        <li><a href="../formats/overview.html">1. Project &amp; palette</a></li>
+        <li><a href="../formats/scene.html">2. Scenes</a></li>
+        <li><a href="../formats/object.html">3. Objects</a></li>
+        <li><a href="../formats/sprite-tileset.html">4. Sprites &amp; tilesets</a></li>
+        <li><a href="../formats/background.html">5. Backgrounds</a></li>
+        <li><a href="../formats/gui.html">6. GUI layers &amp; elements</a></li>
+        <li><a href="../formats/fonts.html">7. Fonts</a></li>
       </ul>
       <div class="group-title">TortoiseStudio</div>
       <ul>
-        <li><a href="studio-overview.html">1. Overview &amp; workflow</a></li>
-        <li><a href="studio-pixel-editors.html">2. Sprite, tileset &amp; background</a></li>
-        <li><a href="studio-object-scene.html">3. Object &amp; scene editors</a></li>
-        <li><a href="studio-gui-hud.html">4. GUI/HUD editors</a></li>
-        <li><a href="studio-fonts-palette-audio.html">5. Palette, fonts &amp; audio</a></li>
-        <li><a href="studio-build-test.html">6. Build &amp; test</a></li>
+        <li><a href="../studio/overview.html">1. Overview &amp; workflow</a></li>
+        <li><a href="../studio/pixel-editors.html">2. Sprite, tileset &amp; background</a></li>
+        <li><a href="../studio/object-scene.html">3. Object &amp; scene editors</a></li>
+        <li><a href="../studio/gui-hud.html">4. GUI/HUD editors</a></li>
+        <li><a href="../studio/fonts-palette-audio.html">5. Palette, fonts &amp; audio</a></li>
+        <li><a href="../studio/build-test.html">6. Build &amp; test</a></li>
       </ul>
       <div class="group-title">Walkthrough</div>
       <ul>
-        <li><a href="walkthrough-first-scene.html">1. Build your first scene</a></li>
-        <li><a href="walkthrough-tour.html">2. Guided tour</a></li>
+        <li><a href="../walkthrough/first-scene.html">1. Build your first scene</a></li>
+        <li><a href="../walkthrough/tour.html">2. Guided tour</a></li>
       </ul>
     </nav>
   </aside>
@@ -159,7 +159,7 @@ def update(dt):
       <tr><th>Generated for</th><th>Constants it defines</th></tr>
       <tr><td>Each object (<code>&lt;name&gt;_auto.py</code>)</td><td><code>ANIM_&lt;NAME&gt;</code> per animation, <code>DEFAULT_ANIMATION</code>, <code>COLLIDER_&lt;NAME&gt;</code> per collider, <code>SOLID</code>, <code>ORIGIN</code>, and <code>CUSTOMVAR_&lt;NAME&gt;</code> / <code>CUSTOMVAR_&lt;NAME&gt;_DEFAULT</code> per custom var.</td></tr>
       <tr><td>Each scene (<code>&lt;scene&gt;_auto.py</code>)</td><td><code>OBJ_&lt;ID&gt;</code> per placed instance, <code>LINKS_&lt;ID&gt;</code> for instances with a link list.</td></tr>
-      <tr><td>Audio (fixed path <code>scripts/_generated/audio_auto.py</code>)</td><td><code>CHANNEL_&lt;NAME&gt;</code> per audio channel, <code>AUDIO_CHANNELS</code> (path→channel dict). See <a href="scripting-subsystems.html">Subsystems</a>.</td></tr>
+      <tr><td>Audio (fixed path <code>scripts/_generated/audio_auto.py</code>)</td><td><code>CHANNEL_&lt;NAME&gt;</code> per audio channel, <code>AUDIO_CHANNELS</code> (path→channel dict). See <a href="subsystems.html">Subsystems</a>.</td></tr>
     </table>
 
     <p>Collider bounds are resolved this way too, combining the object's declared colliders with its default
@@ -178,8 +178,8 @@ x, y, w, h = obj.colliders[0].resolved(sprite.pixel_width, sprite.pixel_height)<
     instance in the scene it's driving.</p>
 
     <div class="page-nav">
-      <a href="scripting-overview.html">&larr; Overview &amp; main.py</a>
-      <a href="scripting-gui.html">Next: GUI layer scripts &rarr;</a>
+      <a href="overview.html">&larr; Overview &amp; main.py</a>
+      <a href="gui.html">Next: GUI layer scripts &rarr;</a>
     </div>
   </main>
 </div>
