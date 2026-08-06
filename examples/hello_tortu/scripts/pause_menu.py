@@ -11,9 +11,13 @@ x 0..264, the Options panel x 264..528. Switching screens slides the whole
 canvas via instance_api.set_gui_layer_scroll instead of swapping layers.
 """
 
+from pathlib import Path
+
 import pygame
 
 from tortuengine import instance_api
+
+ROOT = Path(__file__).parent.parent
 
 MAIN_ITEMS = ("option_resume", "option_options")
 OPTIONS_ITEMS = ("option_2_language", "option_2_volSFX", "option_volMusic", "option_back")
@@ -49,9 +53,17 @@ _prev_enter = False
 _prev_left = False
 _prev_right = False
 
+_sfx_navigate: pygame.mixer.Sound | None = None
+_sfx_accept: pygame.mixer.Sound | None = None
+
 
 def init(engine) -> None:
-    pass
+    global _sfx_navigate, _sfx_accept
+    try:
+        _sfx_navigate = pygame.mixer.Sound(str(ROOT / "assets/audio/Menu_Navigate.ogg"))
+        _sfx_accept = pygame.mixer.Sound(str(ROOT / "assets/audio/MenuAccept.ogg"))
+    except Exception:
+        pass
 
 
 def _move_cursor(cursor_id: str, label_id: str) -> None:
@@ -145,7 +157,11 @@ def update(dt: float) -> None:
             old_index = _main_index
             _main_index = (_main_index + (1 if down_pressed else -1)) % len(MAIN_ITEMS)
             _select(CURSOR_MAIN, MAIN_ITEMS, old_index, _main_index)
+            if _sfx_navigate:
+                _sfx_navigate.play()
         if enter_pressed:
+            if _sfx_accept:
+                _sfx_accept.play()
             if MAIN_ITEMS[_main_index] == "option_resume":
                 instance_api.set_game_paused(False)
                 instance_api.set_gui_layer_visible(SELF_ID, False)
@@ -157,11 +173,17 @@ def update(dt: float) -> None:
             old_index = _options_index
             _options_index = (_options_index + (1 if down_pressed else -1)) % len(OPTIONS_ITEMS)
             _select(CURSOR_OPTIONS, OPTIONS_ITEMS, old_index, _options_index)
+            if _sfx_navigate:
+                _sfx_navigate.play()
         if enter_pressed and OPTIONS_ITEMS[_options_index] == "option_back":
+            if _sfx_accept:
+                _sfx_accept.play()
             _screen = "main"
             _scroll_target = 0.0
         elif _options_index == LANGUAGE_ROW and (left_pressed or right_pressed):
             _cycle_language(1 if right_pressed else -1)
+            if _sfx_navigate:
+                _sfx_navigate.play()
 
 
 def draw(engine) -> None:

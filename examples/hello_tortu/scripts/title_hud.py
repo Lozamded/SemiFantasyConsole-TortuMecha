@@ -11,9 +11,13 @@ Left/Right on the Language row cycle the active language in place, exactly
 like pause_menu.py's options screen — no Enter needed.
 """
 
+from pathlib import Path
+
 import pygame
 
 from tortuengine import instance_api, localization
+
+ROOT = Path(__file__).parent.parent
 
 START_SCENE = "scenes/level_01.tortuscene"
 LOAD_SCENE = "scenes/load_scene.tortuscene"
@@ -42,9 +46,18 @@ _prev_left = False
 _prev_right = False
 _prev_enter = False
 
+_sfx_navigate: pygame.mixer.Sound | None = None
+_sfx_accept: pygame.mixer.Sound | None = None
+
 
 def init(engine) -> None:
     global _prev_up, _prev_down, _prev_left, _prev_right, _prev_enter
+    global _sfx_navigate, _sfx_accept
+    try:
+        _sfx_navigate = pygame.mixer.Sound(str(ROOT / "assets/audio/Menu_Navigate.ogg"))
+        _sfx_accept = pygame.mixer.Sound(str(ROOT / "assets/audio/MenuAccept.ogg"))
+    except Exception:
+        pass
     _update_language_label()
     _select_menu(0, 0)
     # Whatever key just brought us back to the title screen (e.g. Enter on
@@ -112,13 +125,21 @@ def update(dt: float) -> None:
         old_index = _menu_index
         new_index = (_menu_index + (1 if down_pressed else -1)) % len(MENU_ITEMS)
         _select_menu(old_index, new_index)
+        if _sfx_navigate:
+            _sfx_navigate.play()
 
     if _menu_index == MENU_ITEMS.index(LANGUAGE_LABEL) and (left_pressed or right_pressed):
         _cycle_language(1 if right_pressed else -1)
+        if _sfx_navigate:
+            _sfx_navigate.play()
     elif enter_pressed:
         if _menu_index == MENU_ITEMS.index(START_LABEL):
+            if _sfx_accept:
+                _sfx_accept.play()
             instance_api.request_scene_transition(START_SCENE)
         elif _menu_index == MENU_ITEMS.index(LOAD_LABEL):
+            if _sfx_accept:
+                _sfx_accept.play()
             instance_api.request_scene_transition(LOAD_SCENE)
 
 

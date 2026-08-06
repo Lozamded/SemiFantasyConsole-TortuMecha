@@ -53,6 +53,7 @@ HURT_DUR = 0.4
 KNOCKBACK_SPEED = 140.0
 DEFEAT_POP_VEL = -220.0  # initial upward pop when the player is defeated (Mario-style)
 DEFEAT_OFFSCREEN_Y = SCREEN_H + 40  # falls this far below the top of the screen before respawn
+DEFEAT_HOLD_DUR = 2.32  # extra pause after falling offscreen, so sfx_defeat/LostLife can finish
 SOUL_RISE_SPEED = 60.0  # px/sec the soul continuously drifts upward once spawned
 FINISH_TOTAL_DUR = 6.0  # seconds from the finish trigger until finish_done fires
 # Life system: each enemy touch costs one energy pip (life_bar); losing the
@@ -104,6 +105,10 @@ defeat_done = False
 # Spawned once the defeat bounce reaches its apex (vy crosses from rising to
 # falling) — floats upward on its own while the body keeps falling.
 _soul_obj: SceneObject | None = None
+# Counts down DEFEAT_HOLD_DUR once the bounce has fallen off the bottom of the
+# screen — defeat_done only fires once this reaches zero, giving sfx_defeat
+# and LostLife a moment to play out before the scene switches away.
+_defeat_hold_timer = 0.0
 # World-Y threshold below which falling (e.g. into a bottomless pit) triggers
 # defeat — resolved per scene in init() from the mechaturtle instance's
 # kill_plane_y custom var (see mechaturtle.tortuobject in TortuStudio).
@@ -126,6 +131,16 @@ _sfx_jump: pygame.mixer.Sound | None = None
 _sfx_shell: pygame.mixer.Sound | None = None
 _sfx_attack: pygame.mixer.Sound | None = None
 _sfx_coin: pygame.mixer.Sound | None = None
+_sfx_damage: pygame.mixer.Sound | None = None
+_sfx_defeat: pygame.mixer.Sound | None = None
+_sfx_stage_clear: pygame.mixer.Sound | None = None
+_sfx_lost_life: pygame.mixer.Sound | None = None
+_sfx_hit_shell: pygame.mixer.Sound | None = None
+_sfx_pause: pygame.mixer.Sound | None = None
+# Edge-detector for the shell-bump sound below — True while a live slime
+# overlaps the crouched player, so the sound fires once per contact instead
+# of every frame the two stay overlapping.
+_shell_hit_active = False
 
 _camera = None
 _is_camera_target: bool = True
@@ -405,6 +420,14 @@ def _enter_defeated() -> None:
     _anim_frame, _anim_elapsed = 0, 0.0
     if _attack_obj is not None:
         _attack_obj.enabled = False
+    if _sfx_defeat:
+        _sfx_defeat.play()
+    # LostLife is a full song, not a one-shot effect — pause the level's
+    # background music (rather than stopping it) so it can resume from the
+    # same spot on respawn, instead of the two tracks overlapping.
+    pygame.mixer.music.pause()
+    if _sfx_lost_life:
+        _sfx_lost_life.play()
 
 
 def _push_defeated_frame_state(dt: float) -> None:
@@ -435,13 +458,19 @@ def init(engine, scene_path: str = "scenes/level_01.tortuscene") -> None:
     global GEAR_HB_L, GEAR_HB_R, GEAR_HB_T, GEAR_HB_B
     global FINISH_HB_L, FINISH_HB_R, FINISH_HB_T, FINISH_HB_B
     global _sfx_jump, _sfx_shell, _sfx_attack, _sfx_coin, _is_camera_target
+    global _sfx_damage, _sfx_defeat, _sfx_stage_clear, _sfx_lost_life
+    global _sfx_hit_shell, _shell_hit_active, _sfx_pause
     global _engine, _attack_obj, _hurt_timer, _knockback_dir
-    global _defeated, defeat_done, _soul_obj, _kill_plane_y
+    global _defeated, defeat_done, _soul_obj, _kill_plane_y, _defeat_hold_timer
     global _prev_pause_held
     global _level_finished, _finish_timer, _finish_turnon_timer
     global _finish_monitor_inst, _finish_turnon_dur, finish_done
 
     _engine = engine
+    # Resume the level theme if it was paused for a LostLife song on the
+    # previous life's defeat (see _enter_defeated()) — harmless no-op if it
+    # wasn't paused, or if main.py is about to load a fresh track anyway.
+    pygame.mixer.music.unpause()
     # Whatever key just confirmed a menu item to get here (Start Game,
     # Continue, a Load confirm) is often still physically held on this same
     # frame — seed the edge-detector from the actual key state instead of
@@ -459,7 +488,9 @@ def init(engine, scene_path: str = "scenes/level_01.tortuscene") -> None:
     _was_on_ground = False
     _crouching, _prev_down = False, False
     _hurt_timer, _knockback_dir = 0.0, 1
+    _shell_hit_active = False
     _defeated, defeat_done, _soul_obj = False, False, None
+    _defeat_hold_timer = 0.0
     _level_finished, _finish_timer, _finish_turnon_timer = False, 0.0, 0.0
     _finish_monitor_inst, finish_done = None, False
 
@@ -578,6 +609,14 @@ def init(engine, scene_path: str = "scenes/level_01.tortuscene") -> None:
         _sfx_shell = pygame.mixer.Sound(str(ROOT / "assets/audio/sfx_shell.ogg"))
         _sfx_attack = pygame.mixer.Sound(str(ROOT / "assets/audio/sfx_attack.ogg"))
         _sfx_coin = pygame.mixer.Sound(str(ROOT / "assets/audio/sfx_coin.ogg"))
+        _sfx_damage = pygame.mixer.Sound(str(ROOT / "assets/audio/sfx_damage.ogg"))
+        _sfx_defeat = pygame.mixer.Sound(str(ROOT / "assets/audio/sfx_defeat.ogg"))
+        _sfx_stage_clear = pygame.mixer.Sound(
+            str(ROOT / "assets/audio/Stage Clear Long (Jingle).ogg")
+        )
+        _sfx_lost_life = pygame.mixer.Sound(str(ROOT / "assets/audio/LostLife.ogg"))
+        _sfx_hit_shell = pygame.mixer.Sound(str(ROOT / "assets/audio/Hit_shell.ogg"))
+        _sfx_pause = pygame.mixer.Sound(str(ROOT / "assets/audio/pause.ogg"))
     except Exception:
         pass
 
@@ -601,10 +640,11 @@ def update(dt: float) -> None:
     global _prev_jump, _prev_attack, _was_on_ground
     global _crouching, _prev_down
     global _hurt_timer, _knockback_dir
-    global _defeated, defeat_done, _soul_obj
+    global _defeated, defeat_done, _soul_obj, _defeat_hold_timer
     global _prev_pause_held
     global _level_finished, _finish_timer, _finish_turnon_timer, finish_done
     global _finish_monitor_inst
+    global _shell_hit_active
 
     # Pausing is disabled during the defeat bounce — Enter is left free for
     # whatever comes next (respawn/game-over) instead of freezing mid-death.
@@ -658,7 +698,14 @@ def update(dt: float) -> None:
         # (which starts at or below DEFEAT_OFFSCREEN_Y already) would finish
         # instantly, skipping the pop-up and the soul spawn entirely.
         if _vy >= 0 and _py > DEFEAT_OFFSCREEN_Y:
-            defeat_done = True
+            # Once offscreen, hold here for DEFEAT_HOLD_DUR instead of firing
+            # defeat_done immediately — gives sfx_defeat/LostLife room to play
+            # out before main.py switches away from this scene.
+            if _defeat_hold_timer <= 0.0:
+                _defeat_hold_timer = DEFEAT_HOLD_DUR
+            _defeat_hold_timer -= dt
+            if _defeat_hold_timer <= 0.0:
+                defeat_done = True
         return
 
     if _level_finished:
@@ -744,12 +791,37 @@ def update(dt: float) -> None:
             s_t, s_b = inst.y + SLIME_HB_T, inst.y + SLIME_HB_B
             if px_l < s_r and px_r > s_l and py_t < s_b and py_b > s_t:
                 _knockback_dir = -1 if _px < inst.x else 1
+                if _sfx_damage:
+                    _sfx_damage.play()
                 if game_state.damage():
                     _enter_defeated()
                 else:
                     _hurt_timer = HURT_DUR
                     hurt = True
                 break
+
+    # Shell bump: crouching is immune to touch-damage above — red_slime.py
+    # bounces off a crouched turtle instead of hurting it — so play Hit_shell
+    # here on the player's side whenever a live slime overlaps the crouch
+    # hitbox. Edge-triggered on _shell_hit_active so it fires once per
+    # contact rather than every frame the two stay overlapping.
+    if _crouching and _scene is not None:
+        shell_hit = False
+        for inst in _scene.objects:
+            if inst.prefab != SLIME_PREFAB or not inst.enabled:
+                continue
+            if inst.animation == slime_auto.ANIM_DEFEAT:
+                continue
+            s_l, s_r = inst.x + SLIME_HB_L, inst.x + SLIME_HB_R
+            s_t, s_b = inst.y + SLIME_HB_T, inst.y + SLIME_HB_B
+            if px_l < s_r and px_r > s_l and py_t < s_b and py_b > s_t:
+                shell_hit = True
+                break
+        if shell_hit and not _shell_hit_active and _sfx_hit_shell:
+            _sfx_hit_shell.play()
+        _shell_hit_active = shell_hit
+    else:
+        _shell_hit_active = False
 
     if _defeated:
         # Skip the rest of this frame's normal input/physics/animation so the
@@ -868,6 +940,9 @@ def update(dt: float) -> None:
                 _finish_timer = FINISH_TOTAL_DUR
                 _attack_obj.enabled = False
                 instance_api.set_gui_layer_visible(FINISH_GUI_LAYER, True)
+                pygame.mixer.music.stop()
+                if _sfx_stage_clear:
+                    _sfx_stage_clear.play()
                 break
 
     # Animation state
@@ -921,6 +996,8 @@ def update(dt: float) -> None:
     if pause_pressed and not instance_api.is_dialogue_active():
         instance_api.set_game_paused(True)
         _set_pause_gui_visible(True)
+        if _sfx_pause:
+            _sfx_pause.play()
 
 
 def draw(engine) -> None:

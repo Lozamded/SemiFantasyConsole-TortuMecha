@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pygame
+
 from tortuengine import instance_api
 from tortuengine.object import TortuObject, load_object
 from tortuengine.sprite import load_sprite
@@ -36,6 +38,8 @@ _dead = False
 _defeat_timer = 0.0
 _defeat_duration = 0.0  # seconds — resolved in init() from the defeat sprite's own frame_count/fps
 
+_sfx_defeat: pygame.mixer.Sound | None = None
+
 
 def _resolve_bounds(obj: TortuObject, sprite_w: int, sprite_h: int) -> tuple[int, int, int, int]:
     res = [c.resolved(sprite_w, sprite_h) for c in obj.colliders]
@@ -54,6 +58,12 @@ def init(engine) -> None:
     global _atk_l, _atk_r, _atk_t, _atk_b
     global _px, _py, _vy, _direction
     global _dead, _defeat_timer, _defeat_duration
+    global _sfx_defeat
+
+    try:
+        _sfx_defeat = pygame.mixer.Sound(str(ROOT / "assets/audio/enemydefeat.ogg"))
+    except Exception:
+        pass
 
     slime_obj = load_object(ROOT / SLIME_PREFAB)
     slime_sprite = load_sprite(ROOT / slime_obj.default_sprite)
@@ -169,6 +179,8 @@ def update(dt: float) -> None:
                 _defeat_timer = _defeat_duration
                 instance_api.set_animation(SELF_ID, auto.ANIM_DEFEAT)
                 instance_api.set_position(SELF_ID, _px, _py)
+                if _sfx_defeat:
+                    _sfx_defeat.play()
                 return
 
     instance_api.set_position(SELF_ID, _px, _py)

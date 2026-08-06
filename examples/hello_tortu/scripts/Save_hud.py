@@ -13,10 +13,14 @@ on Continue skips saving and asks save_scene.py to move on to level_02 via
 instance_api.request_scene_transition().
 """
 
+from pathlib import Path
+
 import pygame
 
 from tortuengine import instance_api, localization
 from scripts import save_system, save_vars
+
+ROOT = Path(__file__).parent.parent
 
 SAVE_OVERWRITE_PATH = "assets/gui/Save_overwrite.tortuguilayer"
 NEXT_LEVEL_ID = "level_02"
@@ -52,9 +56,18 @@ _prev_left = False
 _prev_right = False
 _prev_enter = False
 
+_sfx_navigate: pygame.mixer.Sound | None = None
+_sfx_accept: pygame.mixer.Sound | None = None
+
 
 def init(engine) -> None:
     global _prev_up, _prev_down, _prev_left, _prev_right, _prev_enter
+    global _sfx_navigate, _sfx_accept
+    try:
+        _sfx_navigate = pygame.mixer.Sound(str(ROOT / "assets/audio/Menu_Navigate.ogg"))
+        _sfx_accept = pygame.mixer.Sound(str(ROOT / "assets/audio/MenuAccept.ogg"))
+    except Exception:
+        pass
     localization.bind_variables(lambda name: getattr(save_vars, name, None))
     _refresh_slot_labels()
     _select_menu(0, 0)
@@ -169,7 +182,11 @@ def update(dt: float) -> None:
     if _confirm_active:
         if left_pressed or right_pressed:
             _select_overwrite(_confirm_index, 0 if _confirm_index == 1 else 1)
+            if _sfx_navigate:
+                _sfx_navigate.play()
         if enter_pressed:
+            if _sfx_accept:
+                _sfx_accept.play()
             if _confirm_index == 0:
                 _do_save(_confirm_slot)
             _end_confirm()
@@ -179,8 +196,12 @@ def update(dt: float) -> None:
         old_index = _menu_index
         new_index = (_menu_index + (1 if down_pressed else -1)) % len(MENU_ITEMS)
         _select_menu(old_index, new_index)
+        if _sfx_navigate:
+            _sfx_navigate.play()
 
     if enter_pressed:
+        if _sfx_accept:
+            _sfx_accept.play()
         if _menu_index < len(SLOT_LABELS):
             slot_index = _menu_index + 1
             slots = save_system.read_slots()

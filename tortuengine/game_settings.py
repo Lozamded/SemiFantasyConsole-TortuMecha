@@ -36,6 +36,9 @@ class GameSettings:
     author: str = ""
     description: str = ""
     audio_channels: list[str] = field(default_factory=lambda: ["music", "sfx_1", "sfx_2", "sfx_3"])
+    # Maps a project-relative audio file path (e.g. "assets/audio/sfx_jump.ogg")
+    # to one of the names in audio_channels — which mixer channel it plays on.
+    audio_channel_map: dict[str, str] = field(default_factory=dict)
 
     def validate(self) -> None:
         if not self.game_name.strip():
@@ -63,6 +66,11 @@ class GameSettings:
             audio_channels = [str(c) for c in raw_channels if str(c).strip()]
         else:
             audio_channels = ["music", "sfx_1", "sfx_2", "sfx_3"]
+        raw_channel_map = data.get("audio_channel_map")
+        if isinstance(raw_channel_map, dict):
+            audio_channel_map = {str(k): str(v) for k, v in raw_channel_map.items()}
+        else:
+            audio_channel_map = {}
         return cls(
             game_name=game_name,
             cart_name=cart_name,
@@ -71,6 +79,7 @@ class GameSettings:
             author=str(data.get("author", "")).strip(),
             description=str(data.get("description", "")).strip(),
             audio_channels=audio_channels,
+            audio_channel_map=audio_channel_map,
         )
 
     def to_dict(self) -> dict:
@@ -88,4 +97,6 @@ class GameSettings:
             data["description"] = self.description
         if self.audio_channels:
             data["audio_channels"] = list(self.audio_channels)
+        if self.audio_channel_map:
+            data["audio_channel_map"] = dict(self.audio_channel_map)
         return data

@@ -6,8 +6,8 @@ from enum import Enum
 from pathlib import Path
 
 import pygame
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QImage, QMouseEvent, QPainter, QPen, QWheelEvent
+from PyQt6.QtCore import QSize, Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QIcon, QImage, QMouseEvent, QPainter, QPen, QPixmap, QWheelEvent
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -52,6 +52,51 @@ from tortuengine.sprite_font import (
     surface_glyph_to_pixels,
 )
 from tortustudio.new_sprite_font_dialog import NewSpriteFontDialog
+
+
+_GLYPH_ICON_SIZE = 28
+_GLYPH_ICON_BG = QColor(30, 30, 40)
+_GLYPH_ICON_MISSING_BG = QColor(50, 32, 32)
+
+
+def _glyph_icon(
+    glyph: "TortuGlyph | None",
+    palette: list[tuple[int, int, int]],
+    *,
+    size: int = _GLYPH_ICON_SIZE,
+) -> QIcon:
+    """Small thumbnail of a glyph's actual pixels, centered on a fixed-size canvas
+    so every icon in the picker lines up regardless of the glyph's own aspect ratio.
+    Same composite approach as GlyphCanvas._refresh() below, just rendered to a QIcon
+    instead of the paint surface.
+    """
+    canvas = QPixmap(size, size)
+    if glyph is None or not palette:
+        canvas.fill(_GLYPH_ICON_MISSING_BG)
+        return QIcon(canvas)
+    canvas.fill(_GLYPH_ICON_BG)
+
+    w, h = glyph.width, glyph.height
+    if w <= 0 or h <= 0:
+        return QIcon(canvas)
+    composite = pygame.Surface((w, h), pygame.SRCALPHA)
+    for y in range(h):
+        for x in range(w):
+            index = glyph.pixels[y * w + x]
+            if index == TRANSPARENT_INDEX:
+                continue
+            r, g, b = palette[index]
+            composite.set_at((x, y), (r, g, b, 255))
+
+    data = pygame.image.tobytes(composite, "RGBA")
+    image = QImage(data, w, h, w * 4, QImage.Format.Format_RGBA8888).copy()
+    scaled = QPixmap.fromImage(image).scaled(
+        size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation
+    )
+    painter = QPainter(canvas)
+    painter.drawPixmap((size - scaled.width()) // 2, (size - scaled.height()) // 2, scaled)
+    painter.end()
+    return QIcon(canvas)
 
 
 class Tool(str, Enum):
@@ -549,7 +594,13 @@ class SpriteFontEditorWidget(QWidget):
         self.char_filter_edit.textChanged.connect(self._apply_char_filter)
 
         self.char_list = QListWidget()
-        self.char_list.setMinimumHeight(140)
+        self.char_list.setViewMode(QListWidget.ViewMode.IconMode)
+        self.char_list.setFlow(QListWidget.Flow.LeftToRight)
+        self.char_list.setWrapping(True)
+        self.char_list.setResizeMode(QListWidget.ResizeMode.Adjust)
+        self.char_list.setIconSize(QSize(_GLYPH_ICON_SIZE, _GLYPH_ICON_SIZE))
+        self.char_list.setSpacing(2)
+        self.char_list.setMinimumHeight(220)
         self.char_list.currentTextChanged.connect(self._on_char_selected)
 
         self.import_canvas = ImportGlyphCanvas()
@@ -575,6 +626,7 @@ class SpriteFontEditorWidget(QWidget):
 
         self.canvas = GlyphCanvas()
         self.canvas.changed.connect(self._mark_dirty)
+        self.canvas.changed.connect(self._refresh_current_char_icon)
         self.canvas.tool_cycled.connect(self._set_tool)
 
         self.show_1x1_grid = QCheckBox("Show 1×1 Grid")
@@ -917,6 +969,7 @@ class SpriteFontEditorWidget(QWidget):
         )
         glyph.pixels = pixels
         self._load_current_glyph_into_canvas()
+        self._refresh_current_char_icon()
         self._mark_dirty()
         self._refresh_preview()
 
@@ -977,6 +1030,7 @@ class SpriteFontEditorWidget(QWidget):
             )
 
         self._load_current_glyph_into_canvas()
+        self._rebuild_char_list()  # many glyphs changed at once, not just the current one
         self._mark_dirty()
         self._refresh_preview()
 
@@ -998,21 +1052,42 @@ class SpriteFontEditorWidget(QWidget):
         code = ord(char)
         return f"{char}  (U+{code:04X})"
 
+    def _char_icon_label(self, char: str) -> str:
+        """Short text under the thumbnail in the icon grid — full detail (incl. U+XXXX
+        for extra characters) stays in the tooltip via _char_list_label, it's too much
+        text to fit under a 28px icon."""
+        return "space" if char == " " else char
+
     def _rebuild_char_list(self) -> None:
         self.char_list.clear()
         if not self.sprite_font:
             return
+        glyphs = self.sprite_font.glyphs
         for char in self.sprite_font.resolved_charset():
-            item = QListWidgetItem(self._char_list_label(char))
+            icon = _glyph_icon(glyphs.get(ord(char)), self._palette_colors)
+            item = QListWidgetItem(icon, self._char_icon_label(char))
             item.setData(Qt.ItemDataRole.UserRole, char)
             if is_base_character(char):
-                item.setToolTip("Base character")
+                item.setToolTip(f"{self._char_list_label(char)} — base character")
             else:
-                item.setToolTip("Extra character — can be removed")
+                item.setToolTip(f"{self._char_list_label(char)} — extra character, can be removed")
             self.char_list.addItem(item)
             if char == self._current_char:
                 self.char_list.setCurrentItem(item)
         self._apply_char_filter()
+
+    def _refresh_current_char_icon(self) -> None:
+        """Keep the picker thumbnail live while painting, not just after switching glyphs."""
+        if not self.sprite_font:
+            return
+        item = self.char_list.currentItem()
+        if not item:
+            return
+        char = item.data(Qt.ItemDataRole.UserRole)
+        if char != self._current_char:
+            return
+        glyph = self.sprite_font.glyphs.get(ord(char))
+        item.setIcon(_glyph_icon(glyph, self._palette_colors))
 
     def _char_matches_filter(self, char: str, label: str, query: str) -> bool:
         query = query.strip().lower()
@@ -1172,6 +1247,7 @@ class SpriteFontEditorWidget(QWidget):
         self.line_height_spin.setValue(self.sprite_font.line_height)
         self._sync_import_cell_size()
         self._load_current_glyph_into_canvas()
+        self._rebuild_char_list()  # every glyph's pixel dimensions changed
         self._mark_dirty()
         self._refresh_preview()
 
@@ -1216,6 +1292,7 @@ class SpriteFontEditorWidget(QWidget):
         self.sprite_font.palette = self.palette_combo.currentText()
         self._build_swatches()
         self._load_current_glyph_into_canvas()
+        self._rebuild_char_list()  # every glyph's colors changed
         self._refresh_preview()
         self._mark_dirty()
 

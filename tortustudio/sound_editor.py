@@ -7,14 +7,18 @@ from pathlib import Path
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
+    QComboBox,
     QFileDialog,
     QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -173,14 +177,31 @@ class MusicCreatorPanel(QWidget):
 
 
 class ImportAudioPanel(QWidget):
-    """Copy .ogg / .midi files into assets/audio/ and list them."""
+    """Copy .ogg / .midi files into assets/audio/, list them, and assign
+    each one to an audio channel (see ChannelsPanel)."""
 
-    def __init__(self, project_root: Path, parent: QWidget | None = None) -> None:
+    # dict[str, str]: project-relative audio path -> assigned channel name.
+    # Emitted whenever an assignment changes, a new file gets a default
+    # assignment, or a removed/renamed channel forces a reassignment.
+    channel_map_changed = pyqtSignal(dict)
+
+    def __init__(
+        self, project_root: Path, channels: list[str] | None = None, parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
         self.project_root = project_root
+        self._channels: list[str] = list(channels) if channels else []
+        self._channel_map: dict[str, str] = {}
+        self._files: list[Path] = []
+        self._updating_table = False
 
-        self.file_list = QListWidget()
-        self.file_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
+        self.table = QTableWidget(0, 2)
+        self.table.setHorizontalHeaderLabels(["File", "Channel"])
+        self.table.verticalHeader().setVisible(False)
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
 
         self.btn_import = QPushButton("Import audio file…")
         self.btn_import.setToolTip(
@@ -196,7 +217,8 @@ class ImportAudioPanel(QWidget):
         self.status_label.setStyleSheet("color: #888; font-size: 11px;")
 
         hint = QLabel(
-            "Supported formats: .ogg (recommended for music and SFX), .midi / .mid"
+            "Supported formats: .ogg (recommended for music and SFX), .midi / .mid. "
+            "Pick a channel per file — used for per-channel volume at runtime."
         )
         hint.setStyleSheet("color: #888; font-size: 11px;")
         hint.setWordWrap(True)
@@ -208,7 +230,7 @@ class ImportAudioPanel(QWidget):
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("Project audio files:"))
-        layout.addWidget(self.file_list, stretch=1)
+        layout.addWidget(self.table, stretch=1)
         layout.addLayout(btn_row)
         layout.addWidget(hint)
         layout.addWidget(self.status_label)
@@ -217,25 +239,91 @@ class ImportAudioPanel(QWidget):
         self.project_root = project_root
         self.refresh()
 
+    def set_channel_map(self, channel_map: dict[str, str]) -> None:
+        """Seed the assignment map (e.g. from the just-opened project) before refresh()."""
+        self._channel_map = dict(channel_map)
+
+    @property
+    def channel_map(self) -> dict[str, str]:
+        return dict(self._channel_map)
+
+    def set_channels(self, channels: list[str]) -> None:
+        """Called when ChannelsPanel's channel list changes — reassigns any
+        file pointing at a channel that no longer exists to the first
+        remaining channel, then rebuilds the per-row combo boxes."""
+        self._channels = list(channels)
+        changed = False
+        fallback = self._channels[0] if self._channels else ""
+        for path, chan in list(self._channel_map.items()):
+            if chan not in self._channels:
+                self._channel_map[path] = fallback
+                changed = True
+        self._rebuild_table()
+        if changed:
+            self.channel_map_changed.emit(dict(self._channel_map))
+
+    def _relpath(self, f: Path) -> str:
+        return f.relative_to(self.project_root).as_posix()
+
     def refresh(self) -> None:
-        self.file_list.clear()
         audio_dir = self.project_root / AUDIO_DIR
         if not audio_dir.is_dir():
+            self.table.setRowCount(0)
             self.status_label.setText(f"Audio folder not found: {AUDIO_DIR}")
             return
         files = sorted(
             f for f in audio_dir.iterdir()
             if f.is_file() and f.suffix.lower() in AUDIO_SUFFIXES
         )
-        for f in files:
-            item = QListWidgetItem(f.name)
-            item.setData(Qt.ItemDataRole.UserRole, str(f))
-            item.setToolTip(str(f.relative_to(self.project_root)))
-            self.file_list.addItem(item)
+        rel_paths = {self._relpath(f) for f in files}
+
+        changed = False
+        for stale in set(self._channel_map) - rel_paths:
+            del self._channel_map[stale]
+            changed = True
+        fallback = self._channels[0] if self._channels else ""
+        for rel in rel_paths - set(self._channel_map):
+            self._channel_map[rel] = fallback
+            changed = True
+
+        self._files = files
+        self._rebuild_table()
+
         count = len(files)
         self.status_label.setText(
             f"{count} file{'s' if count != 1 else ''} in {AUDIO_DIR.as_posix()}"
         )
+        if changed:
+            self.channel_map_changed.emit(dict(self._channel_map))
+
+    def _rebuild_table(self) -> None:
+        self._updating_table = True
+        files = self._files
+        self.table.setRowCount(len(files))
+        for row, f in enumerate(files):
+            rel = self._relpath(f)
+            name_item = QTableWidgetItem(f.name)
+            name_item.setData(Qt.ItemDataRole.UserRole, str(f))
+            name_item.setToolTip(rel)
+            self.table.setItem(row, 0, name_item)
+
+            combo = QComboBox()
+            combo.addItems(self._channels)
+            current = self._channel_map.get(rel, "")
+            idx = combo.findText(current)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+            combo.currentTextChanged.connect(
+                lambda text, rel=rel: self._on_channel_picked(rel, text)
+            )
+            self.table.setCellWidget(row, 1, combo)
+        self._updating_table = False
+
+    def _on_channel_picked(self, rel: str, channel: str) -> None:
+        if self._updating_table:
+            return
+        self._channel_map[rel] = channel
+        self.channel_map_changed.emit(dict(self._channel_map))
 
     def _import_files(self) -> None:
         if not (self.project_root / "tortu.project").is_file():
@@ -273,10 +361,10 @@ class ImportAudioPanel(QWidget):
         self.refresh()
 
     def _remove_selected(self) -> None:
-        items = self.file_list.selectedItems()
-        if not items:
+        rows = sorted({idx.row() for idx in self.table.selectedIndexes()})
+        if not rows:
             return
-        names = [i.text() for i in items]
+        names = [self.table.item(r, 0).text() for r in rows]
         reply = QMessageBox.question(
             self,
             "Remove Audio",
@@ -286,8 +374,8 @@ class ImportAudioPanel(QWidget):
         if reply != QMessageBox.StandardButton.Yes:
             return
         errors: list[str] = []
-        for item in items:
-            path = Path(item.data(Qt.ItemDataRole.UserRole))
+        for r in rows:
+            path = Path(self.table.item(r, 0).data(Qt.ItemDataRole.UserRole))
             try:
                 path.unlink()
             except OSError as exc:
@@ -298,9 +386,15 @@ class ImportAudioPanel(QWidget):
 
 
 class SoundEditorWidget(QWidget):
-    """Top-level sound editor: channels config + sub-tabs for creator and import."""
+    """Top-level sound editor: channels config + sub-tabs for creator and import.
 
-    channels_changed = pyqtSignal(list)  # proxied from ChannelsPanel
+    Channel renames/additions and per-file channel assignments only live in
+    the widgets' own memory until "Save audio channels" is clicked — nothing
+    here writes to tortu.project or regenerates audio_auto.py on its own,
+    mirroring the explicit "Save game settings" button on the Game Settings tab.
+    """
+
+    save_requested = pyqtSignal(list, dict)  # (channels, channel_map)
 
     def __init__(self, project_root: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -309,24 +403,41 @@ class SoundEditorWidget(QWidget):
         channels_group = QGroupBox("Audio Channels")
         channels_layout = QVBoxLayout(channels_group)
         self.channels_panel = ChannelsPanel()
-        self.channels_panel.channels_changed.connect(self.channels_changed)
+        self.channels_panel.channels_changed.connect(self._on_channels_changed)
         channels_layout.addWidget(self.channels_panel)
 
         self.music_creator = MusicCreatorPanel()
-        self.import_audio = ImportAudioPanel(project_root)
+        self.import_audio = ImportAudioPanel(project_root, self.channels_panel.channels)
 
         self.sub_tabs = QTabWidget()
         self.sub_tabs.addTab(self.music_creator, "Music Creator")
         self.sub_tabs.addTab(self.import_audio, "Import Audio")
 
+        self.btn_save = QPushButton("Save audio channels")
+        self.btn_save.setToolTip(
+            "Write the channel list and per-file assignments to tortu.project "
+            "and regenerate scripts/_generated/audio_auto.py"
+        )
+        self.btn_save.clicked.connect(self._on_save_clicked)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.addWidget(channels_group)
         layout.addWidget(self.sub_tabs, stretch=1)
+        layout.addWidget(self.btn_save)
+
+    def _on_channels_changed(self, channels: list[str]) -> None:
+        self.import_audio.set_channels(channels)
+
+    def _on_save_clicked(self) -> None:
+        self.save_requested.emit(self.channels_panel.channels, self.import_audio.channel_map)
 
     def set_project_root(self, project_root: Path) -> None:
         self.project_root = project_root
         self.import_audio.set_project_root(project_root)
+
+    def set_channel_map(self, channel_map: dict[str, str]) -> None:
+        self.import_audio.set_channel_map(channel_map)
 
     def refresh(self) -> None:
         self.import_audio.refresh()

@@ -5038,6 +5038,12 @@
       "x": 1174,
       "y": 159,
       "id": "FinishMonitor1"
+    },
+    {
+      "object": "assets/objects/check_pc_off.tortuobject",
+      "x": 881,
+      "y": 129,
+      "id": "check_pc_off1"
     }
   ],
   "gui_layers": [

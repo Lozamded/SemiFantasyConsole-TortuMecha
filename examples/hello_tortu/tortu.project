@@ -10,9 +10,29 @@
     "start_scene": "scenes/title.tortuscene",
     "audio_channels": [
       "music",
-      "sfx_1",
-      "sfx_2",
-      "sfx_3"
-    ]
+      "game_sfx",
+      "ui_sfx"
+    ],
+    "audio_channel_map": {
+      "assets/audio/GameOver (Jingle).ogg": "music",
+      "assets/audio/level_complete.ogg": "music",
+      "assets/audio/sfx_attack.ogg": "game_sfx",
+      "assets/audio/sfx_shell.ogg": "game_sfx",
+      "assets/audio/Stage Clear Long (Jingle).ogg": "music",
+      "assets/audio/sfx_coin.ogg": "game_sfx",
+      "assets/audio/sfx_jump.ogg": "game_sfx",
+      "assets/audio/LostLife.ogg": "music",
+      "assets/audio/sfx_defeat.ogg": "game_sfx",
+      "assets/audio/every Friday.ogg": "music",
+      "assets/audio/Stage Clear Short (Jingle).ogg": "music",
+      "assets/audio/Hang In There v0_5.ogg": "music",
+      "assets/audio/sfx_damage.ogg": "game_sfx",
+      "assets/audio/Hit_shell.ogg": "game_sfx",
+      "assets/audio/Menu_Navigate.ogg": "ui_sfx",
+      "assets/audio/enemydefeat.ogg": "game_sfx",
+      "assets/audio/pause.ogg": "ui_sfx",
+      "assets/audio/MenuAccept.ogg": "ui_sfx",
+      "assets/audio/Jingle_checkpoint.ogg": "game_sfx"
+    }
   }
 }

@@ -20,7 +20,9 @@ _current_scene_path = "scenes/level_01.tortuscene"
 def _enter_title():
     global _state
     _state = "title"
-    pygame.mixer.music.stop()
+    pygame.mixer.music.load(str(ROOT / "assets/audio/Hang In There v0_5.ogg"))
+    pygame.mixer.music.set_volume(0.5)
+    pygame.mixer.music.play(-1)
     _title.init(_engine)
 
 
@@ -47,7 +49,9 @@ def _enter_level(new_game: bool, scene_path: str | None = None):
 def _enter_gameover():
     global _state
     _state = "gameover"
-    pygame.mixer.music.stop()
+    pygame.mixer.music.load(str(ROOT / "assets/audio/GameOver (Jingle).ogg"))
+    pygame.mixer.music.set_volume(0.5)
+    pygame.mixer.music.play(0)
     _gameover.init(_engine)
 
 

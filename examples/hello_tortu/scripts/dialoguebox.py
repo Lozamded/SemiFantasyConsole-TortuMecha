@@ -30,11 +30,15 @@ flow (see `_run_action`/`_apply_action_result` below) rather than being a
 pure side effect like `set_var`/`do_action`.
 """
 
+from pathlib import Path
+
 import pygame
 
 from tortuengine import instance_api, localization
 from tortuengine.dialogue import Action, load_action, load_dialogue
 from scripts import dialogue_vars
+
+ROOT = Path(__file__).parent.parent
 
 SPEAKER_LABEL = "dialog_speaker"
 TEXT_LABEL = "dialog_text"
@@ -60,6 +64,10 @@ _prev_action = False
 _prev_up = False
 _prev_down = False
 
+_sfx_navigate: pygame.mixer.Sound | None = None
+_sfx_accept: pygame.mixer.Sound | None = None
+_sfx_next: pygame.mixer.Sound | None = None
+
 
 def _action_held() -> bool:
     keys = pygame.key.get_pressed()
@@ -67,6 +75,13 @@ def _action_held() -> bool:
 
 
 def init(engine) -> None:
+    global _sfx_navigate, _sfx_accept, _sfx_next
+    try:
+        _sfx_navigate = pygame.mixer.Sound(str(ROOT / "assets/audio/Menu_Navigate.ogg"))
+        _sfx_accept = pygame.mixer.Sound(str(ROOT / "assets/audio/MenuAccept.ogg"))
+        _sfx_next = pygame.mixer.Sound(str(ROOT / "assets/audio/DialogueNext.ogg"))
+    except Exception:
+        pass
     localization.bind_variables(lambda name: getattr(dialogue_vars, name, None))
 
 
@@ -262,9 +277,15 @@ def update(dt: float) -> None:
     if line.options:
         if up_pressed or down_pressed:
             _move_option(line.options, 1 if down_pressed else -1)
+            if _sfx_navigate:
+                _sfx_navigate.play()
         if action_pressed:
+            if _sfx_accept:
+                _sfx_accept.play()
             _choose_option(line, line.options[_option_index])
     elif action_pressed:
+        if _sfx_next:
+            _sfx_next.play()
         _advance()
 
 

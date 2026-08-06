@@ -17,10 +17,14 @@ saved current_lvl via instance_api.request_scene_transition(). Enter on
 Back returns to the title screen.
 """
 
+from pathlib import Path
+
 import pygame
 
 from tortuengine import instance_api
 from scripts import game_state, save_system
+
+ROOT = Path(__file__).parent.parent
 
 LOAD_AREYOUSURE_PATH = "assets/gui/Load_areyousure.tortuguilayer"
 TITLE_SCENE = "scenes/title.tortuscene"
@@ -51,9 +55,18 @@ _prev_left = False
 _prev_right = False
 _prev_enter = False
 
+_sfx_navigate: pygame.mixer.Sound | None = None
+_sfx_accept: pygame.mixer.Sound | None = None
+
 
 def init(engine) -> None:
     global _prev_up, _prev_down, _prev_left, _prev_right, _prev_enter
+    global _sfx_navigate, _sfx_accept
+    try:
+        _sfx_navigate = pygame.mixer.Sound(str(ROOT / "assets/audio/Menu_Navigate.ogg"))
+        _sfx_accept = pygame.mixer.Sound(str(ROOT / "assets/audio/MenuAccept.ogg"))
+    except Exception:
+        pass
     _refresh_slot_labels()
     _select_menu(0, 0)
     instance_api.set_gui_layer_visible(LOAD_AREYOUSURE_PATH, False)
@@ -160,7 +173,11 @@ def update(dt: float) -> None:
     if _confirm_active:
         if left_pressed or right_pressed:
             _select_overwrite(_confirm_index, 0 if _confirm_index == 1 else 1)
+            if _sfx_navigate:
+                _sfx_navigate.play()
         if enter_pressed:
+            if _sfx_accept:
+                _sfx_accept.play()
             if _confirm_index == 0:
                 _do_load(_confirm_slot)
             _end_confirm()
@@ -170,13 +187,19 @@ def update(dt: float) -> None:
         old_index = _menu_index
         new_index = (_menu_index + (1 if down_pressed else -1)) % len(MENU_ITEMS)
         _select_menu(old_index, new_index)
+        if _sfx_navigate:
+            _sfx_navigate.play()
 
     if enter_pressed:
         if _menu_index < len(SLOT_LABELS):
             slot_index = _menu_index + 1
             if save_system.read_slot(slot_index) is not None:
+                if _sfx_accept:
+                    _sfx_accept.play()
                 _start_confirm(slot_index)
         else:
+            if _sfx_accept:
+                _sfx_accept.play()
             instance_api.request_scene_transition(TITLE_SCENE)
 
 

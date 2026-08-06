@@ -45,7 +45,11 @@ from tortuengine.gui_layer import save_gui_layer
 from tortuengine.object import save_object
 from tortuengine.pip_bar import save_pip_bar
 from tortuengine.progress_bar import save_progress_bar
-from tortuengine.script_codegen import write_object_auto_script, write_scene_auto_script
+from tortuengine.script_codegen import (
+    write_audio_auto_script,
+    write_object_auto_script,
+    write_scene_auto_script,
+)
 from tortuengine.project import Project, create_project, load_project, save_project
 from tortuengine.scene import save_scene
 from tortuengine.sprite import save_sprite
@@ -433,7 +437,7 @@ class MainWindow(QMainWindow):
         self.object_editor.new_object_requested.connect(self._action_new_object)
         self.object_editor.open_object_requested.connect(self._action_open_object)
         self.sound_editor = SoundEditorWidget(Path("."))
-        self.sound_editor.channels_changed.connect(self._on_channels_changed)
+        self.sound_editor.save_requested.connect(self._save_audio_channels)
         self.palette_editor = PaletteEditorWidget(Path("."))
         self.palette_editor.saved.connect(self._on_palette_saved)
 
@@ -537,6 +541,8 @@ class MainWindow(QMainWindow):
         self.object_editor.project_root = project.root
         self.sound_editor.set_project_root(project.root)
         self.sound_editor.channels_panel.set_channels(project.game.audio_channels)
+        self.sound_editor.import_audio.set_channels(project.game.audio_channels)
+        self.sound_editor.set_channel_map(project.game.audio_channel_map)
         self.palette_editor.set_project_root(project.root)
         self._active_sprite_path = None
         self._active_tileset_path = None
@@ -925,11 +931,15 @@ class MainWindow(QMainWindow):
         self.viewport.set_fps(self.project.game.fps)
         self.log("Saved game settings.")
 
-    def _on_channels_changed(self, channels: list[str]) -> None:
+    def _save_audio_channels(self, channels: list[str], channel_map: dict) -> None:
         if not self.project:
+            QMessageBox.information(self, "Sound Editor", "Open a project first.")
             return
         self.project.game.audio_channels = channels
+        self.project.game.audio_channel_map = channel_map
         save_project(self.project)
+        write_audio_auto_script(channels, channel_map, self.project.root)
+        self.log("Saved audio channels and assignments.")
 
     def _action_validate_project(self) -> None:
         if not self.project:
