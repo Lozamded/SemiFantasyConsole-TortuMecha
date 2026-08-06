@@ -12,13 +12,35 @@ GEARS_PER_LIFE = 100
 energy = MAX_ENERGY
 lives = MAX_LIVES
 gears = 0
- 
+
+# Last checkpoint flag touched in the current level, or None if none yet —
+# mechaturtle_player.py spawns here instead of the scene's authored player
+# start once set. Per-level: main.py clears it whenever a *different* scene
+# loads (new game, Continue, Load), but leaves it alone across a same-level
+# respawn (the whole point of a checkpoint) — see check_pc_off.py, which is
+# the only thing that ever sets it.
+checkpoint: tuple[float, float] | None = None
+
+
 def reset() -> None:
     """Call when starting a new game (title -> level)."""
-    global energy, lives, gears
+    global energy, lives, gears, checkpoint
     energy = MAX_ENERGY
     lives = MAX_LIVES
     gears = 0
+    checkpoint = None
+
+
+def clear_checkpoint() -> None:
+    """Call whenever a different scene loads (Continue, Load) — a checkpoint
+    position only makes sense within the level it was recorded in."""
+    global checkpoint
+    checkpoint = None
+
+
+def set_checkpoint(x: float, y: float) -> None:
+    global checkpoint
+    checkpoint = (x, y)
 
 
 def damage() -> bool:

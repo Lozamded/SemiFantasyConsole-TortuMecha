@@ -38,6 +38,7 @@ def _enter_level(new_game: bool, scene_path: str | None = None):
         game_state.reset()
         _current_scene_path = "scenes/level_01.tortuscene"
     elif scene_path is not None:
+        game_state.clear_checkpoint()
         _current_scene_path = scene_path
     _player.init(_engine, _current_scene_path)
     if new_game:

@@ -507,7 +507,9 @@ def init(engine, scene_path: str = "scenes/level_01.tortuscene") -> None:
         )
         if player_instances else auto.CUSTOMVAR_KILL_PLANE_Y_DEFAULT
     )
-    if player_instances:
+    if game_state.checkpoint is not None:
+        _px, _py = game_state.checkpoint
+    elif player_instances:
         _px, _py = float(player_instances[0].x), float(player_instances[0].y)
     _scene.objects = [o for o in _scene.objects if o.prefab != _PREFAB_PATH]
     _is_camera_target = not _scene.camera_target or _scene.camera_target == _PREFAB_PATH
