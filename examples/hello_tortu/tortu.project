@@ -32,7 +32,9 @@
       "assets/audio/enemydefeat.ogg": "game_sfx",
       "assets/audio/pause.ogg": "ui_sfx",
       "assets/audio/MenuAccept.ogg": "ui_sfx",
-      "assets/audio/Jingle_checkpoint.ogg": "game_sfx"
+      "assets/audio/Jingle_checkpoint.ogg": "game_sfx",
+      "assets/audio/DialogueNext.ogg": "music",
+      "assets/audio/break_block.ogg": "game_sfx"
     }
   }
 }

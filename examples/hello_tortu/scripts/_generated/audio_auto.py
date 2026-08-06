@@ -10,6 +10,7 @@ CHANNEL_UI_SFX = "ui_sfx"
 
 # Project-relative audio file path -> its assigned channel constant above.
 AUDIO_CHANNELS = {
+    'assets/audio/DialogueNext.ogg': CHANNEL_MUSIC,
     'assets/audio/GameOver (Jingle).ogg': CHANNEL_MUSIC,
     'assets/audio/Hang In There v0_5.ogg': CHANNEL_MUSIC,
     'assets/audio/Hit_shell.ogg': CHANNEL_GAME_SFX,
@@ -19,6 +20,7 @@ AUDIO_CHANNELS = {
     'assets/audio/Menu_Navigate.ogg': CHANNEL_UI_SFX,
     'assets/audio/Stage Clear Long (Jingle).ogg': CHANNEL_MUSIC,
     'assets/audio/Stage Clear Short (Jingle).ogg': CHANNEL_MUSIC,
+    'assets/audio/break_block.ogg': CHANNEL_GAME_SFX,
     'assets/audio/enemydefeat.ogg': CHANNEL_GAME_SFX,
     'assets/audio/every Friday.ogg': CHANNEL_MUSIC,
     'assets/audio/level_complete.ogg': CHANNEL_MUSIC,

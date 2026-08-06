@@ -36,7 +36,7 @@ import pygame
 
 from tortuengine import instance_api, localization
 from tortuengine.dialogue import Action, load_action, load_dialogue
-from scripts import dialogue_vars
+from scripts import audio_settings, dialogue_vars
 
 ROOT = Path(__file__).parent.parent
 
@@ -77,9 +77,9 @@ def _action_held() -> bool:
 def init(engine) -> None:
     global _sfx_navigate, _sfx_accept, _sfx_next
     try:
-        _sfx_navigate = pygame.mixer.Sound(str(ROOT / "assets/audio/Menu_Navigate.ogg"))
-        _sfx_accept = pygame.mixer.Sound(str(ROOT / "assets/audio/MenuAccept.ogg"))
-        _sfx_next = pygame.mixer.Sound(str(ROOT / "assets/audio/DialogueNext.ogg"))
+        _sfx_navigate = audio_settings.load_sound("assets/audio/Menu_Navigate.ogg")
+        _sfx_accept = audio_settings.load_sound("assets/audio/MenuAccept.ogg")
+        _sfx_next = audio_settings.load_sound("assets/audio/DialogueNext.ogg")
     except Exception:
         pass
     localization.bind_variables(lambda name: getattr(dialogue_vars, name, None))

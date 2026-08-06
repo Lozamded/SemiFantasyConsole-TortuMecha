@@ -18,7 +18,7 @@ from pathlib import Path
 import pygame
 
 from tortuengine import instance_api, localization
-from scripts import save_system, save_vars
+from scripts import audio_settings, save_system, save_vars
 
 ROOT = Path(__file__).parent.parent
 
@@ -64,8 +64,8 @@ def init(engine) -> None:
     global _prev_up, _prev_down, _prev_left, _prev_right, _prev_enter
     global _sfx_navigate, _sfx_accept
     try:
-        _sfx_navigate = pygame.mixer.Sound(str(ROOT / "assets/audio/Menu_Navigate.ogg"))
-        _sfx_accept = pygame.mixer.Sound(str(ROOT / "assets/audio/MenuAccept.ogg"))
+        _sfx_navigate = audio_settings.load_sound("assets/audio/Menu_Navigate.ogg")
+        _sfx_accept = audio_settings.load_sound("assets/audio/MenuAccept.ogg")
     except Exception:
         pass
     localization.bind_variables(lambda name: getattr(save_vars, name, None))

@@ -16,12 +16,23 @@ from pathlib import Path
 import pygame
 
 from tortuengine import instance_api
+from scripts import audio_settings
 
 ROOT = Path(__file__).parent.parent
 
 MAIN_ITEMS = ("option_resume", "option_options")
 OPTIONS_ITEMS = ("option_2_language", "option_2_volSFX", "option_volMusic", "option_back")
 LANGUAGE_ROW = OPTIONS_ITEMS.index("option_2_language")
+SFX_ROW = OPTIONS_ITEMS.index("option_2_volSFX")
+MUSIC_ROW = OPTIONS_ITEMS.index("option_volMusic")
+
+# Tiled-rect / text-label ids authored in pause_menu.tortuguilayer for the
+# two volume rows — bar1/bar2 are the power_bar-styled fill rects, the value
+# labels are the "100"-style percentage text next to each bar.
+SFX_BAR = "bar1"
+MUSIC_BAR = "bar2"
+SFX_VALUE_LABEL = "volsfx_value"
+MUSIC_VALUE_LABEL = "volmusic_value"
 
 CURRENT_LANGUAGE_LABEL = "currentlanguage"
 # Language names are shown in their own language regardless of the current
@@ -60,8 +71,8 @@ _sfx_accept: pygame.mixer.Sound | None = None
 def init(engine) -> None:
     global _sfx_navigate, _sfx_accept
     try:
-        _sfx_navigate = pygame.mixer.Sound(str(ROOT / "assets/audio/Menu_Navigate.ogg"))
-        _sfx_accept = pygame.mixer.Sound(str(ROOT / "assets/audio/MenuAccept.ogg"))
+        _sfx_navigate = audio_settings.load_sound("assets/audio/Menu_Navigate.ogg")
+        _sfx_accept = audio_settings.load_sound("assets/audio/MenuAccept.ogg")
     except Exception:
         pass
 
@@ -95,6 +106,11 @@ def _cycle_language(step: int) -> None:
     _update_language_label()
 
 
+def _update_volume_display(bar_id: str, label_id: str, value: float) -> None:
+    instance_api.set_gui_tiled_rect_number(SELF_ID, bar_id, value, 1.0)
+    instance_api.set_gui_text_label_text(SELF_ID, label_id, str(round(value * 100)))
+
+
 def _reset_menu() -> None:
     global _screen, _main_index, _options_index, _scroll, _scroll_target
     _screen = "main"
@@ -110,6 +126,8 @@ def _reset_menu() -> None:
     _select(CURSOR_MAIN, MAIN_ITEMS, 0, 0)
     _select(CURSOR_OPTIONS, OPTIONS_ITEMS, 0, 0)
     _update_language_label()
+    _update_volume_display(SFX_BAR, SFX_VALUE_LABEL, audio_settings.sfx_volume())
+    _update_volume_display(MUSIC_BAR, MUSIC_VALUE_LABEL, audio_settings.music_volume())
 
 
 def update(dt: float) -> None:
@@ -182,6 +200,18 @@ def update(dt: float) -> None:
             _scroll_target = 0.0
         elif _options_index == LANGUAGE_ROW and (left_pressed or right_pressed):
             _cycle_language(1 if right_pressed else -1)
+            if _sfx_navigate:
+                _sfx_navigate.play()
+        elif _options_index == SFX_ROW and (left_pressed or right_pressed):
+            step = audio_settings.VOLUME_STEP if right_pressed else -audio_settings.VOLUME_STEP
+            audio_settings.set_sfx_volume(audio_settings.sfx_volume() + step)
+            _update_volume_display(SFX_BAR, SFX_VALUE_LABEL, audio_settings.sfx_volume())
+            if _sfx_navigate:
+                _sfx_navigate.play()
+        elif _options_index == MUSIC_ROW and (left_pressed or right_pressed):
+            step = audio_settings.VOLUME_STEP if right_pressed else -audio_settings.VOLUME_STEP
+            audio_settings.set_music_volume(audio_settings.music_volume() + step)
+            _update_volume_display(MUSIC_BAR, MUSIC_VALUE_LABEL, audio_settings.music_volume())
             if _sfx_navigate:
                 _sfx_navigate.play()
 

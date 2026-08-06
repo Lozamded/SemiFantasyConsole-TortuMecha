@@ -9,7 +9,7 @@ import pygame
 from tortuengine.bake import bake_sprite_frame
 from tortuengine import instance_api
 from tortuengine.object import load_object
-from scripts import game_state
+from scripts import audio_settings, game_state
 from scripts._generated import mechaturtle_player_auto as auto
 from scripts._generated import red_slime_auto as slime_auto
 from tortuengine.palette import load_palette, palette_path
@@ -607,18 +607,18 @@ def init(engine, scene_path: str = "scenes/level_01.tortuscene") -> None:
         _frames[anim] = (normal, flipped)
 
     try:
-        _sfx_jump = pygame.mixer.Sound(str(ROOT / "assets/audio/sfx_jump.ogg"))
-        _sfx_shell = pygame.mixer.Sound(str(ROOT / "assets/audio/sfx_shell.ogg"))
-        _sfx_attack = pygame.mixer.Sound(str(ROOT / "assets/audio/sfx_attack.ogg"))
-        _sfx_coin = pygame.mixer.Sound(str(ROOT / "assets/audio/sfx_coin.ogg"))
-        _sfx_damage = pygame.mixer.Sound(str(ROOT / "assets/audio/sfx_damage.ogg"))
-        _sfx_defeat = pygame.mixer.Sound(str(ROOT / "assets/audio/sfx_defeat.ogg"))
-        _sfx_stage_clear = pygame.mixer.Sound(
-            str(ROOT / "assets/audio/Stage Clear Long (Jingle).ogg")
+        _sfx_jump = audio_settings.load_sound("assets/audio/sfx_jump.ogg")
+        _sfx_shell = audio_settings.load_sound("assets/audio/sfx_shell.ogg")
+        _sfx_attack = audio_settings.load_sound("assets/audio/sfx_attack.ogg")
+        _sfx_coin = audio_settings.load_sound("assets/audio/sfx_coin.ogg")
+        _sfx_damage = audio_settings.load_sound("assets/audio/sfx_damage.ogg")
+        _sfx_defeat = audio_settings.load_sound("assets/audio/sfx_defeat.ogg")
+        _sfx_stage_clear = audio_settings.load_sound(
+            "assets/audio/Stage Clear Long (Jingle).ogg"
         )
-        _sfx_lost_life = pygame.mixer.Sound(str(ROOT / "assets/audio/LostLife.ogg"))
-        _sfx_hit_shell = pygame.mixer.Sound(str(ROOT / "assets/audio/Hit_shell.ogg"))
-        _sfx_pause = pygame.mixer.Sound(str(ROOT / "assets/audio/pause.ogg"))
+        _sfx_lost_life = audio_settings.load_sound("assets/audio/LostLife.ogg")
+        _sfx_hit_shell = audio_settings.load_sound("assets/audio/Hit_shell.ogg")
+        _sfx_pause = audio_settings.load_sound("assets/audio/pause.ogg")
     except Exception:
         pass
 

@@ -25,7 +25,7 @@ import pygame
 from tortuengine import instance_api
 from tortuengine.object import load_object
 from tortuengine.sprite import load_sprite
-from scripts import game_state
+from scripts import audio_settings, game_state
 from scripts._generated import check_pc_off_auto as auto
 
 ROOT = Path(__file__).parent.parent
@@ -59,7 +59,7 @@ def init(engine) -> None:
     )
 
     try:
-        _sfx_checkpoint = pygame.mixer.Sound(str(ROOT / "assets/audio/Jingle_checkpoint.ogg"))
+        _sfx_checkpoint = audio_settings.load_sound("assets/audio/Jingle_checkpoint.ogg")
     except Exception:
         pass
 

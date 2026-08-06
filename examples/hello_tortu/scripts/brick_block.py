@@ -11,9 +11,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pygame
+
 from tortuengine import instance_api
 from tortuengine.object import load_object
 from tortuengine.sprite import load_sprite
+from scripts import audio_settings
 from scripts._generated import brick_block_auto as auto
 from scripts.mechaturtle_player import ATTACK_COLLIDER_ID
 
@@ -30,6 +33,8 @@ _broken = False
 _break_timer = 0.0
 _break_duration = 0.0  # seconds — resolved in init() from the break sprite's own frame_count/fps
 
+_sfx_break: pygame.mixer.Sound | None = None
+
 
 def _resolve_bounds(colliders, ox: int, oy: int, sw: int, sh: int) -> tuple[int, int, int, int]:
     res = [c.resolved(sw, sh) for c in colliders]
@@ -45,6 +50,12 @@ def init(engine) -> None:
     global _hb_l, _hb_r, _hb_t, _hb_b
     global _atk_l, _atk_r, _atk_t, _atk_b
     global _broken, _break_timer, _break_duration
+    global _sfx_break
+
+    try:
+        _sfx_break = audio_settings.load_sound("assets/audio/break_block.ogg")
+    except Exception:
+        pass
 
     block_obj = load_object(ROOT / BLOCK_PREFAB)
     block_sprite = load_sprite(ROOT / block_obj.default_sprite)
@@ -99,6 +110,8 @@ def update(dt: float) -> None:
                 _break_timer = _break_duration
                 instance_api.set_animation(SELF_ID, auto.ANIM_BREAK)
                 instance_api.set_object_solid(SELF_ID, False)
+                if _sfx_break:
+                    _sfx_break.play()
 
 
 def draw(engine) -> None:

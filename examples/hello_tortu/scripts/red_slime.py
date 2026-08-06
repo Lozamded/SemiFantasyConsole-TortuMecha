@@ -11,6 +11,7 @@ import pygame
 from tortuengine import instance_api
 from tortuengine.object import TortuObject, load_object
 from tortuengine.sprite import load_sprite
+from scripts import audio_settings
 from scripts._generated import red_slime_auto as auto
 from scripts.mechaturtle_player import ATTACK_COLLIDER_ID
 
@@ -61,7 +62,7 @@ def init(engine) -> None:
     global _sfx_defeat
 
     try:
-        _sfx_defeat = pygame.mixer.Sound(str(ROOT / "assets/audio/enemydefeat.ogg"))
+        _sfx_defeat = audio_settings.load_sound("assets/audio/enemydefeat.ogg")
     except Exception:
         pass
 

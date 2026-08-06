@@ -22,7 +22,7 @@ from pathlib import Path
 import pygame
 
 from tortuengine import instance_api
-from scripts import game_state, save_system
+from scripts import audio_settings, game_state, save_system
 
 ROOT = Path(__file__).parent.parent
 
@@ -63,8 +63,8 @@ def init(engine) -> None:
     global _prev_up, _prev_down, _prev_left, _prev_right, _prev_enter
     global _sfx_navigate, _sfx_accept
     try:
-        _sfx_navigate = pygame.mixer.Sound(str(ROOT / "assets/audio/Menu_Navigate.ogg"))
-        _sfx_accept = pygame.mixer.Sound(str(ROOT / "assets/audio/MenuAccept.ogg"))
+        _sfx_navigate = audio_settings.load_sound("assets/audio/Menu_Navigate.ogg")
+        _sfx_accept = audio_settings.load_sound("assets/audio/MenuAccept.ogg")
     except Exception:
         pass
     _refresh_slot_labels()

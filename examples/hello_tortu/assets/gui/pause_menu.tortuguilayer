@@ -1742,12 +1742,14 @@
       "text": "100",
       "x": 489,
       "y": 105,
+      "id": "volsfx_value",
       "font": "assets/fonts/dialog.tortufont"
     },
     {
       "text": "100",
       "x": 489,
       "y": 121,
+      "id": "volmusic_value",
       "font": "assets/fonts/dialog.tortufont"
     }
   ],

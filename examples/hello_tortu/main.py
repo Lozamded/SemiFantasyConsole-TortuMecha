@@ -8,7 +8,7 @@ from scripts import gameover as _gameover
 from scripts import mechaturtle_player as _player
 from scripts import save_scene as _save_scene
 from scripts import load_scene as _load_scene
-from scripts import game_state
+from scripts import audio_settings, game_state
 
 ROOT = Path(__file__).parent
 
@@ -21,7 +21,7 @@ def _enter_title():
     global _state
     _state = "title"
     pygame.mixer.music.load(str(ROOT / "assets/audio/Hang In There v0_5.ogg"))
-    pygame.mixer.music.set_volume(0.5)
+    audio_settings.apply_music_volume()
     pygame.mixer.music.play(-1)
     _title.init(_engine)
 
@@ -43,7 +43,7 @@ def _enter_level(new_game: bool, scene_path: str | None = None):
     _player.init(_engine, _current_scene_path)
     if new_game:
         pygame.mixer.music.load(str(ROOT / "assets/audio/every Friday.ogg"))
-        pygame.mixer.music.set_volume(0.5)
+        audio_settings.apply_music_volume()
         pygame.mixer.music.play(-1)
 
 
@@ -51,7 +51,7 @@ def _enter_gameover():
     global _state
     _state = "gameover"
     pygame.mixer.music.load(str(ROOT / "assets/audio/GameOver (Jingle).ogg"))
-    pygame.mixer.music.set_volume(0.5)
+    audio_settings.apply_music_volume()
     pygame.mixer.music.play(0)
     _gameover.init(_engine)
 
@@ -73,6 +73,7 @@ def _enter_load_scene():
 def init(engine):
     global _engine
     _engine = engine
+    audio_settings.load()
     _enter_title()
 
 
