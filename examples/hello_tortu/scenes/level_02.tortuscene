@@ -251,8 +251,8 @@
     },
     {
       "object": "assets/objects/robot.tortuobject",
-      "x": 190,
-      "y": 174,
+      "x": 188,
+      "y": 175,
       "animation": "walk",
       "id": "robot3",
       "links": [
@@ -265,8 +265,8 @@
     },
     {
       "object": "assets/objects/dialogue_icon.tortuobject",
-      "x": 188,
-      "y": 152,
+      "x": 185,
+      "y": 155,
       "id": "dialogue_icon1",
       "links": [
         "robot3"

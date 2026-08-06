@@ -1,4 +1,5 @@
 from tortuengine import instance_api
+from scripts import game_state
 
 # level_01.tortuscene's placed id for the robot this dialogue belongs to —
 # this module is already specific to robot2's dialogue (see dialog_r2_action
@@ -26,3 +27,9 @@ def d2_selected_action():
     the raw dialog_r2_action flag to its own [<[key]>], so the displayed
     word is still translated per-language."""
     return dialog_r2_selected_action_[dialog_r2_action]
+
+
+def gears():
+    """[var<[gears]>] — e.g. DialogslVl2.csv's r3_l2_d3 line — the player's
+    current gear count, read live from game_state each time it's shown."""
+    return game_state.gears

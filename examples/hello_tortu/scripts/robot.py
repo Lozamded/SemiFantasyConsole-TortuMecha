@@ -64,6 +64,12 @@ _patrol = False
 _px = 0.0
 _py = 0.0
 _direction = 1  # -1 = left, 1 = right
+# Edge-detector for the enemycollider reversal below — True while still
+# overlapping a trigger, so _direction only flips once per contact instead
+# of every frame it's still inside the trigger's bounds (which, under real
+# jittery frame timing, could otherwise flip several times before the robot
+# fully walks clear, showing as rapid side-to-side jitter in place).
+_in_trigger = False
 
 # link_id -> (icon_x - robot_x, icon_y - robot_y) at init, so a followed icon
 # keeps whatever offset it was placed at in the scene editor.
@@ -88,7 +94,7 @@ def _resolve_bounds(obj: TortuObject, sprite_w: int, sprite_h: int) -> tuple[int
 
 
 def init(engine):
-    global _patrol, _px, _py, _direction
+    global _patrol, _px, _py, _direction, _in_trigger
     global _hb_l, _hb_r, _hb_t, _hb_b
     global _trig_l, _trig_r, _trig_t, _trig_b
     global _link_offsets
@@ -124,6 +130,7 @@ def init(engine):
     pos = instance_api.get_position(SELF_ID)
     _px, _py = pos if pos else (0.0, 0.0)
     _direction = 1
+    _in_trigger = False
 
 
 def _start_hop() -> None:
@@ -171,19 +178,23 @@ def _overlaps(l1: float, r1: float, t1: float, b1: float, l2: float, r2: float, 
 
 
 def _update_patrol(dt: float) -> None:
-    global _direction
+    global _direction, _in_trigger
 
     if _walk(_direction * PATROL_SPEED * dt):
         _direction *= -1
 
     left, right = _px + _hb_l, _px + _hb_r
     top, bottom = _py + _hb_t, _py + _hb_b
+    in_trigger = False
     for tx, ty in instance_api.prefab_positions(ENEMYCOLLIDER_PREFAB):
         trig_left, trig_right = tx + _trig_l, tx + _trig_r
         trig_top, trig_bottom = ty + _trig_t, ty + _trig_b
         if _overlaps(left, right, top, bottom, trig_left, trig_right, trig_top, trig_bottom):
-            _direction *= -1
+            in_trigger = True
             break
+    if in_trigger and not _in_trigger:
+        _direction *= -1
+    _in_trigger = in_trigger
 
     instance_api.set_position(SELF_ID, _px, _py)
     instance_api.set_animation(SELF_ID, auto.ANIM_WALK)
