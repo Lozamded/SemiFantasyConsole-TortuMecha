@@ -27,7 +27,7 @@ the player is in proximity range (the same range that reveals the dialogue
 icon), so it isn't still walking mid-conversation.
 
 SELF_ID and LINKS are injected by the instance-script runtime (see
-tortuengine/instance_scripts.py): SELF_ID is this placed robot's own scene
+tortoisengine/instance_scripts.py): SELF_ID is this placed robot's own scene
 id, LINKS is the tuple of ids it references — here, its paired dialogue
 icon set up in the scene editor's object link list.
 """
@@ -38,9 +38,9 @@ from pathlib import Path
 
 import pygame
 
-from tortuengine import instance_api
-from tortuengine.object import TortuObject, load_object
-from tortuengine.sprite import load_sprite
+from tortoisengine import instance_api
+from tortoisengine.object import TortoiseObject, load_object
+from tortoisengine.sprite import load_sprite
 from scripts._generated import robot_auto as auto
 
 ROOT = Path(__file__).parent.parent
@@ -82,7 +82,7 @@ _hb_l = _hb_r = _hb_t = _hb_b = 0
 _trig_l = _trig_r = _trig_t = _trig_b = 0
 
 
-def _resolve_bounds(obj: TortuObject, sprite_w: int, sprite_h: int) -> tuple[int, int, int, int]:
+def _resolve_bounds(obj: TortoiseObject, sprite_w: int, sprite_h: int) -> tuple[int, int, int, int]:
     res = [c.resolved(sprite_w, sprite_h) for c in obj.colliders]
     ox, oy = obj.origin.x, obj.origin.y
     return (

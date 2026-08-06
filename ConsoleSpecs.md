@@ -1,4 +1,4 @@
-TortuMecha (Temoporary Name)
+TortoiseMecha (Temoporary Name)
 
 Console specs:
 -Resolution: 264 x 198 pixels

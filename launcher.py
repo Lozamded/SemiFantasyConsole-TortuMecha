@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""TortuMecha console launcher.
+"""TortoiseMecha console launcher.
 
 Deployed at ~/console/launcher.py on the SBC alongside:
     ~/console/cart/          tortucart contents
-    ~/console/tortuengine/   engine package
-    ~/console/tortuplayer/   player package
+    ~/console/tortoisengine/   engine package
+    ~/console/tortoiseplayer/   player package
 
 Future: controls config, date/time, system settings.
 """
@@ -70,7 +70,7 @@ def _launch(cart_path: Path) -> None:
         subprocess.run([str(native), "--fullscreen"], cwd=str(cart_path))
     else:
         subprocess.run(
-            [sys.executable, "-m", "tortuplayer", str(cart_path), "--fullscreen"],
+            [sys.executable, "-m", "tortoiseplayer", str(cart_path), "--fullscreen"],
             cwd=ROOT,
         )
     pygame.init()
@@ -78,7 +78,7 @@ def _launch(cart_path: Path) -> None:
 
 def _open_display() -> pygame.Surface:
     screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
-    pygame.display.set_caption("TortuMecha")
+    pygame.display.set_caption("TortoiseMecha")
     pygame.mouse.set_visible(False)
     return screen
 

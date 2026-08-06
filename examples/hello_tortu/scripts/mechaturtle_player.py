@@ -6,17 +6,17 @@ from pathlib import Path
 
 import pygame
 
-from tortuengine.bake import bake_sprite_frame
-from tortuengine import instance_api
-from tortuengine.object import load_object
+from tortoisengine.bake import bake_sprite_frame
+from tortoisengine import instance_api
+from tortoisengine.object import load_object
 from scripts import audio_settings, game_state
 from scripts._generated import mechaturtle_player_auto as auto
 from scripts._generated import red_slime_auto as slime_auto
-from tortuengine.palette import load_palette, palette_path
-from tortuengine.scene import SceneObject, grid_columns, load_scene
-from tortuengine.scene_renderer import SceneRenderer
-from tortuengine.sprite import load_sprite
-from tortuengine.tileset import (
+from tortoisengine.palette import load_palette, palette_path
+from tortoisengine.scene import SceneObject, grid_columns, load_scene
+from tortoisengine.scene_renderer import SceneRenderer
+from tortoisengine.sprite import load_sprite
+from tortoisengine.tileset import (
     COLLISION_NONE,
     COLLISION_SOLID,
     ONE_WAY_DOWN,
@@ -63,7 +63,7 @@ FINISH_TOTAL_DUR = 6.0  # seconds from the finish trigger until finish_done fire
 
 # Hitbox offsets from the character origin. Resolved in init() from the
 # auto.COLLIDER_BODY + auto.COLLIDER_HEAD colliders (stand) and
-# auto.COLLIDER_BODY alone (crouch) — see mechaturtle.tortuobject in TortuStudio.
+# auto.COLLIDER_BODY alone (crouch) — see mechaturtle.tortuobject in TortoiseStudio.
 STAND_HB_L = STAND_HB_R = STAND_HB_T = STAND_HB_B = 0
 CROUCH_HB_L = CROUCH_HB_R = CROUCH_HB_T = CROUCH_HB_B = 0
 ATK_HB_L = ATK_HB_R = ATK_HB_T = ATK_HB_B = 0
@@ -111,7 +111,7 @@ _soul_obj: SceneObject | None = None
 _defeat_hold_timer = 0.0
 # World-Y threshold below which falling (e.g. into a bottomless pit) triggers
 # defeat — resolved per scene in init() from the mechaturtle instance's
-# kill_plane_y custom var (see mechaturtle.tortuobject in TortuStudio).
+# kill_plane_y custom var (see mechaturtle.tortuobject in TortoiseStudio).
 _kill_plane_y = 0.0
 
 # Level-finish sequence: set True the instant an attack swing lands on an
@@ -533,7 +533,7 @@ def init(engine, scene_path: str = "scenes/level_01.tortuscene") -> None:
 
     # Resolve hitbox offsets from the object's colliders — auto.COLLIDER_BODY /
     # auto.COLLIDER_HEAD are the source of truth, not hand-copied numbers, so
-    # renaming or resizing a collider in TortuStudio can't silently go stale here.
+    # renaming or resizing a collider in TortoiseStudio can't silently go stale here.
     obj = load_object(ROOT / "assets/objects/mechaturtle.tortuobject")
     ox, oy = auto.ORIGIN
 
@@ -542,7 +542,7 @@ def init(engine, scene_path: str = "scenes/level_01.tortuscene") -> None:
         if not cols:
             raise ValueError(
                 f"mechaturtle.tortuobject is missing collider(s) {sorted(names)!r} "
-                "expected by mechaturtle_player.py — check the collider names in TortuStudio."
+                "expected by mechaturtle_player.py — check the collider names in TortoiseStudio."
             )
         return _resolve_bounds(cols, ox, oy, sw, sh)
 

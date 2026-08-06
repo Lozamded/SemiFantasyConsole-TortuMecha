@@ -1,4 +1,4 @@
-"""Project-level audio-volume helpers — thin wrapper around tortuengine.audio
+"""Project-level audio-volume helpers — thin wrapper around tortoisengine.audio
 using this project's own channel names (see scripts/_generated/audio_auto.py,
 regenerated from the Sound Editor in TortoiseStudio whenever channels or
 per-file assignments are saved).
@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pygame
 
-from tortuengine import audio
+from tortoisengine import audio
 from scripts._generated import audio_auto as auto
 
 ROOT = Path(__file__).parent.parent

@@ -5,9 +5,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tortuengine import instance_api
-from tortuengine.scene import load_scene
-from tortuengine.scene_renderer import SceneRenderer
+from tortoisengine import instance_api
+from tortoisengine.scene import load_scene
+from tortoisengine.scene_renderer import SceneRenderer
 
 ROOT = Path(__file__).parent.parent
 

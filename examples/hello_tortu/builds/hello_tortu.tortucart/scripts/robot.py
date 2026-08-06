@@ -1,12 +1,12 @@
 """Script for robot — reveals its linked dialogue icon when the player is close.
 
 SELF_ID and LINKS are injected by the instance-script runtime (see
-tortuengine/instance_scripts.py): SELF_ID is this placed robot's own scene
+tortoisengine/instance_scripts.py): SELF_ID is this placed robot's own scene
 id, LINKS is the tuple of ids it references — here, its paired dialogue
 icon set up in the scene editor's object link list.
 """
 
-from tortuengine import instance_api
+from tortoisengine import instance_api
 
 PROXIMITY_RANGE = 45.0
 

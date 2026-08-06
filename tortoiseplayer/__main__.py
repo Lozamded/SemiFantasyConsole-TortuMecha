@@ -1,0 +1,109 @@
+"""Run a .tortucart / project folder: python -m tortoiseplayer <path>"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+from tortoisengine.cart import load_cart_manifest, load_game_module, resolve_cart_root
+from tortoisengine.project import load_project
+from tortoiseplayer.player import WindowPlayer
+from tortoiseplayer.scene_player import CartScenePlayer
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Run a Tortoise cart on PC or device.")
+    parser.add_argument(
+        "path",
+        type=Path,
+        help="Path to project folder, .tortucart folder, or tortu.project file",
+    )
+    parser.add_argument(
+        "--scale",
+        type=int,
+        default=3,
+        help="Window scale factor (default: 3); ignored when running fullscreen",
+    )
+    fs_group = parser.add_mutually_exclusive_group()
+    fs_group.add_argument(
+        "--fullscreen",
+        action="store_true",
+        help="Run fullscreen, auto-fitting the largest integer pixel scale to the display "
+        "(default when launching a .tortucart bundle)",
+    )
+    fs_group.add_argument(
+        "--windowed",
+        action="store_true",
+        help="Force a windowed launch even for a .tortucart bundle",
+    )
+    args = parser.parse_args(argv)
+
+    path = args.path.resolve()
+    cart_root = resolve_cart_root(path)
+    if cart_root is not None:
+        fullscreen = False if args.windowed else True
+        try:
+            manifest = load_cart_manifest(cart_root)
+        except (OSError, ValueError, KeyError) as exc:
+            print(f"error: invalid cart: {exc}", file=sys.stderr)
+            return 1
+        title = str(manifest.game.get("game_name", cart_root.name))
+        fps = int(manifest.game.get("fps", 60))
+        if manifest.start_scene:
+            player = CartScenePlayer(
+                cart_root,
+                manifest,
+                scale=args.scale,
+                title=title,
+                fps=fps,
+                fullscreen=fullscreen,
+            )
+            try:
+                player.run()
+            except Exception as exc:
+                print(f"runtime error: {exc}", file=sys.stderr)
+                return 1
+            return 0
+        print("error: cart has no start_scene configured", file=sys.stderr)
+        return 1
+
+    project = None
+    if path.is_file() and path.name == "tortu.project":
+        project_root = path.parent
+        project = load_project(path)
+        entry = project.entry
+    elif path.is_dir():
+        project_root = path
+        project_file = path / "tortu.project"
+        if project_file.is_file():
+            project = load_project(project_file)
+            entry = project.entry
+        else:
+            entry = "main.py"
+    else:
+        print(f"error: not a project or cart folder: {path}", file=sys.stderr)
+        return 1
+
+    try:
+        game = load_game_module(project_root, entry)
+    except (FileNotFoundError, ImportError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    title = project.game.game_name if project else project_root.name
+    fps = project.game.fps if project else 60
+    player = WindowPlayer(scale=args.scale, title=title, fps=fps, fullscreen=args.fullscreen)
+    player.engine.load_game(game)
+
+    try:
+        player.run()
+    except Exception as exc:
+        print(f"runtime error: {exc}", file=sys.stderr)
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

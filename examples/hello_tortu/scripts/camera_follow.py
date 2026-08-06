@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tortuengine.constants import SCREEN_HEIGHT, SCREEN_WIDTH
+from tortoisengine.constants import SCREEN_HEIGHT, SCREEN_WIDTH
 
 SMOOTHING = 8.0
 

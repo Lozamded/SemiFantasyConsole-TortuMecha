@@ -1,4 +1,4 @@
-from tortuengine import instance_api
+from tortoisengine import instance_api
 from scripts import game_state
 
 # level_01.tortuscene's placed id for the robot this dialogue belongs to —
@@ -23,7 +23,7 @@ def action_Do_DR2Action(selected_action):
 
 def d2_selected_action():
     """[var<[d2_selected_action]>] in dialogues/robot2_lv1.json's last line —
-    a zero-arg variable resolved by tortuengine.localization.resolve() maps
+    a zero-arg variable resolved by tortoisengine.localization.resolve() maps
     the raw dialog_r2_action flag to its own [<[key]>], so the displayed
     word is still translated per-language."""
     return dialog_r2_selected_action_[dialog_r2_action]

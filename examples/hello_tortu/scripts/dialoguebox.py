@@ -2,13 +2,13 @@
 branch through player-selected options.
 
 Runs as dialog.tortuguilayer's own instance script (an isolated module, see
-tortuengine/instance_scripts.py), so it never touches other scripts directly
+tortoisengine/instance_scripts.py), so it never touches other scripts directly
 — a prefab script (e.g. robot.py) asks for a dialogue via
 instance_api.request_dialogue(path), and this script picks that request up,
-loads the referenced dialogues/*.json (see tortuengine/dialogue.py), and
+loads the referenced dialogues/*.json (see tortoisengine/dialogue.py), and
 steps through its lines on the action button (X/Shift/C — the same button
 that started it). Text/speaker are left as their raw `[<[key]>]` placeholders
-— the renderer resolves them through tortuengine.localization every frame,
+— the renderer resolves them through tortoisengine.localization every frame,
 same as any other GuiTextLabel. A CSV cell can also embed `[var<[name]>]` to
 read scripts/dialogue_vars.py live (see localization.bind_variables, wired
 below) — e.g. dialogues/robot2_lv1.json's last line.
@@ -23,7 +23,7 @@ the same line. Confirming an option runs its `action` (if any) and then, if
 it also has a `next_dialogue`, jumps to that other dialogue file — otherwise
 dialogue continues to the next line. A plain line's `action` instead runs
 when the line is dismissed. Both are resolved against scripts/dialogue_vars.py
-(see tortuengine.dialogue's module docstring for the action envelope).
+(see tortoisengine.dialogue's module docstring for the action envelope).
 
 `jumpdialog` and `finishdialog` actions redirect this dialogue's own control
 flow (see `_run_action`/`_apply_action_result` below) rather than being a
@@ -34,8 +34,8 @@ from pathlib import Path
 
 import pygame
 
-from tortuengine import instance_api, localization
-from tortuengine.dialogue import Action, load_action, load_dialogue
+from tortoisengine import instance_api, localization
+from tortoisengine.dialogue import Action, load_action, load_dialogue
 from scripts import audio_settings, dialogue_vars
 
 ROOT = Path(__file__).parent.parent

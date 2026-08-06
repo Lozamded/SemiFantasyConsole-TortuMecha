@@ -1,6 +1,6 @@
 """Script for brick_block — a solid block the player can smash with an attack.
 
-Solidity against the player is generic engine-side (tortuengine/instance_api.py
+Solidity against the player is generic engine-side (tortoisengine/instance_api.py
 object_solid_at(), driven by this prefab's own `solid: true`). This script's
 only job re: solidity is to clear it the instant the block starts breaking —
 via set_object_solid(SELF_ID, False) — while staying enabled so its own
@@ -13,9 +13,9 @@ from pathlib import Path
 
 import pygame
 
-from tortuengine import instance_api
-from tortuengine.object import load_object
-from tortuengine.sprite import load_sprite
+from tortoisengine import instance_api
+from tortoisengine.object import load_object
+from tortoisengine.sprite import load_sprite
 from scripts import audio_settings
 from scripts._generated import brick_block_auto as auto
 from scripts.mechaturtle_player import ATTACK_COLLIDER_ID

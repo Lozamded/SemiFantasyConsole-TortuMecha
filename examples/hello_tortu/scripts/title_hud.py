@@ -2,7 +2,7 @@
 (Start Game / Load Game / Language).
 
 Runs as title_hud.tortuguilayer's own instance script (an isolated module,
-see tortuengine/instance_scripts.py). Up/Down move select_arrow between the
+see tortoisengine/instance_scripts.py). Up/Down move select_arrow between the
 three rows (same convention as pause_menu.py/Save_hud.py). Enter on Start
 requests a transition straight to level_01 — title.py reads that specific
 path as "begin a new game" (see main.py's title-state branch) rather than a
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pygame
 
-from tortuengine import instance_api, localization
+from tortoisengine import instance_api, localization
 from scripts import audio_settings
 
 ROOT = Path(__file__).parent.parent

@@ -1,7 +1,7 @@
-"""Save file schema and slot bookkeeping for Hello Tortu.
+"""Save file schema and slot bookkeeping for Hello Tortoise.
 
 Declares how many save slots this project offers and what a save's
-`gamedata` payload looks like, on top of tortuengine.save_data's generic
+`gamedata` payload looks like, on top of tortoisengine.save_data's generic
 N-slot JSON bookkeeping. Slots live in Saves/slot<N>.json next to main.py.
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tortuengine import save_data
+from tortoisengine import save_data
 from scripts import game_state
 
 ROOT = Path(__file__).parent.parent

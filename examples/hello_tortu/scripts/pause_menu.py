@@ -1,7 +1,7 @@
 """Script for GUI layer pause_menu — Resume/Options navigation.
 
 Runs as the pause_menu.tortuguilayer's own instance script (an isolated
-module, see tortuengine/instance_scripts.py), so it never touches the Scene
+module, see tortoisengine/instance_scripts.py), so it never touches the Scene
 or mechaturtle_player.py directly — only through instance_api. SELF_ID is
 injected by the loader and equals this GUI layer's own asset path, i.e.
 mechaturtle_player.PAUSE_GUI_LAYER.
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pygame
 
-from tortuengine import instance_api
+from tortoisengine import instance_api
 from scripts import audio_settings
 
 ROOT = Path(__file__).parent.parent

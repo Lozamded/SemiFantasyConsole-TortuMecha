@@ -6,9 +6,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tortuengine import instance_api
-from tortuengine.object import TortuObject, load_object
-from tortuengine.sprite import load_sprite
+from tortoisengine import instance_api
+from tortoisengine.object import TortoiseObject, load_object
+from tortoisengine.sprite import load_sprite
 from scripts._generated import red_slime_auto as auto
 from scripts.mechaturtle_player import ATTACK_COLLIDER_ID
 
@@ -37,7 +37,7 @@ _defeat_timer = 0.0
 _defeat_duration = 0.0  # seconds — resolved in init() from the defeat sprite's own frame_count/fps
 
 
-def _resolve_bounds(obj: TortuObject, sprite_w: int, sprite_h: int) -> tuple[int, int, int, int]:
+def _resolve_bounds(obj: TortoiseObject, sprite_w: int, sprite_h: int) -> tuple[int, int, int, int]:
     res = [c.resolved(sprite_w, sprite_h) for c in obj.colliders]
     ox, oy = obj.origin.x, obj.origin.y
     return (

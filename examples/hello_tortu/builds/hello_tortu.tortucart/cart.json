@@ -1,7 +1,7 @@
 {
   "format": 1,
   "game": {
-    "game_name": "Hello Tortu",
+    "game_name": "Hello Tortoise",
     "cart_name": "hello_tortu",
     "fps": 60,
     "start_scene": "scenes/title.tortuscene",

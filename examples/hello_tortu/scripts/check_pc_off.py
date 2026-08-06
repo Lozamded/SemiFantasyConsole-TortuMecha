@@ -1,7 +1,7 @@
 """Script for check_pc_off — a level checkpoint flag.
 
 Runs as this placed object's own instance script (an isolated module, see
-tortuengine/instance_scripts.py) — a scene can have several checkpoints, each
+tortoisengine/instance_scripts.py) — a scene can have several checkpoints, each
 tracking its own on/off sprite independently. game_state.checkpoint (a plain
 module, not instance-isolated) is the single shared source of truth for where
 the player actually respawns, so whichever checkpoint was touched most
@@ -22,9 +22,9 @@ from pathlib import Path
 
 import pygame
 
-from tortuengine import instance_api
-from tortuengine.object import load_object
-from tortuengine.sprite import load_sprite
+from tortoisengine import instance_api
+from tortoisengine.object import load_object
+from tortoisengine.sprite import load_sprite
 from scripts import audio_settings, game_state
 from scripts._generated import check_pc_off_auto as auto
 

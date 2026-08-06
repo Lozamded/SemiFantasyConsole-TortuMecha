@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "semi-fantasy-console"
 version = "0.1.0"
-description = "Semi-Fantasy Console — TortuEngine, TortuPlayer, TortoiseStudio"
+description = "Semi-Fantasy Console — TortoiseEngine, TortoisePlayer, TortoiseStudio"
 readme = "readme.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -16,9 +16,9 @@ dependencies = [
 ]
 
 [project.scripts]
-tortuplayer = "tortuplayer.__main__:main"
-tortustudio = "tortustudio.__main__:main"
+tortoiseplayer = "tortoiseplayer.__main__:main"
+tortoisestudio = "tortoisestudio.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["tortuengine*", "tortuplayer*", "tortustudio*"]
+include = ["tortoisengine*", "tortoiseplayer*", "tortoisestudio*"]

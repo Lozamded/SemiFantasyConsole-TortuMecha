@@ -6,4 +6,5 @@ dist/
 build/
 .pytest_cache/
 *.tortucart.zip
+*.claude
 CLAUDE.md

@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pygame
 
-from tortuengine.scene import load_scene
-from tortuengine.scene_renderer import SceneRenderer
+from tortoisengine.scene import load_scene
+from tortoisengine.scene_renderer import SceneRenderer
 
 ROOT = Path(__file__).parent.parent
 

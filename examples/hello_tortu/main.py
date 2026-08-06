@@ -1,4 +1,4 @@
-"""Hello Tortu — mechaturtle player demo."""
+"""Hello Tortoise — mechaturtle player demo."""
 
 import pygame
 from pathlib import Path

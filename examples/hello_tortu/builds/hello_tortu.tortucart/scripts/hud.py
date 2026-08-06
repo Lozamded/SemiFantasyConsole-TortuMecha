@@ -3,7 +3,7 @@
 power_bar (bar1) isn't wired up yet — reserved for a future shoot/attack meter.
 """
 
-from tortuengine import instance_api
+from tortoisengine import instance_api
 
 GUI_LAYER_PATH = "assets/gui/hud.tortuguilayer"
 ENERGY_PIPS_ID = "pips1"

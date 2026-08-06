@@ -1,9 +1,9 @@
-Semi-Fantasy Console "TortuMecha"
+Semi-Fantasy Console "TortoMecha"
 
 Project to make a semi fantasy console using PyGame. The target is mini-pc ARM boards like Raspberry / Orange / Radxa Pi Zero, expected 1 GB of RAM (maybe RISC-V in the future).
 
 ```bash
-python -m tortuplayer examples/hello_tortu --fullscreen
+python -m tortoiseplayer examples/hello_tortu --fullscreen
 ```
 
 ## Run TortoiseStudio
@@ -12,7 +12,7 @@ python -m tortuplayer examples/hello_tortu --fullscreen
 python3 -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e .
-python -m tortustudio examples/hello_tortu/
+python -m tortoisestudio examples/hello_tortu/
 ```
 
 

@@ -3,7 +3,7 @@ title screen's Load Game item (see load_scene.tortuscene, main.py's "load"
 state).
 
 Runs as Load_hud.tortuguilayer's own instance script (an isolated module,
-see tortuengine/instance_scripts.py). Load_hud.tortuguilayer is authored as
+see tortoisengine/instance_scripts.py). Load_hud.tortuguilayer is authored as
 a 3-panel wide canvas (pick a slot / load-or-erase actions / a "select
 console save" panel) but only panel 1 — the slot picker plus Back — is
 wired up here; the other two panels are future work (erase, "move
@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pygame
 
-from tortuengine import instance_api
+from tortoisengine import instance_api
 from scripts import audio_settings, game_state, save_system
 
 ROOT = Path(__file__).parent.parent

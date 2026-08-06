@@ -1,6 +1,6 @@
 """Script for GUI layer gameover_hud — shows the final gear count."""
 
-from tortuengine import instance_api
+from tortoisengine import instance_api
 from scripts import game_state
 
 GUI_LAYER_PATH = "assets/gui/gameover_hud.tortuguilayer"

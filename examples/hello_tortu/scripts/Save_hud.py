@@ -2,7 +2,7 @@
 finishes (see save_scene.tortuscene, main.py's "save" state).
 
 Runs as Save_hud.tortuguilayer's own instance script (an isolated module,
-see tortuengine/instance_scripts.py). Layout is 3 slot rows + a Continue
+see tortoisengine/instance_scripts.py). Layout is 3 slot rows + a Continue
 row, moved between with Up/Down and select_arrow (same convention as
 pause_menu.py/dialoguebox.py). Enter on an empty slot saves immediately; on
 an occupied slot it opens the Save_overwrite.tortuguilayer popup for a
@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pygame
 
-from tortuengine import instance_api, localization
+from tortoisengine import instance_api, localization
 from scripts import audio_settings, save_system, save_vars
 
 ROOT = Path(__file__).parent.parent
