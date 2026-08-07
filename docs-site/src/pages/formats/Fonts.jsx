@@ -1,0 +1,106 @@
+import PageNav from '../../components/PageNav.jsx'
+
+export default function FormatsFonts() {
+  return (
+    <>
+
+    <h1>Fonts</h1>
+    <p className="subtitle">Two independent formats for text: .tortufont bakes a TTF into palette-index glyph bitmaps, .tortuspritefont is hand-painted sprite-sheet glyphs.</p>
+
+    <p>Both share the same per-glyph shape (a <code>TortoiseGlyph</code>) and are keyed by Unicode code point,
+    but they're built completely differently — pick <code>.tortufont</code> to reuse an existing typeface,
+    <code>.tortuspritefont</code> to hand-draw pixel-art glyphs.</p>
+
+    <h2>The glyph shape (shared by both formats)</h2>
+    <table>
+      <tr><th>Field</th><th>Type</th><th>Default</th><th>Notes</th></tr>
+      <tr><td><code>width</code> / <code>height</code></td><td>int</td><td>required</td><td>Glyph cell size in pixels.</td></tr>
+      <tr><td><code>advance</code></td><td>int</td><td>required</td><td>Pixels to move the cursor forward after drawing this glyph — can differ per-glyph even within one font.</td></tr>
+      <tr><td><code>pixels</code></td><td>list[int]</td><td>required</td><td>Flat, row-major, length <code>width*height</code>, palette indices.</td></tr>
+      <tr><td><code>bearing_x</code> / <code>bearing_y</code></td><td>int</td><td><code>0</code></td><td>Draw offset within the cell.</td></tr>
+    </table>
+    <p>On disk, glyphs are a JSON object keyed by <code>str(code_point)</code>: <code>&#123;"32": &#123;...&#125;, "65": &#123;...&#125;, ...&#125;</code>
+    — loaded into an in-memory <code>dict[int, TortoiseGlyph]</code>. Loaders accept legacy <code>w</code>/<code>h</code>
+    as aliases for <code>width</code>/<code>height</code> per glyph.</p>
+
+    <h2>.tortufont — TTF-baked glyph atlas</h2>
+    <p>Not a re-exported TTF — a fully rasterized bitmap cache in palette-index form, plus a pointer back to
+    the source TrueType file for re-baking.</p>
+    <table>
+      <tr><th>Field</th><th>Type</th><th>Default</th><th>Notes</th></tr>
+      <tr><td><code>name</code></td><td>str</td><td>required</td><td></td></tr>
+      <tr><td><code>source</code></td><td>str</td><td>required</td><td>Project-relative path to the <code>.ttf</code> file. Loading raises if missing/blank.</td></tr>
+      <tr><td><code>size</code></td><td>int</td><td><code>8</code></td><td>Point size passed to <code>pygame.font.Font</code> when baking. The documented 4–32 range (<code>MIN_FONT_SIZE</code>/<code>MAX_FONT_SIZE</code>) is a UI-slider bound only — <strong>not enforced</strong> by the loader.</td></tr>
+      <tr><td><code>line_height</code></td><td>int</td><td><code>10</code></td><td>See the auto-correction note below.</td></tr>
+      <tr><td><code>palette</code></td><td>str</td><td><code>"default"</code></td><td></td></tr>
+      <tr><td><code>charset_preset</code></td><td>str</td><td><code>"latin1"</code></td><td><code>"ascii"</code> (chr 32–126), <code>"latin1"</code> (chr 32–255), or <code>"custom"</code>.</td></tr>
+      <tr><td><code>charset</code></td><td>str</td><td><code>""</code></td><td>Only used when <code>charset_preset == "custom"</code> — the literal character set string.</td></tr>
+      <tr><td><code>glyphs</code></td><td>dict</td><td><code>&#123;&#125;</code></td><td>See above.</td></tr>
+    </table>
+
+    <div className="callout">
+      <strong>line_height self-heals on every load/save</strong>
+      Both <code>load_tortu_font()</code> and <code>save_tortu_font()</code> call a step that raises
+      <code>line_height</code> to at least the tallest baked glyph's height. If you hand-edit glyph pixel
+      data to a taller cell without also bumping <code>line_height</code>, the next load/save round-trip
+      fixes it automatically — but until then, text may render clipped.
+    </div>
+
+    <p>Baking (<code>rebuild_font_glyphs</code>) renders each character in the resolved charset white-on-transparent
+    via <code>pygame.font.Font</code>, converts every pixel to the nearest palette index (alpha &lt; 128 → the
+    transparent index), and sets <code>advance = max(1, font.size(char)[0])</code> per glyph.</p>
+
+    <pre><code>&#123;
+  "name": "VCR", "source": "assets/fonts/VCR.ttf",
+  "size": 20, "line_height": 20, "palette": "default",
+  "charset_preset": "latin1", "charset": "",
+  "glyphs": &#123;
+    "32": &#123;"w": 12, "h": 18, "advance": 12, "bearing_x": 0, "bearing_y": 0, "pixels": [ ...216 ints... ]&#125;
+  &#125;
+&#125;</code></pre>
+
+    <h2>.tortuspritefont — hand-painted sprite-sheet glyphs</h2>
+    <table>
+      <tr><th>Field</th><th>Type</th><th>Default</th><th>Notes</th></tr>
+      <tr><td><code>name</code></td><td>str</td><td>required</td><td></td></tr>
+      <tr><td><code>palette</code></td><td>str</td><td>required</td><td></td></tr>
+      <tr><td><code>glyph_blocks_w</code> / <code>glyph_blocks_h</code></td><td>int</td><td><code>2</code> / <code>2</code></td><td>Glyph cell size in 4px sprite blocks — always a multiple of 4px, same block unit as sprites. Legacy alias: <code>blocks_w</code>/<code>blocks_h</code>. Minimum 1 block, enforced; the documented max of 8 blocks is <strong>not</strong> enforced.</td></tr>
+      <tr><td><code>line_height</code></td><td>int</td><td><code>0</code></td><td></td></tr>
+      <tr><td><code>default_advance</code></td><td>int</td><td><code>0</code></td><td>Used when a glyph doesn't specify its own <code>advance</code>.</td></tr>
+      <tr><td><code>charset</code></td><td>str</td><td><code>""</code></td><td>See below — can be a subset of what actually resolves.</td></tr>
+      <tr><td><code>glyphs</code></td><td>dict</td><td><code>&#123;&#125;</code></td><td></td></tr>
+    </table>
+
+    <div className="callout">
+      <strong>A fixed base charset can't be removed</strong>
+      Every sprite font always includes a baseline set — space, A–Z, a–z, 0–9, <code>.:+-/%</code> — regardless
+      of what's stored in <code>charset</code>. <code>resolved_charset()</code> prepends this base set, then
+      appends any extra characters the file's <code>charset</code> adds; trying to remove a base character is
+      a silent no-op. So the stored <code>charset</code> on disk can legitimately be a strict subset of what
+      the font actually resolves to at runtime.
+    </div>
+
+    <p>After any charset change, every character in the resolved charset is guaranteed a glyph entry — missing
+    ones get a synthesized blank glyph (all pixels transparent, <code>advance = default_advance or
+    pixel_width</code>) rather than being left absent.</p>
+
+    <pre><code>&#123;
+  "name": "hud", "palette": "default",
+  "glyph_blocks_w": 2, "glyph_blocks_h": 2, "line_height": 8, "default_advance": 8,
+  "charset": "",
+  "glyphs": &#123;
+    "32": &#123;"w": 8, "h": 8, "advance": 7, "bearing_x": 0, "bearing_y": 0, "pixels": [ ...64 ints... ]&#125;
+  &#125;
+&#125;</code></pre>
+    <p>Note the space glyph's own <code>advance</code> (7) overriding the font-wide <code>default_advance</code>
+    (8) — per-glyph advance always wins when present.</p>
+
+    <h2>Legacy compat on load</h2>
+    <p>If a <code>.tortuspritefont</code>'s <code>charset</code> is blank/absent, the loader falls back to a
+    legacy <code>charset_preset</code> field (same three presets as <code>.tortufont</code>) or, failing that,
+    the fixed base charset.</p>
+
+      <PageNav />
+    </>
+  )
+}

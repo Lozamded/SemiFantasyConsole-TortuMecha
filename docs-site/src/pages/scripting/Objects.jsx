@@ -1,0 +1,137 @@
+import { Link } from 'react-router-dom'
+import PageNav from '../../components/PageNav.jsx'
+
+export default function ScriptingObjects() {
+  return (
+    <>
+
+    <h1>Object scripts</h1>
+    <p className="subtitle">Attach a script to a .tortuobject prefab to give a placed instance behavior — an enemy, an NPC, the player controller.</p>
+
+    <p>A <code>.tortuobject</code> asset has a <code>script</code> field: a project-relative path (e.g.
+    <code>"scripts/robot.py"</code>). Every scene instance of that prefab runs its own private copy of the
+    script.</p>
+
+    <h2>The hooks</h2>
+    <pre><code>def init(engine):
+    ...        # once, when this instance's script loads
+
+def update(dt):
+    ...        # every frame
+
+def draw(engine):
+    ...        # exists, but never called for object scripts — see below</code></pre>
+
+    <div className="callout">
+      <strong>draw() is a no-op here</strong>
+      The scene renderer draws every object purely from its current <code>animation</code>/frame state — it
+      never calls an object script's <code>draw</code>. Every example object script defines
+      <code>def draw(engine): pass</code> for exactly this reason. Set the sprite frame with
+      <code>instance_api.set_animation()</code> instead of trying to draw manually.
+    </div>
+
+    <h2>Per-instance isolation: SELF_ID and LINKS</h2>
+    <p>The same prefab (and so the same script file) can be placed many times in a scene — two robots, say.
+    Each placed instance gets its own private module namespace, so ordinary module-level globals are safe
+    per-instance state (this is the "no subclassing" convention mentioned throughout the codebase). Before the
+    script body runs, two globals are injected automatically — <strong>no import needed</strong>:</p>
+
+    <table>
+      <tr><th>Global</th><th>Type</th><th>Meaning</th></tr>
+      <tr><td><code>SELF_ID</code></td><td><code>str</code></td><td>This placed instance's scene id.</td></tr>
+      <tr><td><code>LINKS</code></td><td><code>tuple[str, ...]</code></td><td>Ids of other instances this one references, set via the scene editor's object link list (e.g. a robot linked to its own dialogue-icon instance).</td></tr>
+    </table>
+
+    <p>Use them bare, straight from module scope:</p>
+    <pre><code>from tortoisengine import instance_api
+
+def update(dt):
+    x, y = instance_api.get_position(SELF_ID)
+    icon_id = LINKS[0]
+    instance_api.set_position(icon_id, x, y - 20)</code></pre>
+
+    <h2>instance_api — the only way to reach outside your own script</h2>
+    <p>Object scripts never touch the <code>Scene</code>, the player controller, or GUI layers directly — they
+    go through <code>tortoisengine.instance_api</code> instead, so the same script keeps working whether it
+    runs in TortoiseStudio's preview, TortoisePlayer, or an exported cart.</p>
+    <pre><code>from tortoisengine import instance_api</code></pre>
+
+    <h3>Instance position, visuals, state</h3>
+    <table>
+      <tr><th>Function</th><th>Behavior</th></tr>
+      <tr><td><code>get_position(instance_id)</code> / <code>set_position(instance_id, x, y)</code></td><td>World position, or <code>None</code> if the id isn't found.</td></tr>
+      <tr><td><code>set_animation(instance_id, animation)</code></td><td>Switch the drawn sprite animation by name — this is how object scripts "draw" (see above).</td></tr>
+      <tr><td><code>is_visible</code> / <code>set_visible(instance_id, visible)</code></td><td>Show/hide.</td></tr>
+      <tr><td><code>is_flip_x</code> / <code>set_flip_x(instance_id, flip_x)</code></td><td>Mirror the sprite horizontally. Colliders/hitboxes are <strong>not</strong> affected.</td></tr>
+      <tr><td><code>is_enabled</code> / <code>set_enabled(instance_id, enabled)</code></td><td>Disabled instances are skipped for both rendering <em>and</em> collision checks.</td></tr>
+      <tr><td><code>custom_var(instance_id, name, default=None)</code></td><td>Reads a per-instance custom-variable override set in TortoiseStudio; falls back to <code>default</code> (conventionally the generated <code>CUSTOMVAR_&lt;NAME&gt;_DEFAULT</code>, see below).</td></tr>
+      <tr><td><code>prefab_positions(prefab, exclude_id="")</code></td><td>World positions of every enabled scene instance of a given prefab path — pass <code>SELF_ID</code> as <code>exclude_id</code> to find only <em>other</em> instances of your own prefab.</td></tr>
+    </table>
+
+    <h3>Collision queries</h3>
+    <table>
+      <tr><th>Function</th><th>Behavior</th></tr>
+      <tr><td><code>tile_solid_at(x, y)</code></td><td>True if the world pixel lands on a solid tile in the scene's collision tile layer.</td></tr>
+      <tr><td><code>object_solid_at(x, y, exclude_id="")</code></td><td>Same, but for solid scene objects (e.g. a wall prefab) rather than tiles.</td></tr>
+      <tr><td><code>solid_object_rects(left, right, top, bottom, exclude_id="")</code></td><td>The exact AABBs of every solid object intersecting a rect — for a swept collision resolver that needs real edges, not just a point test.</td></tr>
+      <tr><td><code>set_object_solid(instance_id, solid)</code></td><td>Per-instance solidity override, independent of <code>enabled</code>. Pass <code>None</code> to revert to the prefab's own <code>solid</code> flag — e.g. a brick block that stops blocking the moment it starts breaking, while its own break-timer <code>update()</code> keeps running.</td></tr>
+    </table>
+
+    <h3>Player-published state</h3>
+    <p>The player controller script publishes its own state once per frame; any other script (HUD, enemies)
+    reads it. Only the player controller should call the setters.</p>
+    <table>
+      <tr><th>Setter (player controller only)</th><th>Getter (anyone)</th></tr>
+      <tr><td><code>set_player_position(x, y)</code></td><td><code>player_position() -&gt; (x, y)</code></td></tr>
+      <tr><td><code>set_player_crouching(bool)</code></td><td><code>player_is_crouching() -&gt; bool</code></td></tr>
+      <tr><td><code>set_player_hitbox(left, right, top, bottom)</code></td><td><code>player_hitbox() -&gt; tuple | None</code></td></tr>
+      <tr><td><code>set_player_energy(current, max)</code></td><td><code>player_energy() -&gt; (cur, max) | None</code></td></tr>
+      <tr><td><code>set_player_lives(current, max)</code></td><td><code>player_lives() -&gt; (cur, max) | None</code></td></tr>
+      <tr><td><code>set_player_gears(count)</code></td><td><code>player_gears() -&gt; int | None</code></td></tr>
+    </table>
+
+    <h3>Cross-script signals</h3>
+    <p>One-shot request/consume pairs for talking between unrelated scripts without a direct reference to
+    each other:</p>
+    <table>
+      <tr><th>Function pair</th><th>Used for</th></tr>
+      <tr><td><code>request_dialogue(path)</code> / <code>take_dialogue_request()</code></td><td>Ask the dialogue GUI layer to show a <code>dialogues/*.json</code> file.</td></tr>
+      <tr><td><code>set_dialogue_active(bool)</code> / <code>is_dialogue_active()</code></td><td>The dialogue box reports whether it's currently showing.</td></tr>
+      <tr><td><code>request_scene_transition(scene_path)</code> / <code>take_scene_transition_request()</code></td><td>Ask the top-level scene driver to switch scenes — e.g. a save/load HUD asking the level script to move on.</td></tr>
+      <tr><td><code>request_object_hop(instance_id)</code> / <code>take_object_hop_request(instance_id)</code></td><td>Ask one specific instance to play a cosmetic reaction next update.</td></tr>
+      <tr><td><code>set_game_paused(bool)</code> / <code>is_game_paused()</code></td><td>Global pause flag — gameplay scripts check this and skip their own movement/logic while true.</td></tr>
+    </table>
+
+    <h2>Generated helpers: scripts/_generated/*_auto.py</h2>
+    <p>Whenever a project is saved in TortoiseStudio, it regenerates a small sidecar module per object/scene
+    (<code>tortoisengine/script_codegen.py</code>). <strong>Never hand-edit these files</strong> — import from
+    them instead. See <Link to="/scripting/how-it-fits-together">How It Fits Together</Link> for the full authoring →
+    codegen → runtime loop this is part of; this section is just the field-by-field reference.</p>
+    <pre><code>from scripts._generated import robot_auto as auto</code></pre>
+
+    <table>
+      <tr><th>Generated for</th><th>Constants it defines</th></tr>
+      <tr><td>Each object (<code>&lt;name&gt;_auto.py</code>)</td><td><code>ANIM_&lt;NAME&gt;</code> per animation, <code>DEFAULT_ANIMATION</code>, <code>COLLIDER_&lt;NAME&gt;</code> per collider, <code>SOLID</code>, <code>ORIGIN</code>, and <code>CUSTOMVAR_&lt;NAME&gt;</code> / <code>CUSTOMVAR_&lt;NAME&gt;_DEFAULT</code> per custom var.</td></tr>
+      <tr><td>Each scene (<code>&lt;scene&gt;_auto.py</code>)</td><td><code>OBJ_&lt;ID&gt;</code> per placed instance, <code>LINKS_&lt;ID&gt;</code> for instances with a link list.</td></tr>
+      <tr><td>Audio (fixed path <code>scripts/_generated/audio_auto.py</code>)</td><td><code>CHANNEL_&lt;NAME&gt;</code> per audio channel, <code>AUDIO_CHANNELS</code> (path→channel dict). See <Link to="/scripting/subsystems">Subsystems</Link>.</td></tr>
+    </table>
+
+    <p>Collider bounds are resolved this way too, combining the object's declared colliders with its default
+    sprite size and origin — never hand-copy pixel offsets:</p>
+    <pre><code>obj = load_object(ROOT / "assets/objects/robot.tortuobject")
+sprite = load_sprite(ROOT / obj.default_sprite)
+x, y, w, h = obj.colliders[0].resolved(sprite.pixel_width, sprite.pixel_height)</code></pre>
+
+    <h2>A level-driver script</h2>
+    <p>Not every "object script" is a small enemy or NPC — a player controller script (e.g.
+    <code>mechaturtle_player.py</code>) is also just an object script, but a much bigger one: it typically
+    owns its own <code>SceneRenderer</code>, calls <code>load_scene()</code> and
+    <code>instance_api.bind_scene()</code>, and drives <code>renderer.tick()</code> /
+    <code>.render()</code> / <code>.render_overlay()</code> itself each frame from its <code>update</code>/
+    <code>draw</code> — effectively acting as the level's <code>main.py</code> while also being one placed
+    instance in the scene it's driving.</p>
+
+      <PageNav />
+    </>
+  )
+}
