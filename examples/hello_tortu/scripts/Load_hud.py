@@ -22,7 +22,7 @@ from pathlib import Path
 import pygame
 
 from tortoisengine import instance_api
-from scripts import audio_settings, game_state, save_system
+from scripts import audio_settings, dialogue_vars, game_state, save_system
 
 ROOT = Path(__file__).parent.parent
 
@@ -150,6 +150,7 @@ def _do_load(slot_index: int) -> None:
     gamedata = data.get("gamedata", {})
     game_state.reset()
     game_state.gears = gamedata.get("gears", 0)
+    dialogue_vars.Fav_Cookie = gamedata.get("favorite_cookie", dialogue_vars.Fav_Cookie)
     current_lvl = gamedata.get("current_lvl", "level_01")
     instance_api.request_scene_transition(f"scenes/{current_lvl}.tortuscene")
 

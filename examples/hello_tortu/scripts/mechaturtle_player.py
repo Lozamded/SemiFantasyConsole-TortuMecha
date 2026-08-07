@@ -53,7 +53,7 @@ HURT_DUR = 0.4
 KNOCKBACK_SPEED = 140.0
 DEFEAT_POP_VEL = -220.0  # initial upward pop when the player is defeated (Mario-style)
 DEFEAT_OFFSCREEN_Y = SCREEN_H + 40  # falls this far below the top of the screen before respawn
-DEFEAT_HOLD_DUR = 2.32  # extra pause after falling offscreen, so sfx_defeat/LostLife can finish
+DEFEAT_HOLD_DUR = 3.24  # extra pause after falling offscreen, so sfx_defeat/LostLife can finish
 SOUL_RISE_SPEED = 60.0  # px/sec the soul continuously drifts upward once spawned
 FINISH_TOTAL_DUR = 6.0  # seconds from the finish trigger until finish_done fires
 # Life system: each enemy touch costs one energy pip (life_bar); losing the
@@ -1031,5 +1031,3 @@ def draw(engine) -> None:
             _scene, camera_x=int(cam_x), camera_y=int(cam_y), z_min=1
         )
         engine.blit(overlay, (0, 0))
-
-    engine.text(f"{_state}", 4, 4, (200, 220, 255), 8)

@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from tortoisengine import save_data
-from scripts import game_state
+from scripts import dialogue_vars, game_state
 
 ROOT = Path(__file__).parent.parent
 SAVES_DIR = ROOT / "Saves"
@@ -36,6 +36,6 @@ def write_slot(index: int, current_lvl: str) -> None:
         "gamedata": {
             "gears": game_state.gears,
             "current_lvl": current_lvl,
-            "faviorite_cokie": "not_decided",
+            "favorite_cookie": dialogue_vars.Fav_Cookie,
         },
     })

@@ -788,5 +788,3 @@ def draw(engine) -> None:
             _scene, camera_x=int(cam_x), camera_y=int(cam_y), z_min=1
         )
         engine.blit(overlay, (0, 0))
-
-    engine.text(f"{_state}", 4, 4, (200, 220, 255), 8)
