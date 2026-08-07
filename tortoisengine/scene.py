@@ -194,7 +194,8 @@ class SceneGuiLayer:
     gui_layer: str = ""
     z_index: int = 0
     visible: bool = True
-    # Editor-only preview toggle — never persisted to the .tortuscene file.
+    # Editor-only preview toggle — persisted, but never read by scene_renderer.py
+    # or the export pipeline, so it has no effect on the exported/played game.
     editor_visible: bool = True
 
     def copy(self) -> SceneGuiLayer:
@@ -652,7 +653,8 @@ def _normalize_gui_layer(raw: dict, gui_layer_index: int) -> SceneGuiLayer:
     gui_layer = _normalize_asset_path(str(raw.get("gui_layer", "")))
     z_index = int(raw.get("z_index", 0))
     visible = bool(raw.get("visible", True))
-    return SceneGuiLayer(name, gui_layer, z_index, visible)
+    editor_visible = bool(raw.get("editor_visible", True))
+    return SceneGuiLayer(name, gui_layer, z_index, visible, editor_visible)
 
 
 def _normalize_gui_layers(raw_gui_layers: list[dict]) -> list[SceneGuiLayer]:
@@ -834,6 +836,7 @@ def save_scene(scene: Scene, path: Path, *, project_root: Path | None = None) ->
                 ),
                 **({"z_index": gui_layer.z_index} if gui_layer.z_index else {}),
                 **({"visible": False} if not gui_layer.visible else {}),
+                **({"editor_visible": False} if not gui_layer.editor_visible else {}),
             }
             for gui_layer in scene.gui_layers
         ],

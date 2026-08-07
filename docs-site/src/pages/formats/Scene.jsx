@@ -81,11 +81,14 @@ export default function FormatsScene() {
       <tr><td><code>gui_layer</code></td><td>str</td><td><code>""</code></td><td>Path to a <code>.tortuguilayer</code>.</td></tr>
       <tr><td><code>z_index</code></td><td>int</td><td><code>0</code></td><td></td></tr>
       <tr><td><code>visible</code></td><td>bool</td><td><code>true</code></td><td>This is the scene-wide toggle <code>instance_api.set_gui_layer_visible()</code> drives.</td></tr>
+      <tr><td><code>editor_visible</code></td><td>bool</td><td><code>true</code></td><td>TortoiseStudio's "Visible in editor" preview toggle. Only written to JSON when <code>false</code>.</td></tr>
     </table>
     <div className="callout">
-      <strong>editor_visible is never saved</strong>
-      <code>SceneGuiLayer.editor_visible</code> exists on the dataclass but is purely a TortoiseStudio preview
-      toggle — it's never written to or read from the <code>.tortuscene</code> file.
+      <strong>editor_visible never affects the exported game</strong>
+      <code>SceneGuiLayer.editor_visible</code> is saved so it survives closing and reopening the scene in
+      TortoiseStudio, but it's a Studio-only preview convenience — <code>scene_renderer.py</code> and the
+      export pipeline never read it, so it has no effect on the exported/played game. Use <code>visible</code>
+      (or <code>instance_api.set_gui_layer_visible()</code>) to actually hide a GUI layer in-game.
     </div>
 
     <h2>Placed objects</h2>
