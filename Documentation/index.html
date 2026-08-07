@@ -12,20 +12,27 @@
     <div class="brand">TortoiseMecha</div>
     <div class="brand-sub">Semi-fantasy console docs</div>
     <nav>
-      <div class="group-title">Get started</div>
+      <div class="group-title">1 &middot; Get started</div>
       <ul>
         <li><a href="index.html" class="active">Overview</a></li>
         <li><a href="get-started/install-sbc.html">Install on an SBC</a></li>
       </ul>
-      <div class="group-title">Scripting API</div>
+      <div class="group-title">2 &middot; TortoiseStudio</div>
       <ul>
-        <li><a href="scripting/overview.html">1. Overview &amp; main.py</a></li>
-        <li><a href="scripting/objects.html">2. Object scripts</a></li>
-        <li><a href="scripting/gui.html">3. GUI layer scripts</a></li>
-        <li><a href="scripting/subsystems.html">4. Subsystems</a></li>
-        <li><a href="scripting/reference.html">5. Reference &amp; imports</a></li>
+        <li><a href="studio/overview.html">1. Overview &amp; workflow</a></li>
+        <li><a href="studio/palette.html">2. Palette</a></li>
+        <li><a href="studio/pixel-editors.html">3. Sprite, tileset &amp; background</a></li>
+        <li><a href="studio/object-scene.html">4. Object &amp; scene editors</a></li>
+        <li><a href="studio/gui-hud.html">5. GUI/HUD editors</a></li>
+        <li><a href="studio/fonts-audio.html">6. Fonts &amp; audio</a></li>
+        <li><a href="studio/build-test.html">7. Build &amp; test</a></li>
       </ul>
-      <div class="group-title">File Formats</div>
+      <div class="group-title">3 &middot; Walkthrough</div>
+      <ul>
+        <li><a href="walkthrough/first-scene.html">1. Build your first scene</a></li>
+        <li><a href="walkthrough/tour.html">2. Guided tour</a></li>
+      </ul>
+      <div class="group-title">4 &middot; File Formats</div>
       <ul>
         <li><a href="formats/overview.html">1. Project &amp; palette</a></li>
         <li><a href="formats/scene.html">2. Scenes</a></li>
@@ -35,26 +42,20 @@
         <li><a href="formats/gui.html">6. GUI layers &amp; elements</a></li>
         <li><a href="formats/fonts.html">7. Fonts</a></li>
       </ul>
-      <div class="group-title">TortoiseStudio</div>
+      <div class="group-title">5 &middot; Scripting API</div>
       <ul>
-        <li><a href="studio/overview.html">1. Overview &amp; workflow</a></li>
-        <li><a href="studio/pixel-editors.html">2. Sprite, tileset &amp; background</a></li>
-        <li><a href="studio/object-scene.html">3. Object &amp; scene editors</a></li>
-        <li><a href="studio/gui-hud.html">4. GUI/HUD editors</a></li>
-        <li><a href="studio/fonts-palette-audio.html">5. Palette, fonts &amp; audio</a></li>
-        <li><a href="studio/build-test.html">6. Build &amp; test</a></li>
-      </ul>
-      <div class="group-title">Walkthrough</div>
-      <ul>
-        <li><a href="walkthrough/first-scene.html">1. Build your first scene</a></li>
-        <li><a href="walkthrough/tour.html">2. Guided tour</a></li>
+        <li><a href="scripting/how-it-fits-together.html">1. How it fits together</a></li>
+        <li><a href="scripting/overview.html">2. Overview &amp; main.py</a></li>
+        <li><a href="scripting/objects.html">3. Object scripts</a></li>
+        <li><a href="scripting/gui.html">4. GUI layer scripts</a></li>
+        <li><a href="scripting/subsystems.html">5. Subsystems</a></li>
+        <li><a href="scripting/reference.html">6. Reference &amp; imports</a></li>
       </ul>
     </nav>
   </aside>
   <main>
     <h1>TortoiseMecha Documentation</h1>
     <p class="subtitle">A semi-fantasy console built with PyGame, targeting low-spec ARM single-board computers.</p>
-
     <p>TortoiseMecha ships three packages: <code>tortoisengine</code> (headless engine and export pipeline),
     <code>tortoiseplayer</code> (the pygame runner for projects and <code>.tortucart</code> bundles), and
     <code>TortoiseStudio</code> (the PyQt6 visual editor).</p>
@@ -63,15 +64,7 @@
     <div class="card-grid">
       <a class="card" href="get-started/install-sbc.html" style="text-decoration:none;">
         <h3>Install on an SBC</h3>
-        <p>Get a built cart running on a Raspberry Pi, Orange Pi, or Radxa board.</p>
-      </a>
-      <a class="card" href="scripting/overview.html" style="text-decoration:none;">
-        <h3>Scripting API</h3>
-        <p>main.py hooks, object &amp; GUI layer scripts, instance_api, and every engine subsystem.</p>
-      </a>
-      <a class="card" href="formats/overview.html" style="text-decoration:none;">
-        <h3>File Formats</h3>
-        <p>The project manifest and every asset format — scenes, objects, sprites, tilesets, backgrounds, GUI layers, fonts.</p>
+        <p>Get a built cart running on ARM SBC like Raspberry Pi, Orange Pi, or Radxa board.</p>
       </a>
       <a class="card" href="studio/overview.html" style="text-decoration:none;">
         <h3>TortoiseStudio</h3>
@@ -81,7 +74,41 @@
         <h3>Walkthrough</h3>
         <p>Real TortoiseStudio screenshots — build a small project from scratch, then a guided tour of a full game.</p>
       </a>
+      <a class="card" href="formats/overview.html" style="text-decoration:none;">
+        <h3>File Formats</h3>
+        <p>The project manifest and every asset format — scenes, objects, sprites, tilesets, backgrounds, GUI layers, fonts.</p>
+      </a>
+      <a class="card" href="scripting/overview.html" style="text-decoration:none;">
+        <h3>Scripting API</h3>
+        <p>main.py hooks, object &amp; GUI layer scripts, instance_api, and every engine subsystem.</p>
+      </a>
     </div>
+
+    <h2>Recommended reading order</h2>
+    <p>The sidebar is numbered in the order we'd actually read it in:</p>
+    <ol class="steps">
+      <li>
+        <h3>TortoiseStudio</h3>
+        <p>Start with the editor's UI — it's how you'll touch every asset type from here on, so the rest of
+        the docs assume you already know your way around its tabs and panels.</p>
+      </li>
+      <li>
+        <h3>Walkthrough</h3>
+        <p>Real screenshots of that same UI building something, and touring a finished project — a hands-on
+        checkpoint before the reference material.</p>
+      </li>
+      <li>
+        <h3>File Formats</h3>
+        <p>Now that you've produced these files yourself in TortoiseStudio, it's worth knowing exactly what's
+        in them — useful for hand-editing, version control diffs, and understanding what a script can rely on.</p>
+      </li>
+      <li>
+        <h3>Scripting API</h3>
+        <p>Last, because scripting is where everything meets: the files TortoiseStudio saved, the code it
+        generated from them, and the logic you write by hand. That section opens with
+        <a href="scripting/how-it-fits-together.html">How It Fits Together</a>, which connects all three.</p>
+      </li>
+    </ol>
   </main>
 </div>
 </body>
