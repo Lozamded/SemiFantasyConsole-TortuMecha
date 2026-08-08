@@ -7,7 +7,17 @@ from pathlib import Path
 
 import pygame
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QIcon, QImage, QMouseEvent, QPainter, QPen, QPixmap, QWheelEvent
+from PyQt6.QtGui import (
+    QColor,
+    QIcon,
+    QImage,
+    QKeySequence,
+    QMouseEvent,
+    QPainter,
+    QPen,
+    QPixmap,
+    QWheelEvent,
+)
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -33,7 +43,7 @@ from PyQt6.QtWidgets import (
 from tortoisengine.constants import SCREEN_HEIGHT, SCREEN_WIDTH, SPRITE_BLOCK
 from tortoisengine.image import load_image
 from tortoisestudio.color_key_widget import ColorKeyWidget
-from tortoisestudio.pixel_tools import flood_fill_indices
+from tortoisestudio.pixel_tools import UndoStack, flood_fill_indices
 from tortoisengine.palette import (
     PAINTABLE_INDICES,
     TRANSPARENT_INDEX,
@@ -281,6 +291,7 @@ class GlyphCanvas(QWidget):
         self._drawing = False
         self._frame: QImage | None = None
         self._hover_pixel: tuple[int, int] | None = None
+        self._undo = UndoStack()
 
         self.setMinimumSize(200, 200)
         self.setMouseTracking(True)
@@ -289,6 +300,7 @@ class GlyphCanvas(QWidget):
     def set_glyph(self, glyph: TortoiseGlyph | None, palette: list[tuple[int, int, int]]) -> None:
         self.glyph = glyph
         self.palette = palette
+        self._undo.clear()
         self._refresh()
         self._update_minimum_size()
 
@@ -488,6 +500,8 @@ class GlyphCanvas(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             pos = self._event_to_pixel(event)
             if pos:
+                if self.tool != Tool.EYEDROPPER and self.glyph:
+                    self._undo.push(self.glyph.pixels.copy())
                 self._drawing = True
                 self._apply_tool(*pos)
         elif event.button() == Qt.MouseButton.RightButton:
@@ -509,6 +523,33 @@ class GlyphCanvas(QWidget):
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton and self._drawing:
             self._drawing = False
+            self.changed.emit()
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if event.matches(QKeySequence.StandardKey.Undo):
+            self._undo_action()
+            return
+        if event.matches(QKeySequence.StandardKey.Redo):
+            self._redo_action()
+            return
+        super().keyPressEvent(event)
+
+    def _undo_action(self) -> None:
+        if not self.glyph:
+            return
+        restored = self._undo.undo(self.glyph.pixels.copy())
+        if restored is not None:
+            self.glyph.pixels = restored
+            self._refresh()
+            self.changed.emit()
+
+    def _redo_action(self) -> None:
+        if not self.glyph:
+            return
+        restored = self._undo.redo(self.glyph.pixels.copy())
+        if restored is not None:
+            self.glyph.pixels = restored
+            self._refresh()
             self.changed.emit()
 
     def wheelEvent(self, event: QWheelEvent) -> None:  # noqa: N802

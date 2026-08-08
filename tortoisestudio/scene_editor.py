@@ -8,7 +8,17 @@ from pathlib import Path
 
 import pygame
 from PyQt6.QtCore import QByteArray, QMimeData, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QDrag, QFont, QImage, QMouseEvent, QPainter, QPen, QWheelEvent
+from PyQt6.QtGui import (
+    QColor,
+    QDrag,
+    QFont,
+    QImage,
+    QKeySequence,
+    QMouseEvent,
+    QPainter,
+    QPen,
+    QWheelEvent,
+)
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -72,6 +82,7 @@ from tortoisengine.sprite_font import TortoiseSpriteFont, load_sprite_font, rend
 from tortoisengine.text_font import TortoiseFont, load_tortu_font, render_text_line
 from tortoisengine.tileset import Tileset, load_tileset
 from tortoisestudio.object_strip import ObjectStripCanvas
+from tortoisestudio.pixel_tools import UndoStack
 from tortoisestudio.scene_assets import (
     list_background_paths,
     list_gui_layer_paths,
@@ -482,9 +493,70 @@ class SceneMapCanvas(QWidget):
         self.zoom = 2
         self._drawing = False
         self._frame: QImage | None = None
+        self._undo: UndoStack = UndoStack()
         self.resize(200, 200)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setAcceptDrops(True)
+
+    def clear_undo(self) -> None:
+        self._undo.clear()
+
+    def _push_tiles_undo(self) -> None:
+        if not self.scene:
+            return
+        layer = self.scene.tile_layers[self.active_tile_layer]
+        self._undo.push(("tiles", self.active_tile_layer, layer.tiles.copy()))
+
+    def _push_objects_undo(self) -> None:
+        if not self.scene:
+            return
+        self._undo.push(("objects", [o.copy() for o in self.scene.objects]))
+
+    def _snapshot_matching(self, entry: tuple) -> tuple:
+        if entry[0] == "tiles":
+            _, layer_index, _ = entry
+            return ("tiles", layer_index, self.scene.tile_layers[layer_index].tiles.copy())
+        return ("objects", [o.copy() for o in self.scene.objects])
+
+    def _restore_snapshot(self, entry: tuple) -> None:
+        if entry[0] == "tiles":
+            _, layer_index, tiles = entry
+            self.scene.tile_layers[layer_index].tiles = tiles
+        else:
+            self.scene.objects = entry[1]
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if event.matches(QKeySequence.StandardKey.Undo):
+            self._undo_action()
+            return
+        if event.matches(QKeySequence.StandardKey.Redo):
+            self._redo_action()
+            return
+        super().keyPressEvent(event)
+
+    def _undo_action(self) -> None:
+        if not self.scene:
+            return
+        top = self._undo.peek_undo()
+        if top is None:
+            return
+        restored = self._undo.undo(self._snapshot_matching(top))
+        if restored is not None:
+            self._restore_snapshot(restored)
+            self._refresh()
+            self.changed.emit()
+
+    def _redo_action(self) -> None:
+        if not self.scene:
+            return
+        top = self._undo.peek_redo()
+        if top is None:
+            return
+        restored = self._undo.redo(self._snapshot_matching(top))
+        if restored is not None:
+            self._restore_snapshot(restored)
+            self._refresh()
+            self.changed.emit()
 
     def set_context(
         self,
@@ -1239,17 +1311,22 @@ class SceneMapCanvas(QWidget):
                 else:
                     index = self._find_object_at_pixel(*pos)
                 self._dragging_object_index = index if index is not None else -1
+                if self._dragging_object_index >= 0:
+                    self._push_objects_undo()
                 self.object_selected.emit(self._dragging_object_index)
             return
         if self.edit_objects:
             pos = self._event_to_map_pixel(event)
             if pos:
+                self._push_objects_undo()
                 self._drawing = True
                 self._apply_object_tool(*pos)
                 self.changed.emit()
             return
         pos = self._event_to_tile(event)
         if pos:
+            if self.tool != Tool.EYEDROPPER:
+                self._push_tiles_undo()
             self._drawing = True
             self._apply_tool(*pos)
             self.changed.emit()
@@ -1315,6 +1392,7 @@ class SceneMapCanvas(QWidget):
         if pos is None:
             event.ignore()
             return
+        self._push_objects_undo()
         try:
             self.scene.add_object(rel, *pos)
         except ValueError:
@@ -2904,6 +2982,7 @@ class SceneEditorWidget(QWidget):
         except ValueError as exc:
             QMessageBox.warning(self, "Add Tile Layer", str(exc))
             return
+        self.map_canvas.clear_undo()
         self._mark_dirty()
         self._sync_tile_layer_controls()
         self.tile_layer_combo.setCurrentIndex(index)
@@ -2918,6 +2997,7 @@ class SceneEditorWidget(QWidget):
         except ValueError as exc:
             QMessageBox.warning(self, "Remove Tile Layer", str(exc))
             return
+        self.map_canvas.clear_undo()
         self._mark_dirty()
         self._sync_tile_layer_controls()
         self._refresh_map()
@@ -2944,6 +3024,7 @@ class SceneEditorWidget(QWidget):
                 self.map_height.setValue(self.scene.height)
                 return
         self.scene.resize_pixels(new_w, new_h, self.project_root)
+        self.map_canvas.clear_undo()
         self._mark_dirty()
         self._refresh_editor()
 
@@ -3005,6 +3086,7 @@ class SceneEditorWidget(QWidget):
             self.scene = None
             self.file_path = None
             return
+        self.map_canvas.clear_undo()
         self._refresh_editor()
         self._update_status()
 

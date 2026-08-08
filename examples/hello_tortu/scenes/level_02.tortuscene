@@ -285,6 +285,18 @@
       "y": 166,
       "id": "enemycollider2",
       "visible": false
+    },
+    {
+      "object": "assets/objects/brick_block.tortuobject",
+      "x": 88,
+      "y": 168,
+      "id": "brick_block1"
+    },
+    {
+      "object": "assets/objects/brick_block.tortuobject",
+      "x": 72,
+      "y": 168,
+      "id": "brick_block2"
     }
   ],
   "gui_layers": [

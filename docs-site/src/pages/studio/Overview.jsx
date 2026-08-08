@@ -115,10 +115,23 @@ export default function StudioOverview() {
 
       <h2>Saving</h2>
       <div className="callout">
-        <strong>There's no global save, and no undo</strong>
-        Every editor has its own "Save …" button in its top toolbar — Ctrl+S does nothing. There is also no
-        undo/redo anywhere in TortoiseStudio; if a paint stroke or edit goes wrong, either paint over it or
-        discard the editor's unsaved changes (the Save/Discard/Cancel prompt when switching tabs).
+        <strong>There's no global save — Ctrl+S does nothing</strong>
+        Every editor has its own "Save …" button in its top toolbar. If an edit goes wrong and Ctrl+Z doesn't
+        cover it (see below), discard the editor's unsaved changes instead (the Save/Discard/Cancel prompt when
+        switching tabs).
+      </div>
+
+      <h2>Undo/redo</h2>
+      <div className="callout">
+        <strong>Ctrl+Z / Ctrl+Shift+Z (Ctrl+Y), scoped to canvas gestures</strong>
+        The Sprite, Tileset, Background, Sprite Font, and Scene map canvases each keep their own undo history
+        (up to 50 steps) for the strokes/placements made directly on the canvas: pixel painting, tile painting,
+        and — on the Scene map — placing, erasing, or dragging objects. It does <strong>not</strong> cover
+        edits made through side-panel fields (renaming, resizing, palette swaps, object property edits) — those
+        still only revert via Save/Discard/Cancel. The GUI Layer canvas has no undo yet. Undo/redo also needs
+        the canvas itself focused (click it first) — pressing Ctrl+Z while a spinbox or another panel has focus
+        won't reach it. History resets whenever the buffer's shape changes underneath it: switching frames,
+        resizing, changing the palette, adding/removing a tile layer, or loading a different asset/scene.
       </div>
       <p><strong>Game Settings</strong> is its own tab (not a dialog) with Game name, Cart name, Game FPS
         (1–120), Start scene, Author, Description, and a "Test Play: Fullscreen" checkbox (testing-only, not

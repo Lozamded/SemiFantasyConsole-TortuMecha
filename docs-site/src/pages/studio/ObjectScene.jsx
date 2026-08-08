@@ -59,6 +59,12 @@ export default function StudioObjectScene() {
     do in Draw mode: paint tile indices into the active tile layer, or drop/remove object instances.</p>
     <p>Objects can also be placed by <strong>dragging a <code>.tortuobject</code> file straight from the
     project tree onto the map canvas</strong> — drops it at the cursor position, no tab-switching needed.</p>
+    <div className="callout">
+      <strong>Ctrl+Z undoes map canvas edits</strong>
+      Tile strokes and object placement/erase/drag are all undoable (Ctrl+Z) and redoable (Ctrl+Shift+Z) with
+      the map canvas focused — see <Link to="/studio/overview">Studio Overview</Link> for the exact scope and
+      what resets the history (switching tile layers doesn't, but adding/removing one does).
+    </div>
 
     <h3>Objects in Scene panel</h3>
     <p>One collapsible card per placed instance: ID (optional, for scripting — see

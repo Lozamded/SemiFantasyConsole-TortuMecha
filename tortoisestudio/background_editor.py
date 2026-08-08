@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pygame
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QImage, QMouseEvent, QPainter, QPen, QWheelEvent
+from PyQt6.QtGui import QColor, QImage, QKeySequence, QMouseEvent, QPainter, QPen, QWheelEvent
 from PyQt6.QtWidgets import (
     QCheckBox,
     QFileDialog,
@@ -41,7 +41,7 @@ from tortoisengine.palette import (
     load_palette,
     palette_path,
 )
-from tortoisestudio.pixel_tools import flood_fill_indices
+from tortoisestudio.pixel_tools import UndoStack, flood_fill_indices
 from tortoisestudio.sprite_editor import Tool
 
 
@@ -74,9 +74,13 @@ class BackgroundCanvas(QWidget):
         self._drawing = False
         self._frame: QImage | None = None
         self._hover_pixel: tuple[int, int] | None = None
+        self._undo = UndoStack()
         self.setMinimumSize(200, 200)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def clear_undo(self) -> None:
+        self._undo.clear()
 
     def set_context(
         self,
@@ -265,6 +269,8 @@ class BackgroundCanvas(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             pos = self._event_to_pixel(event)
             if pos:
+                if self.tool != Tool.EYEDROPPER and self.background:
+                    self._undo.push(self.background.pixels.copy())
                 self._drawing = True
                 self._apply_tool(*pos)
                 self.changed.emit()
@@ -287,6 +293,33 @@ class BackgroundCanvas(QWidget):
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton and self._drawing:
             self._drawing = False
+            self.changed.emit()
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if event.matches(QKeySequence.StandardKey.Undo):
+            self._undo_action()
+            return
+        if event.matches(QKeySequence.StandardKey.Redo):
+            self._redo_action()
+            return
+        super().keyPressEvent(event)
+
+    def _undo_action(self) -> None:
+        if not self.background:
+            return
+        restored = self._undo.undo(self.background.pixels.copy())
+        if restored is not None:
+            self.background.pixels = restored
+            self._refresh()
+            self.changed.emit()
+
+    def _redo_action(self) -> None:
+        if not self.background:
+            return
+        restored = self._undo.redo(self.background.pixels.copy())
+        if restored is not None:
+            self.background.pixels = restored
+            self._refresh()
             self.changed.emit()
 
     def wheelEvent(self, event: QWheelEvent) -> None:  # noqa: N802
@@ -558,6 +591,7 @@ class BackgroundEditorWidget(QWidget):
                 self.bg_height.setValue(self.background.height)
                 return
         self.background.resize_pixels(new_w, new_h)
+        self.canvas.clear_undo()
         self._mark_dirty()
         self._refresh_editor()
 
@@ -614,6 +648,7 @@ class BackgroundEditorWidget(QWidget):
                 self.background.width = iw
                 self.background.height = ih
         self.background.fill_from_surface(image, self._palette_colors)
+        self.canvas.clear_undo()
         self._mark_dirty()
         self._refresh_editor()
 
@@ -667,6 +702,7 @@ class BackgroundEditorWidget(QWidget):
             self.background = None
             self.file_path = None
             return
+        self.canvas.clear_undo()
         self._refresh_editor()
         self._update_status()
 

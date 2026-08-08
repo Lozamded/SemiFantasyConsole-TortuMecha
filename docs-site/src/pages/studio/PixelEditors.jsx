@@ -20,6 +20,13 @@ export default function StudioPixelEditors() {
       <code>tortoisestudio/pixel_tools.py</code> and shared by all four pixel canvases (Sprite, Tileset,
       Background, Sprite Font glyphs) rather than reimplemented per editor.
     </div>
+    <div className="callout">
+      <strong>Ctrl+Z undoes painting</strong>
+      Each canvas keeps its own undo history (Ctrl+Z / Ctrl+Shift+Z, up to 50 strokes) for Pencil/Eraser/Bucket
+      strokes — click the canvas first so it has focus. See <Link to="/studio/overview">Studio Overview</Link>
+      for exactly what it does and doesn't cover (side-panel edits like resize/palette don't undo — they reset
+      the history instead).
+    </div>
 
     <h2>Sprite Editor</h2>
     <p><strong>New Sprite…</strong>: Name, Blocks wide / Blocks tall (1–32, default 4×4 = 16×16px), Palette.

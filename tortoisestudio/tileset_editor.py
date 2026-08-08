@@ -8,7 +8,17 @@ from pathlib import Path
 
 import pygame
 from PyQt6.QtCore import QPointF, Qt, pyqtSignal
-from PyQt6.QtGui import QBrush, QColor, QImage, QMouseEvent, QPainter, QPen, QPolygonF, QWheelEvent
+from PyQt6.QtGui import (
+    QBrush,
+    QColor,
+    QImage,
+    QKeySequence,
+    QMouseEvent,
+    QPainter,
+    QPen,
+    QPolygonF,
+    QWheelEvent,
+)
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -29,7 +39,7 @@ from PyQt6.QtWidgets import (
 
 from tortoisengine.image import load_image
 from tortoisestudio.color_key_widget import ColorKeyWidget
-from tortoisestudio.pixel_tools import flood_fill_indices
+from tortoisestudio.pixel_tools import UndoStack, flood_fill_indices
 from tortoisengine.palette import (
     PAINTABLE_INDICES,
     TRANSPARENT_INDEX,
@@ -299,6 +309,7 @@ class SingleTileCanvas(QWidget):
         self._frame: QImage | None = None
         self._tile_size = 8
         self._hover_pixel: tuple[int, int] | None = None
+        self._undo = UndoStack()
 
         self.setMinimumSize(128, 128)
         self.setMouseTracking(True)
@@ -308,6 +319,7 @@ class SingleTileCanvas(QWidget):
         self._tile_size = tile_size
         self.pixels = pixels.copy()
         self.palette = palette
+        self._undo.clear()
         self._refresh()
 
     def get_pixels(self) -> list[int]:
@@ -475,6 +487,8 @@ class SingleTileCanvas(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             pos = self._event_to_pixel(event)
             if pos:
+                if self.tool != Tool.EYEDROPPER:
+                    self._undo.push(self.pixels.copy())
                 self._drawing = True
                 self._apply_tool(*pos)
         elif event.button() == Qt.MouseButton.RightButton:
@@ -496,6 +510,29 @@ class SingleTileCanvas(QWidget):
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton and self._drawing:
             self._drawing = False
+            self.changed.emit()
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if event.matches(QKeySequence.StandardKey.Undo):
+            self._undo_action()
+            return
+        if event.matches(QKeySequence.StandardKey.Redo):
+            self._redo_action()
+            return
+        super().keyPressEvent(event)
+
+    def _undo_action(self) -> None:
+        restored = self._undo.undo(self.pixels.copy())
+        if restored is not None:
+            self.pixels = restored
+            self._refresh()
+            self.changed.emit()
+
+    def _redo_action(self) -> None:
+        restored = self._undo.redo(self.pixels.copy())
+        if restored is not None:
+            self.pixels = restored
+            self._refresh()
             self.changed.emit()
 
     def wheelEvent(self, event: QWheelEvent) -> None:  # noqa: N802
