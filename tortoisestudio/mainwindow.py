@@ -59,6 +59,7 @@ from tortoisestudio.asset_drag import DraggableProjectTree
 from tortoisestudio.background_editor import BackgroundEditorWidget
 from tortoisestudio.font_editor import FontEditorWidget
 from tortoisestudio.gui_layer_editor import GuiLayerEditorWidget
+from tortoisestudio.language_editor import LanguageEditorWidget
 from tortoisestudio.new_background_dialog import NewBackgroundDialog
 from tortoisestudio.new_gui_layer_dialog import NewGuiLayerDialog
 from tortoisestudio.new_object_dialog import NewObjectDialog
@@ -196,6 +197,7 @@ class MainWindow(QMainWindow):
     GUI_LAYER_EDITOR = 9
     BAR_EDITOR = 10
     GAME_SETTINGS = 11
+    LANGUAGE_EDITOR = 12
 
     def __init__(self, project: Project | None = None) -> None:
         super().__init__()
@@ -296,6 +298,11 @@ class MainWindow(QMainWindow):
         gui_layer_tab_action.setShortcut("Ctrl+0")
         gui_layer_tab_action.triggered.connect(self._activate_gui_layer_editor_tab)
         tabs_menu.addAction(gui_layer_tab_action)
+
+        language_tab_action = QAction("&Languages", self)
+        language_tab_action.setShortcut("Ctrl+Shift+L")
+        language_tab_action.triggered.connect(self._activate_language_editor_tab)
+        tabs_menu.addAction(language_tab_action)
 
         build_menu = menu.addMenu("&Build")
         export_action = QAction("Export .tortucart…", self)
@@ -440,6 +447,8 @@ class MainWindow(QMainWindow):
         self.sound_editor.save_requested.connect(self._save_audio_channels)
         self.palette_editor = PaletteEditorWidget(Path("."))
         self.palette_editor.saved.connect(self._on_palette_saved)
+        self.language_editor = LanguageEditorWidget(Path("."))
+        self.language_editor.saved.connect(self._on_language_saved)
 
         # Game Settings panel — lives in the center stack as its own tab
         game_settings_panel = QWidget()
@@ -504,6 +513,7 @@ class MainWindow(QMainWindow):
         self.center_stack.addWidget(self.gui_layer_editor)
         self.center_stack.addWidget(self.bar_editor_tabs)
         self.center_stack.addWidget(game_settings_panel)
+        self.center_stack.addWidget(self.language_editor)
         self.center_stack.currentChanged.connect(self._on_center_stack_changed)
         splitter.addWidget(self.center_stack)
 
@@ -544,6 +554,7 @@ class MainWindow(QMainWindow):
         self.sound_editor.import_audio.set_channels(project.game.audio_channels)
         self.sound_editor.set_channel_map(project.game.audio_channel_map)
         self.palette_editor.set_project_root(project.root)
+        self.language_editor.set_project_root(project.root)
         self._active_sprite_path = None
         self._active_tileset_path = None
         self._active_scene_path = None
@@ -1039,6 +1050,14 @@ class MainWindow(QMainWindow):
         self._switching_tabs = False
         self._show_font_editor()
 
+    def _activate_language_editor_tab(self) -> None:
+        if not self._confirm_discard_editor_changes():
+            return
+        self._switching_tabs = True
+        self.workspace_tabs.select_language_editor()
+        self._switching_tabs = False
+        self._show_language_editor()
+
     def _open_sprite(self, path: Path) -> None:
         if not self._confirm_discard_editor_changes():
             return
@@ -1285,6 +1304,11 @@ class MainWindow(QMainWindow):
         self.palette_editor.refresh()
         self.field_name.clear()
 
+    def _show_language_editor(self) -> None:
+        self.center_stack.setCurrentIndex(self.LANGUAGE_EDITOR)
+        self.language_editor.refresh()
+        self.field_name.clear()
+
     def _show_font_editor(self) -> None:
         self.center_stack.setCurrentIndex(self.FONT_EDITOR)
         if self._active_font_path:
@@ -1450,6 +1474,14 @@ class MainWindow(QMainWindow):
                 return
             self.center_stack.setCurrentIndex(self.GAME_SETTINGS)
 
+        if ref.kind == TabKind.LANGUAGE_EDITOR:
+            if not self._confirm_discard_editor_changes():
+                self._switching_tabs = True
+                self._restore_editor_tab()
+                self._switching_tabs = False
+                return
+            self._show_language_editor()
+
     def _restore_editor_tab(self) -> None:
         index = self.center_stack.currentIndex()
         if index == self.SCENE_EDITOR:
@@ -1474,6 +1506,8 @@ class MainWindow(QMainWindow):
             self.workspace_tabs.select_bar_editor()
         elif index == self.GAME_SETTINGS:
             self.workspace_tabs.select_game_settings()
+        elif index == self.LANGUAGE_EDITOR:
+            self.workspace_tabs.select_language_editor()
         else:
             self.workspace_tabs.select_preview()
 
@@ -1544,6 +1578,8 @@ class MainWindow(QMainWindow):
             return self._confirm_discard_unsaved("font", self.font_editor.save)
         if index == self.OBJECT_EDITOR and self.object_editor.has_unsaved_changes():
             return self._confirm_discard_unsaved("object", self.object_editor.save)
+        if index == self.LANGUAGE_EDITOR and self.language_editor.has_unsaved_changes():
+            return self._confirm_discard_unsaved("language CSV", self.language_editor.save)
         return True
 
     def _confirm_discard_unsaved(self, label: str, save_fn) -> bool:
@@ -1709,6 +1745,9 @@ class MainWindow(QMainWindow):
         self._populate_tree()
         if self.viewport.scene_preview_active:
             self.viewport.invalidate_baked_assets()
+
+    def _on_language_saved(self, path: Path) -> None:
+        self.log(f"Saved {path.relative_to(self.project.root)}")
 
     def _action_open_project(self) -> None:
         if not self._confirm_discard_editor_changes():
