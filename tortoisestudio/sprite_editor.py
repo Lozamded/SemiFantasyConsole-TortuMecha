@@ -29,6 +29,7 @@ from PyQt6.QtWidgets import (
 
 from tortoisengine.image import load_image
 from tortoisestudio.color_key_widget import ColorKeyWidget
+from tortoisestudio.pixel_tools import flood_fill_indices
 from tortoisengine.constants import SPRITE_BLOCK
 from tortoisengine.palette import (
     PAINTABLE_INDICES,
@@ -51,6 +52,7 @@ class Tool(str, Enum):
     PENCIL = "pencil"
     ERASER = "eraser"
     EYEDROPPER = "eyedropper"
+    BUCKET = "bucket"
 
 
 class SpriteCanvas(QWidget):
@@ -63,7 +65,7 @@ class SpriteCanvas(QWidget):
     changed = pyqtSignal()
     tool_cycled = pyqtSignal(object)
 
-    _TOOL_CYCLE = [Tool.PENCIL, Tool.ERASER, Tool.EYEDROPPER]
+    _TOOL_CYCLE = [Tool.PENCIL, Tool.ERASER, Tool.EYEDROPPER, Tool.BUCKET]
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -220,6 +222,9 @@ class SpriteCanvas(QWidget):
         elif self.tool == Tool.ERASER:
             fill = QColor(220, 60, 60, 60)
             outline = QColor(220, 60, 60, 220)
+        elif self.tool == Tool.BUCKET:
+            fill = QColor(90, 220, 120, 60)
+            outline = QColor(90, 220, 120, 220)
         else:
             fill = QColor(80, 200, 255, 60)
             outline = QColor(80, 200, 255, 220)
@@ -277,6 +282,12 @@ class SpriteCanvas(QWidget):
             if index != TRANSPARENT_INDEX:
                 self.current_index = index
                 self.changed.emit()
+        elif self.tool == Tool.BUCKET:
+            flood_fill_indices(
+                self.sprite.get_pixel, self.sprite.set_pixel,
+                self.sprite.pixel_width, self.sprite.pixel_height,
+                x, y, self.current_index,
+            )
         self._refresh()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
@@ -359,13 +370,16 @@ class SpriteEditorWidget(QWidget):
         self.btn_pencil = QPushButton("Pencil")
         self.btn_eraser = QPushButton("Eraser")
         self.btn_dropper = QPushButton("Eyedropper")
+        self.btn_bucket = QPushButton("Paint Bucket")
         self.btn_pencil.setCheckable(True)
         self.btn_eraser.setCheckable(True)
         self.btn_dropper.setCheckable(True)
+        self.btn_bucket.setCheckable(True)
         self.btn_pencil.setChecked(True)
         self.btn_pencil.clicked.connect(lambda: self._set_tool(Tool.PENCIL))
         self.btn_eraser.clicked.connect(lambda: self._set_tool(Tool.ERASER))
         self.btn_dropper.clicked.connect(lambda: self._set_tool(Tool.EYEDROPPER))
+        self.btn_bucket.clicked.connect(lambda: self._set_tool(Tool.BUCKET))
 
         self.btn_save = QPushButton("Save")
         self.btn_save.clicked.connect(self.save)
@@ -473,6 +487,7 @@ class SpriteEditorWidget(QWidget):
         tools.addWidget(self.btn_pencil)
         tools.addWidget(self.btn_eraser)
         tools.addWidget(self.btn_dropper)
+        tools.addWidget(self.btn_bucket)
         tools.addStretch()
         canvas_col.addLayout(tools)
         root.addLayout(canvas_col, stretch=1)
@@ -523,6 +538,7 @@ class SpriteEditorWidget(QWidget):
         self.btn_pencil.setChecked(tool == Tool.PENCIL)
         self.btn_eraser.setChecked(tool == Tool.ERASER)
         self.btn_dropper.setChecked(tool == Tool.EYEDROPPER)
+        self.btn_bucket.setChecked(tool == Tool.BUCKET)
         self.canvas.set_tool(tool)
 
     def _update_size_label(self) -> None:

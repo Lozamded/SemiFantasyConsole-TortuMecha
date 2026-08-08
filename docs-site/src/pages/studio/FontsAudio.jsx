@@ -30,7 +30,8 @@ export default function StudioFontsAudio() {
     <p>A left-side tab switches between the same console-preview mockup and an "Import image" tab (paste a
     glyph sheet, pick a cell, "Load to Glyph" for one character or "Import All Glyphs" to bulk-import
     left-to-right/top-to-bottom). The glyph itself is hand-painted on a small pixel canvas with the usual
-    Pencil/Eraser/Eyedropper set.</p>
+    Pencil/Eraser/Eyedropper/Paint Bucket set (see <Link to="/studio/pixel-editors">Sprite, tileset &amp;
+    background</Link> for how the tools behave — the glyph canvas shares the same implementation).</p>
     <p>Sidebar: Name, Glyph blocks W/H (resize prompts confirmation), Line height, Default advance, "Add
     character" (type one character, e.g. <code>ñ</code>) / "Remove character" (base charset characters can't
     be removed), Palette, Preview text/zoom, and a "Find character" filter over the full glyph list — each

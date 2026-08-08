@@ -129,7 +129,9 @@ export default function StudioOverview() {
         canvas, Sprite Font glyphs):</p>
       <ul>
         <li><strong>Right-click</strong> cycles the active paint tool: Pencil/Paint → Eraser/Erase →
-          Eyedropper → back to Pencil/Paint.</li>
+          Eyedropper → back to Pencil/Paint. The Sprite, Tileset, Background, and Sprite Font editors insert a
+          fourth <strong>Paint Bucket</strong> (flood fill) step before cycling back — Scene map and GUI Layer
+          canvas stay a 3-tool cycle.</li>
         <li><strong>Mouse wheel</strong> zooms in/out, clamped to a widget-specific range.</li>
         <li>Renaming an asset from its editor's "Rename…" button also renames every same-stem sidecar file
           (preview PNGs, reference images).</li>

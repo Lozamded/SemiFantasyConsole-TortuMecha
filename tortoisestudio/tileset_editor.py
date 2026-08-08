@@ -29,6 +29,7 @@ from PyQt6.QtWidgets import (
 
 from tortoisengine.image import load_image
 from tortoisestudio.color_key_widget import ColorKeyWidget
+from tortoisestudio.pixel_tools import flood_fill_indices
 from tortoisengine.palette import (
     PAINTABLE_INDICES,
     TRANSPARENT_INDEX,
@@ -61,6 +62,7 @@ class Tool(str, Enum):
     PENCIL = "pencil"
     ERASER = "eraser"
     EYEDROPPER = "eyedropper"
+    BUCKET = "bucket"
 
 
 _ONE_WAY_ARROW_COLOR = QColor(255, 230, 80, 230)
@@ -280,7 +282,7 @@ class SingleTileCanvas(QWidget):
     changed = pyqtSignal()
     tool_cycled = pyqtSignal(object)
 
-    _TOOL_CYCLE = [Tool.PENCIL, Tool.ERASER, Tool.EYEDROPPER]
+    _TOOL_CYCLE = [Tool.PENCIL, Tool.ERASER, Tool.EYEDROPPER, Tool.BUCKET]
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -404,6 +406,9 @@ class SingleTileCanvas(QWidget):
         elif self.tool == Tool.ERASER:
             fill = QColor(220, 60, 60, 60)
             outline = QColor(220, 60, 60, 220)
+        elif self.tool == Tool.BUCKET:
+            fill = QColor(90, 220, 120, 60)
+            outline = QColor(90, 220, 120, 220)
         else:
             fill = QColor(80, 200, 255, 60)
             outline = QColor(80, 200, 255, 220)
@@ -458,6 +463,12 @@ class SingleTileCanvas(QWidget):
             if index != TRANSPARENT_INDEX:
                 self.current_index = index
                 self.changed.emit()
+        elif self.tool == Tool.BUCKET:
+            flood_fill_indices(
+                self._pixel_at, self._set_pixel,
+                self._tile_size, self._tile_size,
+                x, y, self.current_index,
+            )
         self._refresh()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
@@ -990,13 +1001,16 @@ class TilesetEditorWidget(QWidget):
         self.btn_pencil = QPushButton("Pencil")
         self.btn_eraser = QPushButton("Eraser")
         self.btn_dropper = QPushButton("Eyedropper")
+        self.btn_bucket = QPushButton("Paint Bucket")
         self.btn_pencil.setCheckable(True)
         self.btn_eraser.setCheckable(True)
         self.btn_dropper.setCheckable(True)
+        self.btn_bucket.setCheckable(True)
         self.btn_pencil.setChecked(True)
         self.btn_pencil.clicked.connect(lambda: self._set_tool(Tool.PENCIL))
         self.btn_eraser.clicked.connect(lambda: self._set_tool(Tool.ERASER))
         self.btn_dropper.clicked.connect(lambda: self._set_tool(Tool.EYEDROPPER))
+        self.btn_bucket.clicked.connect(lambda: self._set_tool(Tool.BUCKET))
 
         self.btn_collision_paint = QPushButton("Paint collision")
         self.btn_collision_erase = QPushButton("Erase collision")
@@ -1081,6 +1095,7 @@ class TilesetEditorWidget(QWidget):
         pencil_row.addWidget(self.btn_pencil)
         pencil_row.addWidget(self.btn_eraser)
         pencil_row.addWidget(self.btn_dropper)
+        pencil_row.addWidget(self.btn_bucket)
         pencil_row.addStretch()
         edit_layout.addWidget(self.pencil_tools_widget)
 
@@ -1450,6 +1465,7 @@ class TilesetEditorWidget(QWidget):
         self.btn_pencil.setChecked(tool == Tool.PENCIL)
         self.btn_eraser.setChecked(tool == Tool.ERASER)
         self.btn_dropper.setChecked(tool == Tool.EYEDROPPER)
+        self.btn_bucket.setChecked(tool == Tool.BUCKET)
         self.edit_canvas.set_tool(tool)
 
     def _refresh_strip(self) -> None:

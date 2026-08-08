@@ -8,10 +8,18 @@ export default function StudioPixelEditors() {
     <h1>Sprite, Tileset &amp; Background Editors</h1>
     <p className="subtitle">The three raw-pixel editors — they share the same paint tools and canvas conventions.</p>
 
-    <p>All three editors paint with the same three-tool set: <strong>Pencil</strong>, <strong>Eraser</strong>,
-    <strong>Eyedropper</strong> — there's no fill/bucket tool anywhere. Right-click cycles between them; mouse
-    wheel zooms. A palette swatch grid below each canvas picks the pencil color, restricted to the 85 paintable
-    indices (index 85/transparent is never a paint color, only what the eraser produces).</p>
+    <p>All three editors paint with the same four-tool set: <strong>Pencil</strong>, <strong>Eraser</strong>,
+    <strong>Eyedropper</strong>, <strong>Paint Bucket</strong>. Right-click cycles between them in that order;
+    mouse wheel zooms. A palette swatch grid below each canvas picks the pencil color, restricted to the 85
+    paintable indices (index 85/transparent is never a paint color, only what the eraser produces).</p>
+    <div className="callout">
+      <strong>Paint Bucket is a 4-connected flood fill</strong>
+      Click a pixel and every orthogonally-connected pixel sharing its exact index gets replaced with the
+      current color — diagonal-only neighbors and different indices act as a wall. It fills with the palette
+      swatch color like Pencil, not with transparency; use Eraser for that. Implemented once in
+      <code>tortoisestudio/pixel_tools.py</code> and shared by all four pixel canvases (Sprite, Tileset,
+      Background, Sprite Font glyphs) rather than reimplemented per editor.
+    </div>
 
     <h2>Sprite Editor</h2>
     <p><strong>New Sprite…</strong>: Name, Blocks wide / Blocks tall (1–32, default 4×4 = 16×16px), Palette.
@@ -48,7 +56,7 @@ export default function StudioPixelEditors() {
       </li>
       <li>
         <h3>Paint the tile</h3>
-        <p>The edit buffer has two tabs: <strong>Pencil</strong> (normal pixel painting, same 3-tool set as
+        <p>The edit buffer has two tabs: <strong>Pencil</strong> (normal pixel painting, same 4-tool set as
         the sprite editor) and <strong>Collision</strong> (see below).</p>
       </li>
       <li>

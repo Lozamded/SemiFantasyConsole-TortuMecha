@@ -41,6 +41,7 @@ from tortoisengine.palette import (
     load_palette,
     palette_path,
 )
+from tortoisestudio.pixel_tools import flood_fill_indices
 from tortoisestudio.sprite_editor import Tool
 
 
@@ -55,7 +56,7 @@ class BackgroundCanvas(QWidget):
     changed = pyqtSignal()
     tool_cycled = pyqtSignal(object)
 
-    _TOOL_CYCLE = [Tool.PENCIL, Tool.ERASER, Tool.EYEDROPPER]
+    _TOOL_CYCLE = [Tool.PENCIL, Tool.ERASER, Tool.EYEDROPPER, Tool.BUCKET]
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -193,6 +194,9 @@ class BackgroundCanvas(QWidget):
         elif self.tool == Tool.ERASER:
             fill = QColor(220, 60, 60, 60)
             outline = QColor(220, 60, 60, 220)
+        elif self.tool == Tool.BUCKET:
+            fill = QColor(90, 220, 120, 60)
+            outline = QColor(90, 220, 120, 220)
         else:
             fill = QColor(80, 200, 255, 60)
             outline = QColor(80, 200, 255, 220)
@@ -249,6 +253,12 @@ class BackgroundCanvas(QWidget):
             if picked != TRANSPARENT_INDEX:
                 self.current_index = picked
                 self.changed.emit()
+        elif self.tool == Tool.BUCKET:
+            flood_fill_indices(
+                self.background.get_pixel, self.background.set_pixel,
+                self.background.width, self.background.height,
+                x, y, self.current_index,
+            )
         self._refresh()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
@@ -359,12 +369,14 @@ class BackgroundEditorWidget(QWidget):
         self.btn_pencil = QPushButton("Paint")
         self.btn_eraser = QPushButton("Erase")
         self.btn_dropper = QPushButton("Eyedropper")
-        for btn in (self.btn_pencil, self.btn_eraser, self.btn_dropper):
+        self.btn_bucket = QPushButton("Paint Bucket")
+        for btn in (self.btn_pencil, self.btn_eraser, self.btn_dropper, self.btn_bucket):
             btn.setCheckable(True)
         self.btn_pencil.setChecked(True)
         self.btn_pencil.clicked.connect(lambda: self._set_tool(Tool.PENCIL))
         self.btn_eraser.clicked.connect(lambda: self._set_tool(Tool.ERASER))
         self.btn_dropper.clicked.connect(lambda: self._set_tool(Tool.EYEDROPPER))
+        self.btn_bucket.clicked.connect(lambda: self._set_tool(Tool.BUCKET))
 
         self.swatches_grid = QGridLayout()
         self.swatches_area = QWidget()
@@ -400,6 +412,7 @@ class BackgroundEditorWidget(QWidget):
         tools.addWidget(self.btn_pencil)
         tools.addWidget(self.btn_eraser)
         tools.addWidget(self.btn_dropper)
+        tools.addWidget(self.btn_bucket)
         tools.addStretch()
         canvas_layout.addLayout(tools)
         body.addWidget(canvas_group, stretch=1)
@@ -428,6 +441,7 @@ class BackgroundEditorWidget(QWidget):
         self.btn_pencil.setChecked(tool == Tool.PENCIL)
         self.btn_eraser.setChecked(tool == Tool.ERASER)
         self.btn_dropper.setChecked(tool == Tool.EYEDROPPER)
+        self.btn_bucket.setChecked(tool == Tool.BUCKET)
         self.canvas.set_tool(tool)
 
     def _mark_dirty(self) -> None:

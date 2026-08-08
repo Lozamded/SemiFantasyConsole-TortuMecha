@@ -33,6 +33,7 @@ from PyQt6.QtWidgets import (
 from tortoisengine.constants import SCREEN_HEIGHT, SCREEN_WIDTH, SPRITE_BLOCK
 from tortoisengine.image import load_image
 from tortoisestudio.color_key_widget import ColorKeyWidget
+from tortoisestudio.pixel_tools import flood_fill_indices
 from tortoisengine.palette import (
     PAINTABLE_INDICES,
     TRANSPARENT_INDEX,
@@ -103,6 +104,7 @@ class Tool(str, Enum):
     PENCIL = "pencil"
     ERASER = "eraser"
     EYEDROPPER = "eyedropper"
+    BUCKET = "bucket"
 
 
 class ImportGlyphCanvas(QWidget):
@@ -262,7 +264,7 @@ class GlyphCanvas(QWidget):
     changed = pyqtSignal()
     tool_cycled = pyqtSignal(object)
 
-    _TOOL_CYCLE = [Tool.PENCIL, Tool.ERASER, Tool.EYEDROPPER]
+    _TOOL_CYCLE = [Tool.PENCIL, Tool.ERASER, Tool.EYEDROPPER, Tool.BUCKET]
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -413,6 +415,9 @@ class GlyphCanvas(QWidget):
         elif self.tool == Tool.ERASER:
             fill = QColor(220, 60, 60, 60)
             outline = QColor(220, 60, 60, 220)
+        elif self.tool == Tool.BUCKET:
+            fill = QColor(90, 220, 120, 60)
+            outline = QColor(90, 220, 120, 220)
         else:
             fill = QColor(80, 200, 255, 60)
             outline = QColor(80, 200, 255, 220)
@@ -471,6 +476,12 @@ class GlyphCanvas(QWidget):
             if index != TRANSPARENT_INDEX:
                 self.current_index = index
                 self.changed.emit()
+        elif self.tool == Tool.BUCKET:
+            flood_fill_indices(
+                self._get_pixel, self._set_pixel,
+                self.glyph.width, self.glyph.height,
+                x, y, self.current_index,
+            )
         self._refresh()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
@@ -638,12 +649,14 @@ class SpriteFontEditorWidget(QWidget):
         self.btn_pencil = QPushButton("Pencil")
         self.btn_eraser = QPushButton("Eraser")
         self.btn_dropper = QPushButton("Eyedropper")
-        for btn in (self.btn_pencil, self.btn_eraser, self.btn_dropper):
+        self.btn_bucket = QPushButton("Paint Bucket")
+        for btn in (self.btn_pencil, self.btn_eraser, self.btn_dropper, self.btn_bucket):
             btn.setCheckable(True)
         self.btn_pencil.setChecked(True)
         self.btn_pencil.clicked.connect(lambda: self._set_tool(Tool.PENCIL))
         self.btn_eraser.clicked.connect(lambda: self._set_tool(Tool.ERASER))
         self.btn_dropper.clicked.connect(lambda: self._set_tool(Tool.EYEDROPPER))
+        self.btn_bucket.clicked.connect(lambda: self._set_tool(Tool.BUCKET))
 
         self.preview_canvas = TextFontPreviewCanvas()
         self._build_layout()
@@ -705,6 +718,7 @@ class SpriteFontEditorWidget(QWidget):
         tool_row.addWidget(self.btn_pencil)
         tool_row.addWidget(self.btn_eraser)
         tool_row.addWidget(self.btn_dropper)
+        tool_row.addWidget(self.btn_bucket)
         tool_row.addWidget(self.show_1x1_grid)
         tool_row.addWidget(self.show_4x4_grid)
         paint_group.addLayout(tool_row)
@@ -1217,6 +1231,7 @@ class SpriteFontEditorWidget(QWidget):
         self.btn_pencil.setChecked(tool == Tool.PENCIL)
         self.btn_eraser.setChecked(tool == Tool.ERASER)
         self.btn_dropper.setChecked(tool == Tool.EYEDROPPER)
+        self.btn_bucket.setChecked(tool == Tool.BUCKET)
 
     def _on_char_selected(self, _label: str) -> None:
         if self._syncing_fields or not self.sprite_font:

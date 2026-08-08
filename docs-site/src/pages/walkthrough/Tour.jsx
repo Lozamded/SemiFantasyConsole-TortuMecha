@@ -31,7 +31,7 @@ export default function WalkthroughTour() {
 
     <h2>Background Editor</h2>
     <img className="shot" src="/assets/screenshots/tour-04-background-editor.png" alt="Background Editor open on bg1.tortubackground, showing a parallax mountain-and-cloud background image wider than the screen, with a vertical camera-position guide line and palette swatches on the right." />
-    <p className="shot-caption">bg1.tortubackground — 312×198px (1.2× screen width), painted with the same Pencil/Eraser/Eyedropper tools as sprites.</p>
+    <p className="shot-caption">bg1.tortubackground — 312×198px (1.2× screen width), painted with the same Pencil/Eraser/Eyedropper/Paint Bucket tools as sprites.</p>
 
     <h2>Object Editor</h2>
     <img className="shot" src="/assets/screenshots/tour-05-object-editor.png" alt="Object Editor open on mechaturtle.tortuobject, the player character, showing its idle sprite with an origin marker and collider box, and a long list of animations (idle, walk, jump, fall, attack, damage, air_attack, crouch, defeated) and two named colliders (body, head)." />

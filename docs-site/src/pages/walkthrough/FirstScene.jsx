@@ -27,8 +27,9 @@ export default function WalkthroughFirstScene() {
     <p>Sprite Editor → New Sprite… asks for a name, size in 4px blocks, and a palette:</p>
     <img className="shot" src="/assets/screenshots/dialog-new-sprite.png" alt="The New Sprite dialog: Name field set to hero, Blocks wide and Blocks tall spinboxes both at 4, a Pixel size readout of 16x16px (4x4 blocks), and a Palette dropdown set to default." />
     <p className="shot-caption">New Sprite… — sizes are authored in 4px blocks, not raw pixels.</p>
-    <p>A fresh sprite starts fully transparent. Painting with Pencil/Eraser/Eyedropper (right-click cycles
-    between them) against the palette swatch grid produces something like this — a small round "shell" icon:</p>
+    <p>A fresh sprite starts fully transparent. Painting with Pencil/Eraser/Eyedropper/Paint Bucket (right-click
+    cycles between them) against the palette swatch grid produces something like this — a small round "shell"
+    icon:</p>
     <img className="shot" src="/assets/screenshots/demo-02-sprite-editor.png" alt="Sprite Editor showing a small hand-painted green shell/turtle icon on a 16x16 pixel canvas, with the block grid overlay visible, palette swatches on the right, and Pencil tool active." />
     <p className="shot-caption">The finished 16×16 sprite — block grid on, palette swatches on the right pick the pencil color.</p>
     <p>Full editor reference: <Link to="/studio/pixel-editors">Sprite, tileset &amp; background</Link>.</p>
