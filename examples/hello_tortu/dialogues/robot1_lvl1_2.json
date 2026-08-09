@@ -15,7 +15,7 @@
         {
           "text": "[<[mt_d3_o1]>]",
           "action": true,
-          "type": "set_var",
+          "type": "var_set",
           "action_content": {
             "var": "Fav_Cookie",
             "value": "chips"
@@ -24,7 +24,7 @@
         {
           "text": "[<[mt_d3_o2]>]",
           "action": true,
-          "type": "set_var",
+          "type": "var_set",
           "action_content": {
             "var": "Fav_Cookie",
             "value": "cream"
@@ -33,7 +33,7 @@
         {
           "text": "[<[mt_d3_o3]>]",
           "action": true,
-          "type": "set_var",
+          "type": "var_set",
           "action_content": {
             "var": "Fav_Cookie",
             "value": "wafer"
@@ -42,7 +42,7 @@
         {
           "text": "[<[mt_d4_o4]>]",
           "action": true,
-          "type": "set_var",
+          "type": "var_set",
           "action_content": {
             "var": "Fav_Cookie",
             "value": "unlike"

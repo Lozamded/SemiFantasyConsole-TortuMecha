@@ -127,3 +127,12 @@ def list_scene_paths(project_root: Path) -> list[str]:
     return sorted(
         p.relative_to(project_root).as_posix() for p in scenes_dir.glob("*.tortuscene")
     )
+
+
+def list_dialogue_paths(project_root: Path) -> list[str]:
+    dialogues_dir = project_root / "dialogues"
+    if not dialogues_dir.is_dir():
+        return []
+    return sorted(
+        p.relative_to(project_root).as_posix() for p in dialogues_dir.glob("*.json")
+    )

@@ -18,7 +18,12 @@
       "options": [
         {
           "text": "[<[mt_d1_o1]>]",
-          "next_dialogue": "dialogues/robot1_lvl1_2.json"
+          "action": true,
+          "type": "changedialog",
+          "action_content":
+            {
+              "path": "dialogues/robot1_lvl1_2.json"
+            }
         },
         {
           "text": "[<[mt_d1_o2]>]"
@@ -40,7 +45,7 @@
         {
           "text": "[<[mt_d2_o1]>]",
           "action": true,
-          "type": "set_var",
+          "type": "var_set",
           "action_content":
             {
               "var": "dialog_r2_action",
@@ -50,7 +55,7 @@
         {
           "text": "[<[mt_d2_o2]>]",
           "action": true,
-          "type": "set_var",
+          "type": "var_set",
           "action_content":
             {
               "var": "dialog_r2_action",

@@ -22,7 +22,7 @@ class TabKind(str, Enum):
     GUI_LAYER_EDITOR = "gui_layer_editor"
     BAR_EDITOR = "bar_editor"
     GAME_SETTINGS = "game_settings"
-    LANGUAGE_EDITOR = "language_editor"
+    TEXT_EDITOR = "text_editor"
 
 
 @dataclass
@@ -47,7 +47,7 @@ class WorkspaceTabs(QWidget):
     GUI_LAYER_EDITOR_LABEL = "GUI Layer Editor"
     BAR_EDITOR_LABEL = "Bar Editors"
     GAME_SETTINGS_LABEL = "Game Settings"
-    LANGUAGE_EDITOR_LABEL = "Languages"
+    TEXT_EDITOR_LABEL = "Texts"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -75,7 +75,7 @@ class WorkspaceTabs(QWidget):
         self._add_gui_layer_editor_tab()
         self._add_bar_editor_tab()
         self._add_game_settings_tab()
-        self._add_language_editor_tab()
+        self._add_text_editor_tab()
 
     @property
     def preview_index(self) -> int:
@@ -126,7 +126,7 @@ class WorkspaceTabs(QWidget):
         return 11
 
     @property
-    def language_editor_index(self) -> int:
+    def text_editor_index(self) -> int:
         return 12
 
     @property
@@ -184,9 +184,9 @@ class WorkspaceTabs(QWidget):
         self.tab_bar.addTab(self.GAME_SETTINGS_LABEL)
         self._refs.append(TabRef(kind=TabKind.GAME_SETTINGS))
 
-    def _add_language_editor_tab(self) -> None:
-        self.tab_bar.addTab(self.LANGUAGE_EDITOR_LABEL)
-        self._refs.append(TabRef(kind=TabKind.LANGUAGE_EDITOR))
+    def _add_text_editor_tab(self) -> None:
+        self.tab_bar.addTab(self.TEXT_EDITOR_LABEL)
+        self._refs.append(TabRef(kind=TabKind.TEXT_EDITOR))
 
     def reset(self) -> None:
         while self.tab_bar.count() > 0:
@@ -204,7 +204,7 @@ class WorkspaceTabs(QWidget):
         self._add_gui_layer_editor_tab()
         self._add_bar_editor_tab()
         self._add_game_settings_tab()
-        self._add_language_editor_tab()
+        self._add_text_editor_tab()
 
     def select_preview(self) -> None:
         self.tab_bar.setCurrentIndex(self.preview_index)
@@ -242,8 +242,8 @@ class WorkspaceTabs(QWidget):
     def select_game_settings(self) -> None:
         self.tab_bar.setCurrentIndex(self.game_settings_index)
 
-    def select_language_editor(self) -> None:
-        self.tab_bar.setCurrentIndex(self.language_editor_index)
+    def select_text_editor(self) -> None:
+        self.tab_bar.setCurrentIndex(self.text_editor_index)
 
     def _on_current_changed(self, index: int) -> None:
         if index < 0 or index >= len(self._refs):

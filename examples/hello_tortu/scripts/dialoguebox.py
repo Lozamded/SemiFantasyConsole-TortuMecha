@@ -19,15 +19,16 @@ both the text color and the `select_arrow` GUI object — across up to 4
 pre-placed option labels, and the action button confirms it. A plain line
 instead shows `dialog_end_arrow`, a "press to continue" hint; the two arrows
 are mutually exclusive since a decision and a continue prompt never apply to
-the same line. Confirming an option runs its `action` (if any) and then, if
-it also has a `next_dialogue`, jumps to that other dialogue file — otherwise
-dialogue continues to the next line. A plain line's `action` instead runs
-when the line is dismissed. Both are resolved against scripts/dialogue_vars.py
-(see tortoisengine.dialogue's module docstring for the action envelope).
+the same line. Confirming an option runs its `action` (if any, e.g. a
+`changedialog` to jump to another dialogue file) and then the decision
+line's own `action` also runs regardless of which option was picked. A plain
+line's `action` instead runs when the line is dismissed. Both are resolved
+against scripts/dialogue_vars.py (see tortoisengine.dialogue's module
+docstring for the action envelope).
 
-`jumpdialog` and `finishdialog` actions redirect this dialogue's own control
-flow (see `_run_action`/`_apply_action_result` below) rather than being a
-pure side effect like `set_var`/`do_action`.
+`jumpdialog`, `changedialog`, and `finishdialog` actions redirect this
+dialogue's own control flow (see `_run_action`/`_apply_action_result` below)
+rather than being a pure side effect like `var_set`/`do_action`.
 """
 
 from pathlib import Path
@@ -136,14 +137,35 @@ def _show_line() -> None:
         _hide_options()
 
 
+_COMPARE_OPS = {
+    "<": lambda a, b: a < b,
+    "<=": lambda a, b: a <= b,
+    "==": lambda a, b: a == b,
+    "!=": lambda a, b: a != b,
+    ">=": lambda a, b: a >= b,
+    ">": lambda a, b: a > b,
+}
+
+
+def _compare_number(current, op: str, threshold) -> bool:
+    fn = _COMPARE_OPS.get(op)
+    if fn is None:
+        return False
+    try:
+        return fn(float(current), float(threshold))
+    except (TypeError, ValueError):
+        return False
+
+
 def _run_action(action: Action | None):
     """Runs `action` against dialogue_vars and returns a control-flow signal:
-    None (no flow change), ("jump", line_id), or ("finish",). set_var/do_action
-    are pure side effects and always return None; var_compare_text recurses
-    into whichever branch the compared variable's current value selects."""
+    None (no flow change), ("jump", line_id), ("change", path), or
+    ("finish",). var_set/do_action are pure side effects and always return
+    None; var_compare_text and var_compare_number recurse into whichever
+    branch the compared variable's current value selects."""
     if action is None:
         return None
-    if action.type == "set_var":
+    if action.type == "var_set":
         setattr(dialogue_vars, action.content["var"], action.content.get("value"))
         return None
     if action.type == "do_action":
@@ -160,19 +182,31 @@ def _run_action(action: Action | None):
         return None
     if action.type == "jumpdialog":
         return ("jump", action.content.get("id", ""))
+    if action.type == "changedialog":
+        return ("change", action.content.get("path", ""))
     if action.type == "finishdialog":
         return ("finish",)
     if action.type == "var_compare_text":
         current = getattr(dialogue_vars, action.content["var"], None)
         branch = action.content.get("values", {}).get(current, {"action": False})
         return _run_action(load_action(branch))
+    if action.type == "var_compare_number":
+        current = getattr(dialogue_vars, action.content["var"], None)
+        branch = None
+        for case in action.content.get("cases", []):
+            if _compare_number(current, case.get("op"), case.get("threshold")):
+                branch = case.get("action")
+                break
+        if branch is None:
+            branch = action.content.get("default", {"action": False})
+        return _run_action(load_action(branch))
     return None
 
 
 def _apply_action_result(result) -> bool:
     """Applies a `_run_action` control-flow signal. Returns True if it
-    redirected flow (jump/finish), meaning the caller should not also fall
-    through to its own default next-line/next_dialogue handling."""
+    redirected flow (jump/change/finish), meaning the caller should not also
+    fall through to its own default next-line handling."""
     if result is None:
         return False
     kind = result[0]
@@ -187,6 +221,9 @@ def _apply_action_result(result) -> bool:
             global _index
             _index = index
             _show_line()
+        return True
+    if kind == "change":
+        _start(result[1])
         return True
     return False
 
@@ -248,10 +285,7 @@ def _choose_option(line, option) -> None:
     # option's own), which runs regardless of which option was picked.
     if _apply_action_result(_run_action(line.action)):
         return
-    if option.next_dialogue:
-        _start(option.next_dialogue)
-    else:
-        _go_to_next_line()
+    _go_to_next_line()
 
 
 def update(dt: float) -> None:
