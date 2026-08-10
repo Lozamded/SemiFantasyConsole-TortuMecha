@@ -789,6 +789,13 @@ class DialogueLinePanel(QWidget):
         self.field_text_key.lineEdit().editingFinished.connect(self._commit_key_field)
         self.field_text_key.textActivated.connect(lambda _t: self._commit_key_field())
         key_row.addWidget(self.field_text_key)
+
+        self.field_text_key_file = QLineEdit()
+        self.field_text_key_file.setReadOnly(True)
+        self.field_text_key_file.setPlaceholderText("(no CSV — literal text)")
+        self.field_text_key_file.setStyleSheet("color: #888;")
+        self.field_text_key_file.setToolTip("The languages/*.csv file this key's row lives in")
+        key_row.addWidget(self.field_text_key_file)
         key_row.addStretch()
         key_row.addWidget(QLabel("Language:"))
         self.language_selector = QComboBox()
@@ -887,12 +894,16 @@ class DialogueLinePanel(QWidget):
             self._current_key_path = None
             self._active_language = ""
             self.language_selector.setEnabled(False)
+            self.field_text_key_file.clear()
             self._loading = True
             self.language_selector.clear()
             self._loading = False
             return
         path = self._resolve_target_path(key)
         self._current_key_path = path
+        self.field_text_key_file.setText(
+            path.relative_to(self.project_root).as_posix() if path else ""
+        )
         loc = find_key(self.project_root, key)
         languages = loc.languages if loc else (all_languages(self.project_root) or ["en"])
         self._populate_language_selector(languages)
@@ -977,6 +988,7 @@ class DialogueLinePanel(QWidget):
         if not key:
             self.field_text_content.setPlainText(line.text)
             self.language_selector.setEnabled(False)
+            self.field_text_key_file.clear()
         self.action_editor.set_action(line.action)
         self.options_editor.set_options(line.options)
         self._loading = False
