@@ -49,8 +49,8 @@ from tortoisestudio.localization_data import (
     all_keys,
     all_languages,
     apply_key_values,
+    dialogue_translation_target,
     find_key,
-    list_language_csv_paths,
 )
 from tortoisestudio.scene_assets import list_dialogue_paths
 
@@ -754,6 +754,7 @@ class DialogueLinePanel(QWidget):
         self._last_applied_key = ""
         self._active_language = ""
         self._content_dirty = False
+        self._dialogue_stem = ""
 
         self._flush_timer = QTimer(self)
         self._flush_timer.setSingleShot(True)
@@ -848,41 +849,30 @@ class DialogueLinePanel(QWidget):
         self.action_editor.set_dialogue_choices(paths)
         self.options_editor.set_dialogue_choices(paths)
 
+    def set_current_dialogue_stem(self, stem: str) -> None:
+        """The open dialogue file's stem (e.g. "robot1_lvl1") — where a
+        brand-new translation key typed here gets auto-filed. See
+        dialogue_translation_target."""
+        self._dialogue_stem = stem
+
     def _emit_changed(self) -> None:
         if not self._loading:
             self.changed.emit()
 
     # -- translation key / language / content -------------------------------
 
-    def _resolve_target_path(self, key: str) -> Path | None:
+    def _resolve_target_path(self, key: str) -> Path:
+        """Where `key`'s row lives (or should be created) — an existing key
+        keeps living wherever find_key() locates it (any languages/*.csv,
+        including a hand-managed one like GUI.csv); a brand-new key is
+        auto-filed under its source dialogue (see dialogue_translation_target)
+        with no prompt, so the same key is never duplicated across files."""
         if key in self._key_target_cache:
             return self._key_target_cache[key]
         loc = find_key(self.project_root, key)
-        if loc is not None:
-            self._key_target_cache[key] = loc.path
-            return loc.path
-        choices = [
-            p.relative_to(self.project_root).as_posix()
-            for p in list_language_csv_paths(self.project_root)
-        ]
-        choices.append("<new file…>")
-        choice, ok = QInputDialog.getItem(
-            self,
-            "New Translation Key",
-            f"Key '{key}' isn't in any languages/*.csv yet. Create it in:",
-            choices,
-            0,
-            False,
+        path = loc.path if loc is not None else dialogue_translation_target(
+            self.project_root, self._dialogue_stem or "dialogue"
         )
-        if not ok:
-            return None
-        if choice == "<new file…>":
-            name, ok2 = QInputDialog.getText(self, "New Language CSV", "File name (without .csv):")
-            if not ok2 or not name.strip():
-                return None
-            path = self.project_root / "languages" / f"{name.strip()}.csv"
-        else:
-            path = self.project_root / choice
         self._key_target_cache[key] = path
         return path
 
@@ -901,13 +891,11 @@ class DialogueLinePanel(QWidget):
             return
         path = self._resolve_target_path(key)
         self._current_key_path = path
-        self.field_text_key_file.setText(
-            path.relative_to(self.project_root).as_posix() if path else ""
-        )
+        self.field_text_key_file.setText(path.relative_to(self.project_root).as_posix())
         loc = find_key(self.project_root, key)
         languages = loc.languages if loc else (all_languages(self.project_root) or ["en"])
         self._populate_language_selector(languages)
-        self.language_selector.setEnabled(path is not None)
+        self.language_selector.setEnabled(True)
         self._refresh_content_for_current_language()
 
     def _populate_language_selector(self, languages: list[str]) -> None:
@@ -1149,6 +1137,7 @@ class DialogueEditorWidget(QWidget):
             self._dialogue = None
             self.lines_list.clear()
             self._set_dialogue_enabled(False)
+            self.line_panel.set_current_dialogue_stem("")
             if self.file_list.count():
                 self.file_list.setCurrentRow(0)
 
@@ -1192,6 +1181,7 @@ class DialogueEditorWidget(QWidget):
             self._dialogue = None
             self.lines_list.clear()
             self._set_dialogue_enabled(False)
+            self.line_panel.set_current_dialogue_stem("")
             return
         path = Path(current.data(Qt.ItemDataRole.UserRole))
         self._load_dialogue(path)
@@ -1199,6 +1189,7 @@ class DialogueEditorWidget(QWidget):
     def _load_dialogue(self, path: Path) -> None:
         self._dialogue = load_dialogue(path)
         self._current_path = path
+        self.line_panel.set_current_dialogue_stem(path.stem)
         self._current_line_index = None
         self._rebuild_lines_list()
         self._dirty = False

@@ -10,11 +10,80 @@
     },
     {
       "speaker": "Robot3",
-      "text": "[<[r3_l2_d3]>]"
+      "text": "[<[r3_l2_d3]>]",
+      "action": true,
+      "type": "var_compare_number",
+      "action_content": {
+        "var": "gears",
+        "cases": [
+          {
+            "op": ">",
+            "threshold": 24,
+            "action": {
+              "action": true,
+              "action_content": {
+                "id": "morethan24"
+              },
+              "type": "jumpdialog"
+            }
+          },
+          {
+            "op": "<",
+            "threshold": 24,
+            "action": {
+              "action": true,
+              "action_content": {
+                "id": "lessthan24"
+              },
+              "type": "jumpdialog"
+            }
+          },
+          {
+            "op": "==",
+            "threshold": 24,
+            "action": {
+              "action": true,
+              "action_content": {
+                "id": "just24"
+              },
+              "type": "jumpdialog"
+            }
+          }
+        ],
+        "default": {
+          "action": false
+        }
+      }
+    },
+    {
+      "speaker": "Robot3:",
+      "text": "[<[r3_l2_d3_>24]>]",
+      "id": "morethan24",
+      "action": true,
+      "type": "jumpdialog",
+      "action_content": {
+        "id": "aboutcookies"
+      }
+    },
+    {
+      "speaker": "Robot3:",
+      "text": "[<[r3_l2_d3_<24]>]",
+      "id": "lessthan24",
+      "action": true,
+      "type": "jumpdialog",
+      "action_content": {
+        "id": "aboutcookies"
+      }
+    },
+    {
+      "speaker": "Robot3",
+      "text": "[<[r3_l2_d3_=24]>]",
+      "id": "just24"
     },
     {
       "speaker": "Robot3",
       "text": "[<[r3_l2_d4]>]",
+      "id": "aboutcookies",
       "action": true,
       "type": "var_compare_text",
       "action_content": {
@@ -25,79 +94,95 @@
           },
           "chips": {
             "action": true,
-            "type": "jumpdialog",
-            "action_content": {"id": "chips"}
+            "action_content": {
+              "id": "chips"
+            },
+            "type": "jumpdialog"
           },
           "cream": {
             "action": true,
-            "type": "jumpdialog",
-            "action_content": {"id": "cream"}
+            "action_content": {
+              "id": "cream"
+            },
+            "type": "jumpdialog"
           },
           "wafer": {
             "action": true,
-            "type": "jumpdialog",
-            "action_content": {"id": "wafer"}
+            "action_content": {
+              "id": "wafer"
+            },
+            "type": "jumpdialog"
           },
           "unlike": {
             "action": true,
-            "type": "jumpdialog",
-            "action_content": {"id": "unlike"}
+            "action_content": {
+              "id": "unlike"
+            },
+            "type": "jumpdialog"
           }
         }
       }
     },
     {
-      "id":"nothingyet",
-      "speaker": "Robot3",
-      "text": "[<[r3_l2_d4_nothing]>]"
+      "speaker": "Robot3:",
+      "text": "[<[r3_l2_d4_nothing]>]",
+      "id": "nothingyet"
     },
     {
       "speaker": "Robot3",
       "text": "[<[r3_l2_d4_nothing_2]>]",
-      "action": true, 
+      "action": true,
       "type": "jumpdialog",
-      "action_content": {"id": "finale"}
+      "action_content": {
+        "id": "finale"
+      }
     },
     {
-      "id":"chips",
       "speaker": "Robot3",
-      "text": "[<[r3_l2_d4_chips]>]"
+      "text": "[<[r3_l2_d4_chips]>]",
+      "id": "chips"
     },
     {
       "speaker": "Robot3",
       "text": "[<[r3_l2_d4_chips_2]>]",
-      "action": true, 
+      "action": true,
       "type": "jumpdialog",
-      "action_content": {"id": "finale"}
+      "action_content": {
+        "id": "finale"
+      }
     },
     {
-      "id":"cream",
       "speaker": "Robot3",
-      "text": "[<[r3_l2_d4_cream]>]"
+      "text": "[<[r3_l2_d4_cream]>]",
+      "id": "cream"
     },
     {
       "speaker": "Robot3",
       "text": "[<[r3_l2_d4_cream_2]>]",
-      "action": true, 
+      "action": true,
       "type": "jumpdialog",
-      "action_content": {"id": "finale"}
+      "action_content": {
+        "id": "finale"
+      }
     },
     {
-      "id":"wafer",
       "speaker": "Robot3",
-      "text": "[<[r3_l2_d4_wafer]>]"
+      "text": "[<[r3_l2_d4_wafer]>]",
+      "id": "wafer"
     },
     {
       "speaker": "Robot3",
       "text": "[<[r3_l2_d4_wafer_2]>]",
-      "action": true, 
+      "action": true,
       "type": "jumpdialog",
-      "action_content": {"id": "finale"}
+      "action_content": {
+        "id": "finale"
+      }
     },
     {
-      "id":"unlike",
       "speaker": "Robot3",
-      "text": "[<[r3_l2_d4_unlike]>]"
+      "text": "[<[r3_l2_d4_unlike]>]",
+      "id": "unlike"
     },
     {
       "speaker": "Robot3",
@@ -106,23 +191,22 @@
     {
       "speaker": "Robot3",
       "text": "[<[r3_l2_d4_unlike_3]>]",
-      "action": true, 
+      "action": true,
       "type": "finishdialog",
       "action_content": {}
-    },    
+    },
     {
-      "id":"finale",
       "speaker": "Robot3",
-      "text": "[<[r3_l2_d5]>]"
-    },    
+      "text": "[<[r3_l2_d5]>]",
+      "id": "finale"
+    },
     {
       "speaker": "Robot3",
       "text": "[<[r3_l2_d6]>]"
-    },    
+    },
     {
       "speaker": "Robot3",
       "text": "[<[r3_l2_d7]>]"
     }
-
   ]
 }

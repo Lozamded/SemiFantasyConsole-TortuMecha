@@ -147,6 +147,16 @@ _COMPARE_OPS = {
 }
 
 
+def _read_var(name: str):
+    """Reads dialogue_vars.<name> — calling it first if it's a zero-arg
+    function, same convention tortoisengine.localization's [var<[name]>]
+    resolution uses (e.g. dialogue_vars.gears), so an action comparing or
+    passing that variable sees its live value instead of the function
+    object itself."""
+    value = getattr(dialogue_vars, name, None)
+    return value() if callable(value) else value
+
+
 def _compare_number(current, op: str, threshold) -> bool:
     fn = _COMPARE_OPS.get(op)
     if fn is None:
@@ -173,7 +183,7 @@ def _run_action(action: Action | None):
         if fn is None:
             return None
         args = [
-            getattr(dialogue_vars, arg.get("value"), None)
+            _read_var(arg.get("value"))
             if arg.get("type") == "var"
             else arg.get("value")
             for arg in action.content.get("value", [])
@@ -187,11 +197,11 @@ def _run_action(action: Action | None):
     if action.type == "finishdialog":
         return ("finish",)
     if action.type == "var_compare_text":
-        current = getattr(dialogue_vars, action.content["var"], None)
+        current = _read_var(action.content["var"])
         branch = action.content.get("values", {}).get(current, {"action": False})
         return _run_action(load_action(branch))
     if action.type == "var_compare_number":
-        current = getattr(dialogue_vars, action.content["var"], None)
+        current = _read_var(action.content["var"])
         branch = None
         for case in action.content.get("cases", []):
             if _compare_number(current, case.get("op"), case.get("threshold")):

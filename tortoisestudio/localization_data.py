@@ -15,6 +15,10 @@ from pathlib import Path
 
 LANGUAGES_DIR = Path("languages")
 
+# Row cap for an auto-managed per-dialogue CSV (see dialogue_translation_target)
+# before a new key spills into the next "<stem>_partN.csv".
+DIALOGUE_CSV_MAX_ROWS = 200
+
 
 @dataclass
 class KeyLocation:
@@ -75,6 +79,29 @@ def all_keys(project_root: Path) -> list[str]:
             if row and row[0].strip():
                 keys.add(row[0].strip())
     return sorted(keys)
+
+
+def dialogue_translation_target(project_root: Path, dialogue_stem: str) -> Path:
+    """Where a brand-new key authored from dialogue `dialogue_stem` (a
+    dialogues/*.json file's stem, e.g. "robot1_lvl1") should be written.
+
+    Keys stay grouped by the dialogue file they came from — languages/
+    <stem>.csv — so a translator sees one scene's lines together, instead of
+    a meaningless numbered bucket. Once that file reaches
+    DIALOGUE_CSV_MAX_ROWS keys, new ones spill into <stem>_part2.csv, then
+    _part3.csv, and so on, so a single busy dialogue's CSV doesn't grow
+    without bound. Called only when the key doesn't already exist anywhere
+    (see find_key) — an existing key always keeps living wherever it is.
+    """
+    part = 1
+    while True:
+        name = f"{dialogue_stem}.csv" if part == 1 else f"{dialogue_stem}_part{part}.csv"
+        path = project_root / LANGUAGES_DIR / name
+        if not path.is_file():
+            return path
+        if len(_read_rows(path)) - 1 < DIALOGUE_CSV_MAX_ROWS:
+            return path
+        part += 1
 
 
 def apply_key_values(csv_path: Path, edits: dict[tuple[str, str], str]) -> None:
