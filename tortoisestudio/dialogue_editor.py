@@ -8,9 +8,10 @@ another dialogue file).
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -27,6 +28,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -43,6 +45,13 @@ from tortoisengine.dialogue import (
     load_dialogue,
     save_dialogue,
 )
+from tortoisestudio.localization_data import (
+    all_keys,
+    all_languages,
+    apply_key_values,
+    find_key,
+    list_language_csv_paths,
+)
 from tortoisestudio.scene_assets import list_dialogue_paths
 
 DIALOGUES_DIR = Path("dialogues")
@@ -52,6 +61,10 @@ ACTION_TYPES = [
     "var_compare_text", "var_compare_number",
 ]
 COMPARE_OPS = ["<", "<=", "==", "!=", ">=", ">"]
+
+# A line's text is either a literal string or exactly one [<[key]>] placeholder
+# referencing languages/*.csv (see tortoisengine.localization) — never a mix.
+_KEY_PATTERN = re.compile(r"^\[<\[([^\[\]]+)\]>\]$")
 
 
 def _parse_literal(text: str) -> object:
@@ -720,24 +733,37 @@ class OptionsEditor(QWidget):
 
 
 class DialogueLinePanel(QWidget):
-    """Editor for a single DialogueLine: speaker/text/icon/id, action, options."""
+    """Editor for a single DialogueLine: speaker/text/icon/id, action, options.
+
+    A line's text is either a literal string or a [<[key]>] placeholder into
+    languages/*.csv. The Text group exposes that as a small "Translation key"
+    field plus a language picker and a big content box that reads/writes the
+    selected (key, language) cell directly — editing the key switches which
+    CSV row the content box is bound to; clearing it falls back to literal
+    text, editing the content box directly.
+    """
 
     changed = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._loading = False
+        self.project_root = Path(".")
+        self._current_key_path: Path | None = None
+        self._key_target_cache: dict[str, Path] = {}
+        self._last_applied_key = ""
+        self._active_language = ""
+        self._content_dirty = False
+
+        self._flush_timer = QTimer(self)
+        self._flush_timer.setSingleShot(True)
+        self._flush_timer.setInterval(500)
+        self._flush_timer.timeout.connect(self.flush_pending_content)
 
         form = QFormLayout()
         self.field_speaker = QLineEdit()
         self.field_speaker.textChanged.connect(self._emit_changed)
         form.addRow("Speaker:", self.field_speaker)
-
-        self.field_text = QPlainTextEdit()
-        self.field_text.setMaximumHeight(70)
-        self.field_text.setPlaceholderText("Line text — may embed [<[key]>], [var<[name]>], [symbol<[comma]>]")
-        self.field_text.textChanged.connect(self._emit_changed)
-        form.addRow("Text:", self.field_text)
 
         self.field_icon = QLineEdit()
         self.field_icon.setPlaceholderText("optional sprite path, e.g. assets/sprites/robot1_icon.tortusprite")
@@ -748,6 +774,36 @@ class DialogueLinePanel(QWidget):
         self.field_id.setPlaceholderText("optional — lets jumpdialog target this line")
         self.field_id.textChanged.connect(self._emit_changed)
         form.addRow("Line id:", self.field_id)
+
+        text_group = QGroupBox("Text")
+        text_layout = QVBoxLayout(text_group)
+        key_row = QHBoxLayout()
+        key_row.addWidget(QLabel("Translation key:"))
+        self.field_text_key = QComboBox()
+        self.field_text_key.setEditable(True)
+        self.field_text_key.setMaximumWidth(220)
+        self.field_text_key.lineEdit().setPlaceholderText("empty = literal text")
+        # Resolve on commit (Enter/blur/pick), not on every keystroke — an
+        # unrecognized key triggers a blocking "which CSV file?" prompt, which
+        # must not interrupt the user mid-type.
+        self.field_text_key.lineEdit().editingFinished.connect(self._commit_key_field)
+        self.field_text_key.textActivated.connect(lambda _t: self._commit_key_field())
+        key_row.addWidget(self.field_text_key)
+        key_row.addStretch()
+        key_row.addWidget(QLabel("Language:"))
+        self.language_selector = QComboBox()
+        self.language_selector.currentTextChanged.connect(self._on_language_changed)
+        key_row.addWidget(self.language_selector)
+        text_layout.addLayout(key_row)
+
+        self.field_text_content = QPlainTextEdit()
+        self.field_text_content.setMinimumHeight(90)
+        self.field_text_content.setPlaceholderText(
+            "Content — with a key set, this edits that key's CSV cell for the "
+            "selected language; with no key, it's the line's literal text."
+        )
+        self.field_text_content.textChanged.connect(self._on_content_changed)
+        text_layout.addWidget(self.field_text_content)
 
         action_group = QGroupBox("Line Action")
         action_layout = QVBoxLayout(action_group)
@@ -764,8 +820,22 @@ class DialogueLinePanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addLayout(form)
+        layout.addWidget(text_group)
         layout.addWidget(action_group)
         layout.addWidget(options_group, stretch=1)
+
+    def set_project_root(self, project_root: Path) -> None:
+        self.project_root = project_root
+        self._key_target_cache = {}
+        self.refresh_known_keys()
+
+    def refresh_known_keys(self) -> None:
+        current = self.field_text_key.currentText()
+        self.field_text_key.blockSignals(True)
+        self.field_text_key.clear()
+        self.field_text_key.addItems(all_keys(self.project_root))
+        self.field_text_key.setCurrentText(current)
+        self.field_text_key.blockSignals(False)
 
     def set_dialogue_choices(self, paths: list[str]) -> None:
         self.action_editor.set_dialogue_choices(paths)
@@ -775,20 +845,150 @@ class DialogueLinePanel(QWidget):
         if not self._loading:
             self.changed.emit()
 
+    # -- translation key / language / content -------------------------------
+
+    def _resolve_target_path(self, key: str) -> Path | None:
+        if key in self._key_target_cache:
+            return self._key_target_cache[key]
+        loc = find_key(self.project_root, key)
+        if loc is not None:
+            self._key_target_cache[key] = loc.path
+            return loc.path
+        choices = [
+            p.relative_to(self.project_root).as_posix()
+            for p in list_language_csv_paths(self.project_root)
+        ]
+        choices.append("<new file…>")
+        choice, ok = QInputDialog.getItem(
+            self,
+            "New Translation Key",
+            f"Key '{key}' isn't in any languages/*.csv yet. Create it in:",
+            choices,
+            0,
+            False,
+        )
+        if not ok:
+            return None
+        if choice == "<new file…>":
+            name, ok2 = QInputDialog.getText(self, "New Language CSV", "File name (without .csv):")
+            if not ok2 or not name.strip():
+                return None
+            path = self.project_root / "languages" / f"{name.strip()}.csv"
+        else:
+            path = self.project_root / choice
+        self._key_target_cache[key] = path
+        return path
+
+    def _apply_key(self, key: str) -> None:
+        # Any pending edit belongs to whichever (key, language) was active
+        # before this call — must flush before _current_key_path etc. move on.
+        self.flush_pending_content()
+        if not key:
+            self._current_key_path = None
+            self._active_language = ""
+            self.language_selector.setEnabled(False)
+            self._loading = True
+            self.language_selector.clear()
+            self._loading = False
+            return
+        path = self._resolve_target_path(key)
+        self._current_key_path = path
+        loc = find_key(self.project_root, key)
+        languages = loc.languages if loc else (all_languages(self.project_root) or ["en"])
+        self._populate_language_selector(languages)
+        self.language_selector.setEnabled(path is not None)
+        self._refresh_content_for_current_language()
+
+    def _populate_language_selector(self, languages: list[str]) -> None:
+        self._loading = True
+        current = self.language_selector.currentText()
+        self.language_selector.clear()
+        self.language_selector.addItems(languages)
+        idx = self.language_selector.findText(current)
+        self.language_selector.setCurrentIndex(idx if idx >= 0 else 0)
+        self._loading = False
+
+    def _refresh_content_for_current_language(self) -> None:
+        key = self.field_text_key.currentText().strip()
+        lang = self.language_selector.currentText()
+        value = ""
+        if key and lang:
+            loc = find_key(self.project_root, key)
+            if loc is not None:
+                value = loc.values.get(lang, "")
+        self._loading = True
+        self.field_text_content.setPlainText(value)
+        self._loading = False
+        self._active_language = lang
+        self._content_dirty = False
+
+    def _commit_key_field(self) -> None:
+        if self._loading:
+            return
+        key = self.field_text_key.currentText().strip()
+        if key == self._last_applied_key:
+            return
+        self.flush_pending_content()  # commit the outgoing key's edit first
+        self._last_applied_key = key
+        self._apply_key(key)
+        self._emit_changed()
+
+    def _on_language_changed(self, _text: str) -> None:
+        if self._loading:
+            return
+        self.flush_pending_content()  # commit the outgoing language's edit first
+        self._refresh_content_for_current_language()
+
+    def _on_content_changed(self) -> None:
+        if self._loading:
+            return
+        key = self.field_text_key.currentText().strip()
+        if key:
+            self._content_dirty = True
+            self._flush_timer.start()
+        else:
+            self._emit_changed()
+
+    def flush_pending_content(self) -> None:
+        self._flush_timer.stop()
+        if not self._content_dirty:
+            return
+        key = self._last_applied_key
+        lang = self._active_language
+        if not key or not lang or self._current_key_path is None:
+            self._content_dirty = False
+            return
+        value = self.field_text_content.toPlainText()
+        apply_key_values(self._current_key_path, {(key, lang): value})
+        self._content_dirty = False
+
+    # -- line load / save -----------------------------------------------------
+
     def set_line(self, line: DialogueLine) -> None:
+        self.flush_pending_content()
         self._loading = True
         self.field_speaker.setText(line.speaker)
-        self.field_text.setPlainText(line.text)
         self.field_icon.setText(line.icon)
         self.field_id.setText(line.id)
+        match = _KEY_PATTERN.match(line.text.strip())
+        key = match.group(1) if match else ""
+        self.field_text_key.setCurrentText(key)
+        self._last_applied_key = key
+        if not key:
+            self.field_text_content.setPlainText(line.text)
+            self.language_selector.setEnabled(False)
         self.action_editor.set_action(line.action)
         self.options_editor.set_options(line.options)
         self._loading = False
+        if key:
+            self._apply_key(key)
 
     def get_line(self) -> DialogueLine:
+        key = self.field_text_key.currentText().strip()
+        text = f"[<[{key}]>]" if key else self.field_text_content.toPlainText()
         return DialogueLine(
             speaker=self.field_speaker.text(),
-            text=self.field_text.toPlainText(),
+            text=text,
             icon=self.field_icon.text().strip(),
             id=self.field_id.text().strip(),
             options=self.options_editor.get_options(),
@@ -862,6 +1062,10 @@ class DialogueEditorWidget(QWidget):
         self.line_panel = DialogueLinePanel()
         self.line_panel.changed.connect(self._on_line_panel_changed)
 
+        self.line_panel_scroll = QScrollArea()
+        self.line_panel_scroll.setWidgetResizable(True)
+        self.line_panel_scroll.setWidget(self.line_panel)
+
         self.btn_save = QPushButton("Save Dialogue")
         self.btn_save.clicked.connect(self.save)
 
@@ -872,7 +1076,7 @@ class DialogueEditorWidget(QWidget):
         right_col.addWidget(QLabel("Lines:"))
         right_col.addWidget(self.lines_list)
         right_col.addLayout(lines_btn_row)
-        right_col.addWidget(self.line_panel, stretch=1)
+        right_col.addWidget(self.line_panel_scroll, stretch=1)
         right_col.addWidget(self.btn_save)
         right_col.addWidget(self.status_label)
 
@@ -890,7 +1094,17 @@ class DialogueEditorWidget(QWidget):
         self._current_path = None
         self._dialogue = None
         self._dirty = False
+        self.line_panel.set_project_root(project_root)
         self.refresh()
+
+    def flush_pending_translation_edits(self) -> None:
+        """Commit any in-flight [<[key]>] content edit to its CSV immediately.
+
+        Call before navigating away from this tab entirely — line/file
+        switches inside this widget already flush at their own choke points,
+        but leaving via the main workspace tab bar bypasses those.
+        """
+        self.line_panel.flush_pending_content()
 
     def refresh(self) -> None:
         dialogues_dir = self.project_root / DIALOGUES_DIR
@@ -908,6 +1122,7 @@ class DialogueEditorWidget(QWidget):
 
         choices = list_dialogue_paths(self.project_root)
         self.line_panel.set_dialogue_choices(choices)
+        self.line_panel.refresh_known_keys()
 
         restored = False
         if previous is not None:
@@ -943,6 +1158,7 @@ class DialogueEditorWidget(QWidget):
     def _on_file_selected(self, current: QListWidgetItem | None, previous: QListWidgetItem | None) -> None:
         if current is previous:
             return
+        self.line_panel.flush_pending_content()
         if self._dirty and previous is not None:
             reply = QMessageBox.question(
                 self,
@@ -1101,6 +1317,7 @@ class DialogueEditorWidget(QWidget):
     def save(self) -> None:
         if self._current_path is None or self._dialogue is None:
             return
+        self.line_panel.flush_pending_content()
         if self._current_line_index is not None:
             self._dialogue.lines[self._current_line_index] = self.line_panel.get_line()
         save_dialogue(self._dialogue, self._current_path)

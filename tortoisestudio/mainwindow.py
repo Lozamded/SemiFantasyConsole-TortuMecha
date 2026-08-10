@@ -1587,6 +1587,7 @@ class MainWindow(QMainWindow):
         if index == self.OBJECT_EDITOR and self.object_editor.has_unsaved_changes():
             return self._confirm_discard_unsaved("object", self.object_editor.save)
         if index == self.TEXT_EDITOR:
+            self.dialogue_editor.flush_pending_translation_edits()
             if self.language_editor.has_unsaved_changes():
                 if not self._confirm_discard_unsaved("language CSV", self.language_editor.save):
                     return False

@@ -289,7 +289,7 @@ class LanguageEditorWidget(QWidget):
             QMessageBox.warning(self, "New CSV", f"{dest.name} already exists.")
             return
         with dest.open("w", encoding="utf-8", newline="") as f:
-            csv.writer(f).writerow(["key", "en"])
+            csv.writer(f, lineterminator="\n").writerow(["key", "en"])
         self.refresh()
         for row in range(self.file_list.count()):
             item = self.file_list.item(row)
@@ -341,7 +341,7 @@ class LanguageEditorWidget(QWidget):
             rows.append(row)
 
         with self._current_path.open("w", encoding="utf-8", newline="") as f:
-            writer = csv.writer(f)
+            writer = csv.writer(f, lineterminator="\n")
             writer.writerow(["key"] + languages)
             writer.writerows(rows)
 
