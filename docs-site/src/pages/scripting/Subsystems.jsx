@@ -62,8 +62,8 @@ def apply_music_volume():
     <h2>Dialogue</h2>
     <p><code>tortoisengine.dialogue</code> is a pure data model — <code>load_dialogue(path) -&gt; Dialogue</code>
     reads a <code>dialogues/*.json</code> file into <code>Dialogue</code> (a list of <code>DialogueLine</code>:
-    <code>speaker, text, icon, id, options, action</code>), where each <code>DialogueOption</code> can carry its
-    own <code>next_dialogue</code> and <code>action</code>. It does not display anything — that's a GUI layer
+    <code>speaker, text, icon, id, options, action</code>), where each <code>DialogueOption</code> carries its
+    own <code>text</code> and <code>action</code>. It does not display anything — that's a GUI layer
     script's job (typically the project's <code>dialoguebox.py</code>), driven by the request/consume pair from
     <Link to="/scripting/objects">Object scripts</Link>:</p>
     <pre><code># from any object script, e.g. an NPC on the action button:
@@ -75,9 +75,11 @@ if path:
     dialogue = dialogue_module.load_dialogue(ROOT / path)
     instance_api.set_dialogue_active(True)</code></pre>
     <p>Dialogue <code>Action</code> envelopes (<code>type</code> + <code>content</code>) are interpreted by the
-    dialogue box script itself, not the engine — the conventions used are <code>set_var</code>,
-    <code>do_action</code>, <code>jumpdialog</code>, <code>finishdialog</code>, and
-    <code>var_compare_text</code>. A project typically pairs its dialogue files with a small "vars" module
+    dialogue box script itself, not the engine — the conventions used are <code>var_set</code>,
+    <code>do_action</code>, <code>jumpdialog</code>, <code>changedialog</code>, <code>finishdialog</code>,
+    <code>var_compare_text</code>, and <code>var_compare_number</code>; see
+    <Link to="/formats/dialogue">the Dialogues format page</Link> for every action's exact
+    <code>action_content</code> shape. A project typically pairs its dialogue files with a small "vars" module
     (plain module-level attributes/functions) that dialogue actions read and call via
     <code>getattr</code>/<code>setattr</code>, exposed to <code>[var&lt;[name]&gt;]</code> placeholders in
     dialogue text through <code>tortoisengine.localization.bind_variables(resolver)</code>.</p>
@@ -97,17 +99,87 @@ if path:
 
     <h2>Save data</h2>
     <p><code>tortoisengine.save_data</code> is a generic, 1-indexed slot store — <code>slot&lt;N&gt;.json</code>
-    files with a caller-defined JSON payload:</p>
+    files with a caller-defined JSON payload. It has no opinion about slot count or what a save contains; a
+    project builds its own save system on top of these three functions:</p>
     <table>
       <tr><th>Function</th><th>Behavior</th></tr>
-      <tr><td><code>read_slot(saves_dir, index)</code></td><td><code>-&gt; dict | None</code></td></tr>
-      <tr><td><code>read_slots(saves_dir, count)</code></td><td><code>-&gt; list[dict | None]</code></td></tr>
-      <tr><td><code>write_slot(saves_dir, index, data)</code></td><td>Writes <code>data</code> (a dict) to the slot.</td></tr>
+      <tr><td><code>slot_path(saves_dir, index)</code></td><td><code>-&gt; Path</code> — <code>saves_dir / f"slot&#123;index&#125;.json"</code>, rarely called directly.</td></tr>
+      <tr><td><code>read_slot(saves_dir, index)</code></td><td><code>-&gt; dict | None</code> — <code>None</code> if the slot file is missing, unreadable, or not valid JSON. Never raises.</td></tr>
+      <tr><td><code>read_slots(saves_dir, count)</code></td><td><code>-&gt; list[dict | None]</code> — <code>read_slot()</code> for indices <code>1..count</code>, in order.</td></tr>
+      <tr><td><code>write_slot(saves_dir, index, data)</code></td><td>Creates <code>saves_dir</code> if needed and overwrites the slot with <code>json.dumps(data, indent=2)</code>. No merge — this replaces the whole file.</td></tr>
     </table>
-    <p>Projects wrap this with their own fixed slot count and payload schema (hello_tortu's
-    <code>save_system.py</code>: 3 slots, a small <code>gamedata</code> shape). Save/load menu screens are GUI
-    layer scripts that list <code>read_slots()</code> and, on a transition, publish
-    <code>instance_api.request_scene_transition(...)</code> for the level driver to pick up.</p>
+
+    <div className="callout">
+      <strong>Saves/ isn't a project asset</strong>
+      <code>write_slot</code> creates its directory on first use — there's nothing to author in TortoiseStudio
+      and nothing for <code>export_cart()</code> to bake. By convention it's <code>Saves/</code> next to
+      <code>main.py</code>, created fresh wherever the cart actually runs — it's player-local data, not part of
+      the project or the exported <code>.tortucart</code>.
+    </div>
+
+    <h3>Declaring your own slot store</h3>
+    <p>Fix a directory, a slot count, and your save's shape in one small module (trimmed from hello_tortu's
+    <code>save_system.py</code>):</p>
+    <pre><code># save_system.py
+from pathlib import Path
+from tortoisengine import save_data
+from scripts import dialogue_vars, game_state
+
+ROOT = Path(__file__).parent.parent
+SAVES_DIR = ROOT / "Saves"
+SLOT_COUNT = 3
+
+def read_slot(index: int) -&gt; dict | None:
+    return save_data.read_slot(SAVES_DIR, index)
+
+def read_slots() -&gt; list[dict | None]:
+    return save_data.read_slots(SAVES_DIR, SLOT_COUNT)
+
+def write_slot(index: int, current_lvl: str) -&gt; None:
+    save_data.write_slot(SAVES_DIR, index, &#123;
+        "gamedata": &#123;
+            "gears": game_state.gears,
+            "current_lvl": current_lvl,
+            "favorite_cookie": dialogue_vars.Fav_Cookie,
+        &#125;,
+    &#125;)</code></pre>
+    <p>Every other script that needs to save or load imports this module, never
+    <code>tortoisengine.save_data</code> directly — the slot directory, slot count, and payload shape all stay
+    defined in exactly one place.</p>
+
+    <h3>Writing a save</h3>
+    <p>A save/load menu is a plain GUI layer script (hello_tortu's <code>Save_hud.py</code>): list
+    <code>read_slots()</code> to render each slot as empty or occupied, then on confirm — after an
+    overwrite check for an occupied slot — call your <code>write_slot()</code> wrapper:</p>
+    <pre><code>slots = save_system.read_slots()
+if slots[slot_index - 1] is None:
+    save_system.write_slot(slot_index, current_level_id)      # empty slot — save immediately
+else:
+    show_overwrite_confirm(slot_index)                        # occupied — confirm first
+
+# on "yes":
+save_system.write_slot(slot_index, current_level_id)
+refresh_slot_labels()   # read_slots() again to update the "empty"/"slot N" text</code></pre>
+
+    <h3>Reading a save</h3>
+    <p>Loading is the mirror image (hello_tortu's <code>Load_hud.py</code>): read the slot, restore whatever
+    state your payload holds, then hand off to the level driver — <code>save_data</code> itself has no concept
+    of "loading a game," it's just handing you back the dict you wrote:</p>
+    <pre><code>def _do_load(slot_index: int) -&gt; None:
+    data = save_system.read_slot(slot_index)
+    if data is None:
+        return
+    gamedata = data.get("gamedata", &#123;&#125;)
+    game_state.reset()
+    game_state.gears = gamedata.get("gears", 0)
+    dialogue_vars.Fav_Cookie = gamedata.get("favorite_cookie", dialogue_vars.Fav_Cookie)
+    current_lvl = gamedata.get("current_lvl", "level_01")
+    instance_api.request_scene_transition(f"scenes/&#123;current_lvl&#125;.tortuscene")</code></pre>
+    <p>Save/load menu screens are GUI layer scripts driven by the same Up/Down/Enter + <code>select_arrow</code>
+    convention as <Link to="/scripting/gui">pause menus and dialogue boxes</Link>; the confirm popup
+    (Overwrite? / Are you sure?) is a second <code>.tortuguilayer</code> the menu script shows/hides directly
+    via its explicit <code>gui_layer_path</code>, the same technique <Link to="/scripting/objects">an object
+    script</Link> uses to drive a HUD from outside its own layer.</p>
 
     <h2>Checkpoints</h2>
     <p>Entirely userland — there's no engine checkpoint module. The convention (hello_tortu's

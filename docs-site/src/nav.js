@@ -39,6 +39,7 @@ export const nav = [
       { path: '/formats/background', label: '5. Backgrounds' },
       { path: '/formats/gui', label: '6. GUI layers & elements' },
       { path: '/formats/fonts', label: '7. Fonts' },
+      { path: '/formats/dialogue', label: '8. Dialogues' },
     ],
   },
   {
