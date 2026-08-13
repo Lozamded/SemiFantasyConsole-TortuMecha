@@ -36,7 +36,7 @@ MUSIC_VALUE_LABEL = "volmusic_value"
 
 CURRENT_LANGUAGE_LABEL = "currentlanguage"
 # Language names are shown in their own language regardless of the current
-# UI language (a convention, not a languages/strings.csv lookup).
+# UI language (a convention, not a translations/strings.csv lookup).
 LANGUAGE_NAMES = {"en": "English", "es": "Espanol"}
 
 CURSOR_MAIN = "cursor_main"

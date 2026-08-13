@@ -1,5 +1,5 @@
-"""Shared read/write helpers for languages/*.csv, used by both the Languages
-and Dialogues editor tabs.
+"""Shared read/write helpers for translations/*.csv, used by both the
+Translations and Dialogues editor tabs.
 
 Mirrors the load shape in tortoisengine/localization.py (header row of
 language codes, one data row per key) but is editor-facing: it can locate a
@@ -13,7 +13,7 @@ import csv
 from dataclasses import dataclass, field
 from pathlib import Path
 
-LANGUAGES_DIR = Path("languages")
+TRANSLATIONS_DIR = Path("translations")
 
 # Row cap for an auto-managed per-dialogue CSV (see dialogue_translation_target)
 # before a new key spills into the next "<stem>_partN.csv".
@@ -27,11 +27,11 @@ class KeyLocation:
     values: dict[str, str] = field(default_factory=dict)  # lang -> value, this file only
 
 
-def list_language_csv_paths(project_root: Path) -> list[Path]:
-    languages_dir = project_root / LANGUAGES_DIR
-    if not languages_dir.is_dir():
+def list_translation_csv_paths(project_root: Path) -> list[Path]:
+    translations_dir = project_root / TRANSLATIONS_DIR
+    if not translations_dir.is_dir():
         return []
-    return sorted(languages_dir.glob("*.csv"))
+    return sorted(translations_dir.glob("*.csv"))
 
 
 def _read_rows(path: Path) -> list[list[str]]:
@@ -41,7 +41,7 @@ def _read_rows(path: Path) -> list[list[str]]:
 
 def find_key(project_root: Path, key: str) -> KeyLocation | None:
     """Return the first CSV whose key column has a row matching `key`."""
-    for path in list_language_csv_paths(project_root):
+    for path in list_translation_csv_paths(project_root):
         rows = _read_rows(path)
         if not rows:
             continue
@@ -59,7 +59,7 @@ def find_key(project_root: Path, key: str) -> KeyLocation | None:
 def all_languages(project_root: Path) -> list[str]:
     """Every language code seen across every CSV header, first-seen order."""
     seen: list[str] = []
-    for path in list_language_csv_paths(project_root):
+    for path in list_translation_csv_paths(project_root):
         rows = _read_rows(path)
         if not rows:
             continue
@@ -73,7 +73,7 @@ def all_languages(project_root: Path) -> list[str]:
 def all_keys(project_root: Path) -> list[str]:
     """Every translation key across every CSV, sorted for a picker/autocomplete."""
     keys: set[str] = set()
-    for path in list_language_csv_paths(project_root):
+    for path in list_translation_csv_paths(project_root):
         rows = _read_rows(path)
         for row in rows[1:]:
             if row and row[0].strip():
@@ -85,7 +85,7 @@ def dialogue_translation_target(project_root: Path, dialogue_stem: str) -> Path:
     """Where a brand-new key authored from dialogue `dialogue_stem` (a
     dialogues/*.json file's stem, e.g. "robot1_lvl1") should be written.
 
-    Keys stay grouped by the dialogue file they came from — languages/
+    Keys stay grouped by the dialogue file they came from — translations/
     <stem>.csv — so a translator sees one scene's lines together, instead of
     a meaningless numbered bucket. Once that file reaches
     DIALOGUE_CSV_MAX_ROWS keys, new ones spill into <stem>_part2.csv, then
@@ -96,7 +96,7 @@ def dialogue_translation_target(project_root: Path, dialogue_stem: str) -> Path:
     part = 1
     while True:
         name = f"{dialogue_stem}.csv" if part == 1 else f"{dialogue_stem}_part{part}.csv"
-        path = project_root / LANGUAGES_DIR / name
+        path = project_root / TRANSLATIONS_DIR / name
         if not path.is_file():
             return path
         if len(_read_rows(path)) - 1 < DIALOGUE_CSV_MAX_ROWS:

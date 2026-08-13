@@ -1,0 +1,46 @@
+key,en,es
+r1_d1,Hello. I'm a robot,Hola. Soy un robot
+r1_d2,And this is the demo of a platformer on a Semi-Fantasy-Console, Y esto es una demo para una tipo Semi-Fanstasy-Console
+r1_d3,press the directions to move and you can jump and attack, presiona las direcciones para moverte y tambien puedes saltar y atacar
+r1_d4, I hope you create fun and amazing games with this, Espero que crees juegos geniales y asombrosos con esto
+r2_d1,Hello[symbol<[comma]>] I'm also a robot[symbol<[comma]>] but my dialogue is a bit more complex,Hola yo tambíen soy un robot pero mi dialogo es un poco mas complejo
+r1_2_d1,Hey[symbol<[comma]>] don't underestimate my dialogue[symbol<[comma]>] we can talk to many characters in the same dialogue.,Oye[symbol<[comma]>] no subestimes mi dialogo[symbol<[comma]>] podemos hablar muchos personajes en el mismo dialogo.
+r2_d2,alright[symbol<[comma]>] time to make a decision: who of us two do you want to give you the next message[symbol<[comma]>],muy bíen hora de tomar una descición quien de nosotros dos quieres que te de el proximo mensaje[symbol<[comma]>]
+mt_d1,I want them to respond...,quiero que me responda...
+mt_d1_o1,robot 1,robot 1
+mt_d1_o2,robot 2,robot 2
+r2_d3,So we keep talking...,Entonces seguimos hablando...
+r2_d4,to finish our conversation. Would you like me to jump?,para finalizar nuestra conversación. ¿te gustaria que salte?
+mt_d2_o1,Yes,Sí
+mt_d2_o2,No,No
+var_d2_act1,jump,salar
+var_d2_act2,do nothing,hacer nada
+r2_d5,Very well then[symbol<[comma]>] when this dialogue is finished I will [var<[d2_selected_action]>],muy bíen[symbol<[comma]>] entonces cuando termine este dialogo voy a [var<[d2_selected_action]>]
+r1_3_d1,I'm robot1. Thanks for choosing to talk to me,Soy el robot1 Gracias por escoger hablar conmigo
+r1_3_d2,I have a question for you. What type of cookies do you prefer?,te tengo una pregunta ¿Que tipo de galletas prefieres?
+mt_d3_o1,chip cookie,galleta con chispas
+mt_d3_o2,cream cookie,galleta con vainilla
+mt_d3_o3,wafer cookie,galleta oblea
+mt_d4_o4,I don't like cookies,no me gustan las galletas
+r1_3_d3,I see. I will remember it if you save the game later on the save point,Entiendo[symbol<[comma]>] voy a recordar esto si guardas el juego mas adelante en el punto de guardado
+r3_l2_d1,Hello. I'm the robot number 3,Hola. Soy un robot número 3
+r3_l2_d2,I hope you enjoyed this short demo,Espero hayas disfrutado de esta corta demo
+r3_l2_d3,well[symbol<[comma]>] so far you've collected [var<[gears]>] gears,bíen hasta ahora recolectaste [var<[gears]>] engranes
+r3_l2_d3_>24,Thats more than twentyfour,Eso es mas de veinticuatro
+r3_l2_d3_<24,Thats less than twentyfour,Eso es menos de veinticuatro
+r3_l2_d3_=24,thats just twentyfour,eso es justo veinticuatro.
+r3_l2_d4,about the cookies,respecto a las galletas
+r3_l2_d4_nothing,so far we haven't talked about cookies,hasta ahora no hemos hablado de galletas
+r3_l2_d4_nothing_2,we can skip the whole part of this dialogue where we talk about cookies,podemos saltar toda la parte de este dialogo donde hablamos sobre galletas
+r3_l2_d4_chips,I see you like chip cookies,Veo que te gustan las galletas con chispas
+r3_l2_d4_chips_2,well[symbol<[comma]>] as for the developer of this project[symbol<[comma]>] those are their favorite too,pues respecto al desarrollador de este proyecto[symbol<[comma]>] tanbíen son sus favoritas
+r3_l2_d4_cream,I see you like cream cookies,Veo que te gustan las galletas con crema
+r3_l2_d4_cream_2,I bet with two cookies you make one with double cream,apuesto a que con dos galletas haces una con doble crema
+r3_l2_d4_wafer,I see you like wafer cookies,Veo que te gustan las galletas de oblea
+r3_l2_d4_wafer_2,those are the best cookies to put on top of ice cream,Esas son las mejores galletas para colocar sobre un helado
+r3_l2_d4_unlike,I see you don't like cookies,Veo que no te gustan las galletas
+r3_l2_d4_unlike_2,well then it's better if we stop talking...,pues es mejor que dejemos de hablar...
+r3_l2_d4_unlike_3,just kidding[symbol<[comma]>] this is only to show you that a dialogue can end early,es broma esto es solo para mostrarte que un dialogo puede terminar anticipadamente
+r3_l2_d5,with this our chat about cookies ends,Con esto termina nuestra charla sobre galletas
+r3_l2_d6,I recommend checking the dialogues and seeing all the possible cases,Te recomiendo revisar los dialogos y ver todos los casos posibles
+r3_l2_d7,have a very good day,Ten un muy buen día

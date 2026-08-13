@@ -60,7 +60,7 @@ from tortoisestudio.background_editor import BackgroundEditorWidget
 from tortoisestudio.font_editor import FontEditorWidget
 from tortoisestudio.gui_layer_editor import GuiLayerEditorWidget
 from tortoisestudio.dialogue_editor import DialogueEditorWidget
-from tortoisestudio.language_editor import LanguageEditorWidget
+from tortoisestudio.translation_editor import TranslationEditorWidget
 from tortoisestudio.new_background_dialog import NewBackgroundDialog
 from tortoisestudio.new_gui_layer_dialog import NewGuiLayerDialog
 from tortoisestudio.new_object_dialog import NewObjectDialog
@@ -448,12 +448,12 @@ class MainWindow(QMainWindow):
         self.sound_editor.save_requested.connect(self._save_audio_channels)
         self.palette_editor = PaletteEditorWidget(Path("."))
         self.palette_editor.saved.connect(self._on_palette_saved)
-        self.language_editor = LanguageEditorWidget(Path("."))
-        self.language_editor.saved.connect(self._on_language_saved)
+        self.translation_editor = TranslationEditorWidget(Path("."))
+        self.translation_editor.saved.connect(self._on_translation_saved)
         self.dialogue_editor = DialogueEditorWidget(Path("."))
         self.dialogue_editor.saved.connect(self._on_dialogue_saved)
         self.text_editor_tabs = QTabWidget()
-        self.text_editor_tabs.addTab(self.language_editor, "Languages")
+        self.text_editor_tabs.addTab(self.translation_editor, "Translations")
         self.text_editor_tabs.addTab(self.dialogue_editor, "Dialogues")
 
         # Game Settings panel — lives in the center stack as its own tab
@@ -560,7 +560,7 @@ class MainWindow(QMainWindow):
         self.sound_editor.import_audio.set_channels(project.game.audio_channels)
         self.sound_editor.set_channel_map(project.game.audio_channel_map)
         self.palette_editor.set_project_root(project.root)
-        self.language_editor.set_project_root(project.root)
+        self.translation_editor.set_project_root(project.root)
         self.dialogue_editor.set_project_root(project.root)
         self._active_sprite_path = None
         self._active_tileset_path = None
@@ -1313,7 +1313,7 @@ class MainWindow(QMainWindow):
 
     def _show_text_editor(self) -> None:
         self.center_stack.setCurrentIndex(self.TEXT_EDITOR)
-        self.language_editor.refresh()
+        self.translation_editor.refresh()
         self.dialogue_editor.refresh()
         self.field_name.clear()
 
@@ -1588,8 +1588,8 @@ class MainWindow(QMainWindow):
             return self._confirm_discard_unsaved("object", self.object_editor.save)
         if index == self.TEXT_EDITOR:
             self.dialogue_editor.flush_pending_translation_edits()
-            if self.language_editor.has_unsaved_changes():
-                if not self._confirm_discard_unsaved("language CSV", self.language_editor.save):
+            if self.translation_editor.has_unsaved_changes():
+                if not self._confirm_discard_unsaved("translation CSV", self.translation_editor.save):
                     return False
             if self.dialogue_editor.has_unsaved_changes():
                 if not self._confirm_discard_unsaved("dialogue", self.dialogue_editor.save):
@@ -1761,7 +1761,7 @@ class MainWindow(QMainWindow):
         if self.viewport.scene_preview_active:
             self.viewport.invalidate_baked_assets()
 
-    def _on_language_saved(self, path: Path) -> None:
+    def _on_translation_saved(self, path: Path) -> None:
         self.log(f"Saved {path.relative_to(self.project.root)}")
 
     def _on_dialogue_saved(self, path: Path) -> None:

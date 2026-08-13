@@ -33,7 +33,7 @@ CURSOR = "select_arrow"
 CURSOR_OFFSET = (-20, 7)
 
 # Language names are shown in their own language regardless of the current
-# UI language (a convention, not a languages/strings.csv lookup) — same
+# UI language (a convention, not a translations/strings.csv lookup) — same
 # choice pause_menu.py makes for its own language row.
 LANGUAGE_NAMES = {"en": "English", "es": "Espanol"}
 

@@ -18,7 +18,7 @@ export default function FormatsDialogue() {
     <table>
       <tr><th>Field</th><th>Type</th><th>Default</th><th>Notes</th></tr>
       <tr><td><code>speaker</code></td><td>str</td><td><code>""</code></td><td></td></tr>
-      <tr><td><code>text</code></td><td>str</td><td><code>""</code></td><td>A literal string, or a <code>[&lt;[key]&gt;]</code> placeholder into <code>languages/*.csv</code> — see below.</td></tr>
+      <tr><td><code>text</code></td><td>str</td><td><code>""</code></td><td>A literal string, or a <code>[&lt;[key]&gt;]</code> placeholder into <code>translations/*.csv</code> — see below.</td></tr>
       <tr><td><code>icon</code></td><td>str</td><td><code>""</code></td><td>Optional sprite path; not interpreted by the engine, purely for the display script to use.</td></tr>
       <tr><td><code>id</code></td><td>str</td><td><code>""</code></td><td>Lets a <code>jumpdialog</code> action target this line. May be declared anywhere in the file, including after the line that jumps to it.</td></tr>
       <tr><td><code>options</code></td><td>list[DialogueOption]</td><td><code>[]</code></td><td>Non-empty turns this line into a decision point.</td></tr>
@@ -81,7 +81,7 @@ export default function FormatsDialogue() {
 
     <h2>Text and translation keys</h2>
     <p>A line's or option's <code>text</code> is either a literal string, or a single
-    <code>[&lt;[key]&gt;]</code> placeholder resolved through <code>languages/*.csv</code> (see
+    <code>[&lt;[key]&gt;]</code> placeholder resolved through <code>translations/*.csv</code> (see
     <Link to="/scripting/subsystems">Subsystems → Localization</Link> for the runtime API). Each CSV has a
     header row of language codes and one data row per key; every CSV in the folder merges into one lookup
     table, so a key can live in whichever file makes sense — callers never need to know which one. A cell can
@@ -93,7 +93,7 @@ export default function FormatsDialogue() {
       The Dialogues tab's line editor splits <code>text</code> into a small translation-key field, a language
       picker, and a content box bound to that (key, language) cell — editing the content box writes straight
       into the CSV. An existing key always keeps living wherever it already is (including a hand-managed file
-      like <code>GUI.csv</code>); a brand-new key is filed under <code>languages/&lt;dialogue file stem&gt;.csv</code>
+      like <code>GUI.csv</code>); a brand-new key is filed under <code>translations/&lt;dialogue file stem&gt;.csv</code>
       with no prompt, spilling into <code>_part2.csv</code>, <code>_part3.csv</code>, etc. once one file passes
       200 keys — so a translator working through one CSV sees one scene's lines together.
     </div>

@@ -429,6 +429,16 @@ def export_cart(project: Project, dest: Path) -> Path:
     if audio_dir.is_dir():
         shutil.copytree(audio_dir, dest / "assets" / "audio")
 
+    # Dialogues and their translation tables aren't referenced by scenes/objects,
+    # so the asset plan never picks them up — copy them wholesale like scripts/audio.
+    dialogues_dir = project.dialogues_dir()
+    if dialogues_dir.is_dir():
+        shutil.copytree(dialogues_dir, dest / "dialogues")
+
+    translations_dir = project.translations_dir()
+    if translations_dir.is_dir():
+        shutil.copytree(translations_dir, dest / "translations")
+
     # Copy source asset files so game scripts can load them directly
     # (sprites for frame metadata, tilesets for collision, objects for hitboxes)
     palettes_dir = project.palettes_dir()

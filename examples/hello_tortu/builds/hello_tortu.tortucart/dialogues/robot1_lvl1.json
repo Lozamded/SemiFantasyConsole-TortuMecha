@@ -1,0 +1,8 @@
+{
+  "lines": [
+    { "speaker": "Robot1", "text": "[<[r1_d1]>]" },
+    { "speaker": "Robot1", "text": "[<[r1_d2]>]" },
+    { "speaker": "Robot1", "text": "[<[r1_d3]>]" },
+    { "speaker": "Robot1", "text": "[<[r1_d4]>]" }
+  ]
+}

@@ -7,3 +7,6 @@ PyQt6>=6.6.0
 
 # Reload scripts when edited in Cursor / VSCode / etc.
 watchdog>=4.0.0
+
+# Native "build executable" export from TortoiseStudio (see tortoisengine/build_executable.py)
+pyinstaller>=6.0.0

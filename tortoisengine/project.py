@@ -57,6 +57,12 @@ class Project:
     def audio_dir(self) -> Path:
         return self.root / "assets" / "audio"
 
+    def dialogues_dir(self) -> Path:
+        return self.root / "dialogues"
+
+    def translations_dir(self) -> Path:
+        return self.root / "translations"
+
     def start_scene_path(self) -> Path | None:
         """Resolved path to the configured start scene, if any."""
         rel = self.game.start_scene.strip()

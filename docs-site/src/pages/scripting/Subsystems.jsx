@@ -91,7 +91,7 @@ if path:
       <tr><th>Function</th><th>Behavior</th></tr>
       <tr><td><code>instance_api.available_languages()</code></td><td><code>-&gt; list[str]</code></td></tr>
       <tr><td><code>instance_api.get_language()</code> / <code>set_language(code)</code></td><td>Read/switch the active language.</td></tr>
-      <tr><td><code>instance_api.translate(key)</code></td><td>Look up a <code>languages/strings.csv</code> key directly, for script-built strings.</td></tr>
+      <tr><td><code>instance_api.translate(key)</code></td><td>Look up a <code>translations/strings.csv</code> key directly, for script-built strings.</td></tr>
     </table>
     <p><code>localization.bind_variables(resolver)</code> and <code>localization.resolve(text)</code> have no
     <code>instance_api</code> wrapper and must be imported from <code>tortoisengine.localization</code> directly

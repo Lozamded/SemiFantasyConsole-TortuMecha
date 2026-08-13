@@ -3,7 +3,7 @@ branch through player-selected options.
 
 A line's `speaker`/`text` may embed a `[<[key]>]` placeholder resolved
 through `tortoisengine.localization`, exactly like a GuiTextLabel — so dialogue
-copy lives in the same languages/*.csv files as everything else instead of a
+copy lives in the same translations/*.csv files as everything else instead of a
 separate lookup convention.
 
 A line can carry `options`: presenting it turns it into a decision point.

@@ -63,7 +63,7 @@ ACTION_TYPES = [
 COMPARE_OPS = ["<", "<=", "==", "!=", ">=", ">"]
 
 # A line's text is either a literal string or exactly one [<[key]>] placeholder
-# referencing languages/*.csv (see tortoisengine.localization) — never a mix.
+# referencing translations/*.csv (see tortoisengine.localization) — never a mix.
 _KEY_PATTERN = re.compile(r"^\[<\[([^\[\]]+)\]>\]$")
 
 
@@ -736,7 +736,7 @@ class DialogueLinePanel(QWidget):
     """Editor for a single DialogueLine: speaker/text/icon/id, action, options.
 
     A line's text is either a literal string or a [<[key]>] placeholder into
-    languages/*.csv. The Text group exposes that as a small "Translation key"
+    translations/*.csv. The Text group exposes that as a small "Translation key"
     field plus a language picker and a big content box that reads/writes the
     selected (key, language) cell directly — editing the key switches which
     CSV row the content box is bound to; clearing it falls back to literal
@@ -795,7 +795,7 @@ class DialogueLinePanel(QWidget):
         self.field_text_key_file.setReadOnly(True)
         self.field_text_key_file.setPlaceholderText("(no CSV — literal text)")
         self.field_text_key_file.setStyleSheet("color: #888;")
-        self.field_text_key_file.setToolTip("The languages/*.csv file this key's row lives in")
+        self.field_text_key_file.setToolTip("The translations/*.csv file this key's row lives in")
         key_row.addWidget(self.field_text_key_file)
         key_row.addStretch()
         key_row.addWidget(QLabel("Language:"))
@@ -863,7 +863,7 @@ class DialogueLinePanel(QWidget):
 
     def _resolve_target_path(self, key: str) -> Path:
         """Where `key`'s row lives (or should be created) — an existing key
-        keeps living wherever find_key() locates it (any languages/*.csv,
+        keeps living wherever find_key() locates it (any translations/*.csv,
         including a hand-managed one like GUI.csv); a brand-new key is
         auto-filed under its source dialogue (see dialogue_translation_target)
         with no prompt, so the same key is never duplicated across files."""

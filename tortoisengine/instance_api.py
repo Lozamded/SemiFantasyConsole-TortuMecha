@@ -73,7 +73,7 @@ def available_languages() -> list[str]:
 
 
 def translate(key: str) -> str:
-    """Look up a languages/strings.csv key directly (for script-built strings)."""
+    """Look up a translations/strings.csv key directly (for script-built strings)."""
     return localization.translate(key)
 
 

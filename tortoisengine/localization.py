@@ -1,6 +1,6 @@
 """Runtime string localization.
 
-A project may ship any number of CSVs under `languages/` (e.g. `GUI.csv`,
+A project may ship any number of CSVs under `translations/` (e.g. `GUI.csv`,
 `DialogsLvl1.csv`), each with a header row of language codes (e.g.
 `key,en,es`) and one data row per translatable key. All CSVs in the folder
 are merged into a single key table, so keys can be split across files
@@ -70,17 +70,17 @@ _loaded_root: Path | None = None
 
 
 def load(project_root: Path) -> None:
-    """(Re)load every languages/*.csv for project_root. No-op if already loaded for this root."""
+    """(Re)load every translations/*.csv for project_root. No-op if already loaded for this root."""
     global _table, _languages, _loaded_root, _current
     if _loaded_root == project_root:
         return
     _loaded_root = project_root
     _table = {}
     _languages = []
-    languages_dir = project_root / "languages"
-    if not languages_dir.is_dir():
+    translations_dir = project_root / "translations"
+    if not translations_dir.is_dir():
         return
-    for csv_path in sorted(languages_dir.glob("*.csv")):
+    for csv_path in sorted(translations_dir.glob("*.csv")):
         with csv_path.open("r", encoding="utf-8", newline="") as f:
             rows = list(csv.reader(f))
         if not rows:
