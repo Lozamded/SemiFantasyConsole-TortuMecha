@@ -23,7 +23,7 @@
       "sprite": "assets/sprites/robot_fall.tortusprite"
     }
   ],
-  "solid": true,
+  "solid": false,
   "script": "scripts/robot.py",
   "origin": {
     "x": 10,
@@ -34,5 +34,17 @@
     "y": 3,
     "w": 13,
     "h": 17
-  }
+  },
+  "custom_vars": [
+    {
+      "name": "dialogue",
+      "type": "string",
+      "default": ""
+    },
+    {
+      "name": "patrol",
+      "type": "bool",
+      "default": false
+    }
+  ]
 }

@@ -6,9 +6,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pygame
+
 from tortoisengine import instance_api
 from tortoisengine.object import TortoiseObject, load_object
 from tortoisengine.sprite import load_sprite
+from scripts import audio_settings
 from scripts._generated import red_slime_auto as auto
 from scripts.mechaturtle_player import ATTACK_COLLIDER_ID
 
@@ -31,10 +34,19 @@ _px = 0.0
 _py = 0.0
 _vy = 0.0
 _direction = -1  # -1 = left, 1 = right
+# Edge-detector for the reversal checks in update() below (enemycollider
+# trigger, crouched-player bounce, other-slime collision) — True while still
+# overlapping one of them, so _direction only flips once per contact instead
+# of every frame it's still inside the overlap (which, under real jittery
+# frame timing, could otherwise flip several times before the slime fully
+# walks clear, showing as rapid side-to-side jitter in place).
+_in_reverse_zone = False
 
 _dead = False
 _defeat_timer = 0.0
 _defeat_duration = 0.0  # seconds — resolved in init() from the defeat sprite's own frame_count/fps
+
+_sfx_defeat: pygame.mixer.Sound | None = None
 
 
 def _resolve_bounds(obj: TortoiseObject, sprite_w: int, sprite_h: int) -> tuple[int, int, int, int]:
@@ -52,8 +64,14 @@ def init(engine) -> None:
     global _hb_l, _hb_r, _hb_t, _hb_b
     global _trig_l, _trig_r, _trig_t, _trig_b
     global _atk_l, _atk_r, _atk_t, _atk_b
-    global _px, _py, _vy, _direction
+    global _px, _py, _vy, _direction, _in_reverse_zone
     global _dead, _defeat_timer, _defeat_duration
+    global _sfx_defeat
+
+    try:
+        _sfx_defeat = audio_settings.load_sound("assets/audio/enemydefeat.ogg")
+    except Exception:
+        pass
 
     slime_obj = load_object(ROOT / SLIME_PREFAB)
     slime_sprite = load_sprite(ROOT / slime_obj.default_sprite)
@@ -82,6 +100,7 @@ def init(engine) -> None:
     _px, _py = pos if pos else (0.0, 0.0)
     _vy = 0.0
     _direction = -1
+    _in_reverse_zone = False
 
 
 def _fall(distance: float) -> bool:
@@ -118,7 +137,7 @@ def _overlaps(l1: float, r1: float, t1: float, b1: float, l2: float, r2: float, 
 
 
 def update(dt: float) -> None:
-    global _px, _py, _vy, _direction, _dead, _defeat_timer
+    global _px, _py, _vy, _direction, _dead, _defeat_timer, _in_reverse_zone
 
     if _dead:
         _defeat_timer -= dt
@@ -137,26 +156,35 @@ def update(dt: float) -> None:
     left, right = _px + _hb_l, _px + _hb_r
     top, bottom = _py + _hb_t, _py + _hb_b
 
+    # Edge-triggered: flip only on the frame a reversal zone is first
+    # entered, not every frame still overlapping it — see _in_reverse_zone.
+    in_reverse_zone = False
+
     for tx, ty in instance_api.prefab_positions(ENEMYCOLLIDER_PREFAB):
         trig_left, trig_right = tx + _trig_l, tx + _trig_r
         trig_top, trig_bottom = ty + _trig_t, ty + _trig_b
         if _overlaps(left, right, top, bottom, trig_left, trig_right, trig_top, trig_bottom):
-            _direction *= -1
+            in_reverse_zone = True
             break
 
-    if instance_api.player_is_crouching():
+    if not in_reverse_zone and instance_api.player_is_crouching():
         p_hb = instance_api.player_hitbox()
         if p_hb is not None:
             p_left, p_right, p_top, p_bottom = p_hb
             if _overlaps(left, right, top, bottom, p_left, p_right, p_top, p_bottom):
-                _direction *= -1
+                in_reverse_zone = True
 
-    for ox, oy in instance_api.prefab_positions(SLIME_PREFAB, exclude_id=SELF_ID):
-        other_left, other_right = ox + _hb_l, ox + _hb_r
-        other_top, other_bottom = oy + _hb_t, oy + _hb_b
-        if _overlaps(left, right, top, bottom, other_left, other_right, other_top, other_bottom):
-            _direction *= -1
-            break
+    if not in_reverse_zone:
+        for ox, oy in instance_api.prefab_positions(SLIME_PREFAB, exclude_id=SELF_ID):
+            other_left, other_right = ox + _hb_l, ox + _hb_r
+            other_top, other_bottom = oy + _hb_t, oy + _hb_b
+            if _overlaps(left, right, top, bottom, other_left, other_right, other_top, other_bottom):
+                in_reverse_zone = True
+                break
+
+    if in_reverse_zone and not _in_reverse_zone:
+        _direction *= -1
+    _in_reverse_zone = in_reverse_zone
 
     if instance_api.is_enabled(ATTACK_COLLIDER_ID):
         atk_pos = instance_api.get_position(ATTACK_COLLIDER_ID)
@@ -169,6 +197,8 @@ def update(dt: float) -> None:
                 _defeat_timer = _defeat_duration
                 instance_api.set_animation(SELF_ID, auto.ANIM_DEFEAT)
                 instance_api.set_position(SELF_ID, _px, _py)
+                if _sfx_defeat:
+                    _sfx_defeat.play()
                 return
 
     instance_api.set_position(SELF_ID, _px, _py)

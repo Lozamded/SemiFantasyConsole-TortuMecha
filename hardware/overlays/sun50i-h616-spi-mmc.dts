@@ -1,0 +1,55 @@
+/*
+ * Binds the kernel's mmc_spi driver to spi1 on Allwinner H616/H618 boards
+ * (Orange Pi Zero 2W) so an SD/microSD card wired to the SPI1 pins on the
+ * 40-pin header shows up as a normal block device (/dev/mmcblkN).
+ *
+ * Header pins used (Orange Pi Zero 2W 40-pin header):
+ *   pin 1  (3.3V)        -> reader VCC
+ *   pin 19 (PH7, SPI1_MOSI) -> reader MOSI
+ *   pin 21 (PH8, SPI1_MISO) -> reader MISO
+ *   pin 23 (PH6, SPI1_CLK)  -> reader CLK
+ *   pin 24 (PH5, SPI1_CS0)  -> reader CS
+ *   pin 20 or 25 (GND)      -> reader GND
+ *
+ * Unlike spi0 on this SoC, the spi1 node in the base sun50i-h616.dtsi does
+ * NOT set pinctrl-names/pinctrl-0 by default, so this overlay has to add
+ * them explicitly (spi1_pins covers PH6-PH8, spi1_cs0_pin covers PH5) in
+ * addition to flipping spi1's status to "okay" and adding the
+ * mmc-spi-slot child device.
+ *
+ * Adapting this overlay for different wiring:
+ * - Different chip-select on spi1 (e.g. CS1/PH9 instead of CS0/PH5):
+ *   change `reg = <0>` below to `reg = <1>` and swap &spi1_cs0_pin for
+ *   &spi1_cs1_pin in pinctrl-0.
+ * - A different SPI bus (e.g. spi0, PC0-PC3 on this SoC): change
+ *   `target = <&spi1>` to `target = <&spi0>` and use spi0's own pinctrl
+ *   labels -- spi0 already predefines pinctrl-0 in the base dtsi, so drop
+ *   the pinctrl-names/pinctrl-0 lines here if you do that.
+ * There is no way to route SPI to arbitrary GPIOs here: spi0/spi1 are
+ * hardware SPI controllers with a fixed pin mux, not bit-banged pins.
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "xunlong,orangepi-zero2w", "allwinner,sun50i-h618", "allwinner,sun50i-h616";
+
+	fragment@0 {
+		target = <&spi1>;
+		__overlay__ {
+			status = "okay";
+			pinctrl-names = "default";
+			pinctrl-0 = <&spi1_pins>, <&spi1_cs0_pin>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			spi-sdcard@0 {
+				compatible = "mmc-spi-slot";
+				reg = <0>;
+				spi-max-frequency = <25000000>;
+				voltage-ranges = <3300 3300>;
+				status = "okay";
+			};
+		};
+	};
+};

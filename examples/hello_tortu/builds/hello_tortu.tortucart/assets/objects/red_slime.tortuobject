@@ -11,7 +11,7 @@
       "sprite": "assets/sprites/red_sli_defeat.tortusprite"
     }
   ],
-  "solid": true,
+  "solid": false,
   "script": "scripts/red_slime.py",
   "origin": {
     "x": 14,

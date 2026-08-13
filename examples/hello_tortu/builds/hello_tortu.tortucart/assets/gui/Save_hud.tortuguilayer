@@ -1,0 +1,62 @@
+{
+  "width": 264,
+  "height": 198,
+  "palette": "default",
+  "tile_layer_visible": true,
+  "objects": [
+    {
+      "object": "assets/objects/selectArrow.tortuobject",
+      "x": 81,
+      "y": 101,
+      "id": "select_arrow"
+    }
+  ],
+  "text_labels": [
+    {
+      "text": "[<[save_game]>]",
+      "x": 129,
+      "y": 6,
+      "font": "assets/fonts/VCR.tortufont",
+      "align": "center"
+    },
+    {
+      "text": "[<[slot]>] 1",
+      "x": 100,
+      "y": 93,
+      "id": "slot_label_1",
+      "font": "assets/fonts/dialog.tortufont"
+    },
+    {
+      "text": "[<[slot]>] 2",
+      "x": 100,
+      "y": 108,
+      "id": "slot_label_2",
+      "font": "assets/fonts/dialog.tortufont"
+    },
+    {
+      "text": "[<[slot]>] 3",
+      "x": 100,
+      "y": 122,
+      "id": "slot_label_3",
+      "font": "assets/fonts/dialog.tortufont"
+    },
+    {
+      "text": "[<[continue_no_save]>]",
+      "x": 89,
+      "y": 151,
+      "id": "continue_label",
+      "font": "assets/fonts/dialog.tortufont"
+    },
+    {
+      "text": "[<[saving]>]",
+      "x": 5,
+      "y": 178,
+      "id": "saving_label",
+      "font": "assets/fonts/dialog.tortufont",
+      "visible": false
+    }
+  ],
+  "tiled_rects": [],
+  "repeat_sprites": [],
+  "script": "scripts/Save_hud.py"
+}

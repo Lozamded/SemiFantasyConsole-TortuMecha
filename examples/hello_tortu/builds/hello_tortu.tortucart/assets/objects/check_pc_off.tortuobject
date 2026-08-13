@@ -1,0 +1,30 @@
+{
+  "name": "check_pc_off",
+  "default_animation": "off",
+  "animations": [
+    {
+      "name": "off",
+      "sprite": "assets/sprites/check_pc_off.tortusprite"
+    },
+    {
+      "name": "on",
+      "sprite": "assets/sprites/check_pc_on.tortusprite"
+    }
+  ],
+  "solid": false,
+  "script": "scripts/check_pc_off.py",
+  "origin": {
+    "x": 16,
+    "y": 31
+  },
+  "colliders": [
+    {
+      "name": "main",
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0,
+      "active": true
+    }
+  ]
+}

@@ -7,13 +7,44 @@
     "start_scene": "scenes/title.tortuscene",
     "audio_channels": [
       "music",
-      "sfx_1",
-      "sfx_2",
-      "sfx_3"
-    ]
+      "game_sfx",
+      "ui_sfx"
+    ],
+    "audio_channel_map": {
+      "assets/audio/GameOver (Jingle).ogg": "music",
+      "assets/audio/level_complete.ogg": "music",
+      "assets/audio/sfx_attack.ogg": "game_sfx",
+      "assets/audio/sfx_shell.ogg": "game_sfx",
+      "assets/audio/Stage Clear Long (Jingle).ogg": "music",
+      "assets/audio/sfx_coin.ogg": "game_sfx",
+      "assets/audio/sfx_jump.ogg": "game_sfx",
+      "assets/audio/LostLife.ogg": "music",
+      "assets/audio/sfx_defeat.ogg": "game_sfx",
+      "assets/audio/every Friday.ogg": "music",
+      "assets/audio/Stage Clear Short (Jingle).ogg": "music",
+      "assets/audio/Hang In There v0_5.ogg": "music",
+      "assets/audio/sfx_damage.ogg": "game_sfx",
+      "assets/audio/Hit_shell.ogg": "game_sfx",
+      "assets/audio/Menu_Navigate.ogg": "ui_sfx",
+      "assets/audio/enemydefeat.ogg": "game_sfx",
+      "assets/audio/pause.ogg": "ui_sfx",
+      "assets/audio/MenuAccept.ogg": "ui_sfx",
+      "assets/audio/Jingle_checkpoint.ogg": "game_sfx",
+      "assets/audio/DialogueNext.ogg": "music",
+      "assets/audio/break_block.ogg": "game_sfx"
+    }
   },
   "start_scene": "scenes/title",
   "sprites": {
+    "assets/sprites/DialogEndArrow.tortusprite": {
+      "fps": 8,
+      "width": 16,
+      "height": 16,
+      "frames": [
+        "baked/assets/sprites/DialogEndArrow/f0.png",
+        "baked/assets/sprites/DialogEndArrow/f1.png"
+      ]
+    },
     "assets/sprites/Turtlemecha_head_UI.tortusprite": {
       "fps": 8,
       "width": 24,
@@ -22,20 +53,48 @@
         "baked/assets/sprites/Turtlemecha_head_UI/f0.png"
       ]
     },
+    "assets/sprites/brickblock.tortusprite": {
+      "fps": 8,
+      "width": 16,
+      "height": 16,
+      "frames": [
+        "baked/assets/sprites/brickblock/f0.png"
+      ]
+    },
+    "assets/sprites/brickblock_break.tortusprite": {
+      "fps": 8,
+      "width": 16,
+      "height": 16,
+      "frames": [
+        "baked/assets/sprites/brickblock_break/f0.png",
+        "baked/assets/sprites/brickblock_break/f1.png",
+        "baked/assets/sprites/brickblock_break/f2.png",
+        "baked/assets/sprites/brickblock_break/f3.png",
+        "baked/assets/sprites/brickblock_break/f4.png"
+      ]
+    },
+    "assets/sprites/check_pc_off.tortusprite": {
+      "fps": 8,
+      "width": 32,
+      "height": 32,
+      "frames": [
+        "baked/assets/sprites/check_pc_off/f0.png"
+      ]
+    },
+    "assets/sprites/check_pc_on.tortusprite": {
+      "fps": 8,
+      "width": 32,
+      "height": 32,
+      "frames": [
+        "baked/assets/sprites/check_pc_on/f0.png"
+      ]
+    },
     "assets/sprites/collider_mechaturtleAttack.tortusprite": {
       "fps": 8,
       "width": 16,
       "height": 32,
       "frames": [
         "baked/assets/sprites/collider_mechaturtleAttack/f0.png"
-      ]
-    },
-    "assets/sprites/dialog_box.tortusprite": {
-      "fps": 8,
-      "width": 128,
-      "height": 28,
-      "frames": [
-        "baked/assets/sprites/dialog_box/f0.png"
       ]
     },
     "assets/sprites/dialogue_icon.tortusprite": {
@@ -169,6 +228,36 @@
         "baked/assets/sprites/mechaturtle_walk/f1.png",
         "baked/assets/sprites/mechaturtle_walk/f2.png",
         "baked/assets/sprites/mechaturtle_walk/f3.png"
+      ]
+    },
+    "assets/sprites/monitor.tortusprite": {
+      "fps": 8,
+      "width": 32,
+      "height": 32,
+      "frames": [
+        "baked/assets/sprites/monitor/f0.png"
+      ]
+    },
+    "assets/sprites/monitor_on.tortusprite": {
+      "fps": 8,
+      "width": 32,
+      "height": 32,
+      "frames": [
+        "baked/assets/sprites/monitor_on/f0.png",
+        "baked/assets/sprites/monitor_on/f1.png"
+      ]
+    },
+    "assets/sprites/monitor_turningon.tortusprite": {
+      "fps": 8,
+      "width": 32,
+      "height": 32,
+      "frames": [
+        "baked/assets/sprites/monitor_turningon/f0.png",
+        "baked/assets/sprites/monitor_turningon/f1.png",
+        "baked/assets/sprites/monitor_turningon/f2.png",
+        "baked/assets/sprites/monitor_turningon/f3.png",
+        "baked/assets/sprites/monitor_turningon/f4.png",
+        "baked/assets/sprites/monitor_turningon/f5.png"
       ]
     },
     "assets/sprites/pointer.tortusprite": {
@@ -333,6 +422,32 @@
     }
   },
   "objects": {
+    "assets/objects/FinishMonitor.tortuobject": {
+      "name": "FinishMonitor",
+      "default_animation": "off",
+      "animations": {
+        "off": "assets/sprites/monitor.tortusprite",
+        "turningon": "assets/sprites/monitor_turningon.tortusprite",
+        "on": "assets/sprites/monitor_on.tortusprite"
+      },
+      "solid": false,
+      "origin": {
+        "x": 16,
+        "y": 31
+      },
+      "colliders": [
+        {
+          "name": "main",
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0,
+          "active": true
+        }
+      ],
+      "script": "",
+      "spawnable_objects": []
+    },
     "assets/objects/UI_MechaTurtle_face.tortuobject": {
       "name": "UI_MechaTurtle_face",
       "default_animation": "idle",
@@ -355,6 +470,56 @@
         }
       ],
       "script": "",
+      "spawnable_objects": []
+    },
+    "assets/objects/brick_block.tortuobject": {
+      "name": "brick_block",
+      "default_animation": "default",
+      "animations": {
+        "default": "assets/sprites/brickblock.tortusprite",
+        "break": "assets/sprites/brickblock_break.tortusprite"
+      },
+      "solid": true,
+      "origin": {
+        "x": 8,
+        "y": 8
+      },
+      "colliders": [
+        {
+          "name": "main",
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16,
+          "active": true
+        }
+      ],
+      "script": "scripts/brick_block.py",
+      "spawnable_objects": []
+    },
+    "assets/objects/check_pc_off.tortuobject": {
+      "name": "check_pc_off",
+      "default_animation": "off",
+      "animations": {
+        "off": "assets/sprites/check_pc_off.tortusprite",
+        "on": "assets/sprites/check_pc_on.tortusprite"
+      },
+      "solid": false,
+      "origin": {
+        "x": 16,
+        "y": 31
+      },
+      "colliders": [
+        {
+          "name": "main",
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0,
+          "active": true
+        }
+      ],
+      "script": "scripts/check_pc_off.py",
       "spawnable_objects": []
     },
     "assets/objects/collider_mechaturtle_attack.tortuobject": {
@@ -381,6 +546,30 @@
       "script": "scripts/collider_mechaturtle_attack.py",
       "spawnable_objects": []
     },
+    "assets/objects/dialogVertArrow.tortuobject": {
+      "name": "dialogVertArrow",
+      "default_animation": "default",
+      "animations": {
+        "default": "assets/sprites/DialogEndArrow.tortusprite"
+      },
+      "solid": false,
+      "origin": {
+        "x": 8,
+        "y": 15
+      },
+      "colliders": [
+        {
+          "name": "main",
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0,
+          "active": true
+        }
+      ],
+      "script": "",
+      "spawnable_objects": []
+    },
     "assets/objects/dialogue_icon.tortuobject": {
       "name": "dialogue_icon",
       "default_animation": "default",
@@ -403,30 +592,6 @@
         }
       ],
       "script": "",
-      "spawnable_objects": []
-    },
-    "assets/objects/dialoguebox.tortuobject": {
-      "name": "dialoguebox",
-      "default_animation": "default",
-      "animations": {
-        "default": "assets/sprites/dialog_box.tortusprite"
-      },
-      "solid": false,
-      "origin": {
-        "x": 0,
-        "y": 0
-      },
-      "colliders": [
-        {
-          "name": "main",
-          "x": 0,
-          "y": 0,
-          "w": 0,
-          "h": 0,
-          "active": true
-        }
-      ],
-      "script": "scripts/dialoguebox.py",
       "spawnable_objects": []
     },
     "assets/objects/enemycollider.tortuobject": {
@@ -527,7 +692,7 @@
         "idle": "assets/sprites/red_sli.tortusprite",
         "defeat": "assets/sprites/red_sli_defeat.tortusprite"
       },
-      "solid": true,
+      "solid": false,
       "origin": {
         "x": 14,
         "y": 23
@@ -555,7 +720,7 @@
         "jump": "assets/sprites/robot_jump.tortusprite",
         "fall": "assets/sprites/robot_fall.tortusprite"
       },
-      "solid": true,
+      "solid": false,
       "origin": {
         "x": 10,
         "y": 19
@@ -603,6 +768,12 @@
     "scenes/gameover.tortuscene": "scenes/gameover.tortuscene",
     "scenes/level_01": "scenes/level_01.tortuscene",
     "scenes/level_01.tortuscene": "scenes/level_01.tortuscene",
+    "scenes/level_02": "scenes/level_02.tortuscene",
+    "scenes/level_02.tortuscene": "scenes/level_02.tortuscene",
+    "scenes/load_scene": "scenes/load_scene.tortuscene",
+    "scenes/load_scene.tortuscene": "scenes/load_scene.tortuscene",
+    "scenes/save_scene": "scenes/save_scene.tortuscene",
+    "scenes/save_scene.tortuscene": "scenes/save_scene.tortuscene",
     "scenes/title": "scenes/title.tortuscene",
     "scenes/title.tortuscene": "scenes/title.tortuscene"
   }

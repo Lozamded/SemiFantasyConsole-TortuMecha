@@ -8,6 +8,7 @@ export const nav = [
     items: [
       { path: '/', label: 'Overview' },
       { path: '/get-started/install-sbc', label: 'Install on an SBC' },
+      { path: '/get-started/cart-reader', label: 'Physical cart reader' },
     ],
   },
   {

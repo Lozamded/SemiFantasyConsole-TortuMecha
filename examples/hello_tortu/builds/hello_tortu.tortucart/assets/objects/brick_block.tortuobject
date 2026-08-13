@@ -1,0 +1,30 @@
+{
+  "name": "brick_block",
+  "default_animation": "default",
+  "animations": [
+    {
+      "name": "default",
+      "sprite": "assets/sprites/brickblock.tortusprite"
+    },
+    {
+      "name": "break",
+      "sprite": "assets/sprites/brickblock_break.tortusprite"
+    }
+  ],
+  "solid": true,
+  "script": "scripts/brick_block.py",
+  "origin": {
+    "x": 8,
+    "y": 8
+  },
+  "colliders": [
+    {
+      "name": "main",
+      "x": 0,
+      "y": 0,
+      "w": 16,
+      "h": 16,
+      "active": true
+    }
+  ]
+}

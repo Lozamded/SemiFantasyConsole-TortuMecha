@@ -1,0 +1,52 @@
+/*
+ * Binds the kernel's mmc_spi driver to spi0 on Allwinner H3/H2+ boards
+ * (Orange Pi Zero) so an SD/microSD card wired to the SPI0 pins on the
+ * 26-pin header shows up as a normal block device (/dev/mmcblkN).
+ *
+ * Header pins used (Orange Pi Zero 26-pin header):
+ *   pin 1  (3.3V)        -> reader VCC
+ *   pin 19 (PC0, MOSI.0) -> reader MOSI
+ *   pin 21 (PC1, MISO.0) -> reader MISO
+ *   pin 23 (PC2, SCLK.0) -> reader CLK
+ *   pin 24 (PC3, CS.0)   -> reader CS
+ *   pin 20 or 25 (GND)   -> reader GND
+ *
+ * spi0's pinctrl (spi0_pins / spi0_cs0_pin, i.e. PC0-PC3) is already
+ * defined in the base sun8i-h3.dtsi; this overlay only flips spi0's
+ * status to "okay" and adds the mmc-spi-slot child device.
+ *
+ * Adapting this overlay for different wiring:
+ * - Different chip-select on spi0 (e.g. CS1 instead of CS0): change
+ *   `target = <&spi0>` -> keep, but change `reg = <0>` below to `reg = <1>`
+ *   and override spi0's pinctrl-0 in this overlay to reference
+ *   &spi0_cs1_pin instead of &spi0_cs0_pin.
+ * - A different SPI bus entirely (e.g. spi1): change `target = <&spi0>`
+ *   to `target = <&spi1>` and use that bus's own pinctrl labels -- but
+ *   note spi1 isn't broken out to the Orange Pi Zero's 26-pin header, so
+ *   this only applies to boards/revisions that expose it.
+ * There is no way to route SPI to arbitrary GPIOs here: spi0/spi1 are
+ * hardware SPI controllers with a fixed pin mux, not bit-banged pins.
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "allwinner,sun8i-h3", "allwinner,sun8i-h2-plus";
+
+	fragment@0 {
+		target = <&spi0>;
+		__overlay__ {
+			status = "okay";
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			spi-sdcard@0 {
+				compatible = "mmc-spi-slot";
+				reg = <0>;
+				spi-max-frequency = <25000000>;
+				voltage-ranges = <3300 3300>;
+				status = "okay";
+			};
+		};
+	};
+};

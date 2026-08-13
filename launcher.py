@@ -19,6 +19,9 @@ from pathlib import Path
 
 import pygame
 
+import sdcart_reader
+from tortoisengine.cart import resolve_cart_root
+
 ROOT     = Path(__file__).parent
 CART_DIR = ROOT / "cart"
 
@@ -34,15 +37,26 @@ BLINK_INTERVAL  = 0.55  # seconds per blink half-cycle
 
 
 def _find_cart() -> Path | None:
-    """Return the cart root if a valid tortucart is present in CART_DIR."""
-    if not CART_DIR.is_dir():
+    """Return the cart root: CART_DIR takes priority, else an inserted microSD card."""
+    if CART_DIR.is_dir():
+        if (CART_DIR / "cart.json").is_file():
+            return CART_DIR
+        for child in sorted(CART_DIR.iterdir()):
+            if child.is_dir() and (child / "cart.json").is_file():
+                return child
+    return _find_sd_cart()
+
+
+def _find_sd_cart() -> Path | None:
+    """Return a cart found on the SD card, if one is inserted and mountable."""
+    try:
+        dev = sdcart_reader.find_sdcard_partition()
+        if dev is None:
+            return None
+        mount_point = sdcart_reader.ensure_mounted(dev)
+    except (subprocess.CalledProcessError, OSError):
         return None
-    if (CART_DIR / "cart.json").is_file():
-        return CART_DIR
-    for child in sorted(CART_DIR.iterdir()):
-        if child.is_dir() and (child / "cart.json").is_file():
-            return child
-    return None
+    return resolve_cart_root(mount_point)
 
 
 def _native_bin(cart_path: Path) -> Path | None:
@@ -176,7 +190,7 @@ def main() -> None:
         else:
             no_cart = font_main.render("NO  CARTRIDGE", True, RED)
             screen.blit(no_cart, no_cart.get_rect(centerx=W // 2, centery=mid_y))
-            hint = font_hint.render("place cart in  ~/console/cart/", True, DIM)
+            hint = font_hint.render("place cart in  ~/console/cart/  or insert a microSD", True, DIM)
             screen.blit(hint, hint.get_rect(centerx=W // 2,
                                              centery=mid_y + H // 12))
 

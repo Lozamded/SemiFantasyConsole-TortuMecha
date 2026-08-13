@@ -7,26 +7,30 @@
     {
       "object": "assets/objects/selectArrow.tortuobject",
       "x": 46,
-      "y": 139
+      "y": 139,
+      "id": "select_arrow"
     }
   ],
   "text_labels": [
     {
-      "text": "Start game",
+      "text": "[<[start_game]>]",
       "x": 66,
       "y": 132,
+      "id": "start_label",
       "font": "assets/fonts/dialog.tortufont"
     },
     {
-      "text": "Load game",
+      "text": "[<[load_game]>]",
       "x": 66,
       "y": 148,
+      "id": "load_label",
       "font": "assets/fonts/dialog.tortufont"
     },
     {
       "text": "Current Language (English)",
       "x": 66,
       "y": 163,
+      "id": "language_label",
       "font": "assets/fonts/dialog.tortufont"
     },
     {

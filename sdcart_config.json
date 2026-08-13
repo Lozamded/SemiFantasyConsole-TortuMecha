@@ -1,0 +1,5 @@
+{
+    "mount_point": "/mnt/tortucart",
+    "poll_interval": 2.0,
+    "device": null
+}

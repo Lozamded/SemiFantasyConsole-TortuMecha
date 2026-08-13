@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pygame
-
+from tortoisengine import instance_api
 from tortoisengine.scene import load_scene
 from tortoisengine.scene_renderer import SceneRenderer
 
@@ -15,15 +14,17 @@ _scene = None
 _renderer: SceneRenderer | None = None
 _engine = None
 
-# Set to True by update() once start is pressed; main.py watches this to
-# know when to switch from the title scene to the level.
-start_pressed = False
+# Set by update() once title_hud.py's menu asks to move on (see
+# instance_api.request_scene_transition); main.py watches this to know when
+# to switch from the title scene to a new game (target is level_01) or to
+# the load scene.
+target_scene = ""
 
 
 def init(engine) -> None:
-    global _scene, _renderer, _engine, start_pressed
+    global _scene, _renderer, _engine, target_scene
     _engine = engine
-    start_pressed = False
+    target_scene = ""
     _scene = load_scene(ROOT / "scenes/title.tortuscene", project_root=ROOT)
 
     cart_manifest = getattr(engine, "manifest", None)
@@ -35,13 +36,12 @@ def init(engine) -> None:
 
 
 def update(dt: float) -> None:
-    global start_pressed
-    keys = pygame.key.get_pressed()
-    if keys[pygame.K_RETURN] or keys[pygame.K_SPACE] or keys[pygame.K_z]:
-        start_pressed = True
-
+    global target_scene
     if _renderer and _scene:
         _renderer.tick(_scene, dt, _engine)
+    request = instance_api.take_scene_transition_request()
+    if request:
+        target_scene = request
 
 
 def draw(engine) -> None:

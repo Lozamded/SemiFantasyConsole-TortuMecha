@@ -1,14 +1,17 @@
 {
-  "name": "dialoguebox",
+  "name": "dialogVertArrow",
   "default_animation": "default",
   "animations": [
     {
       "name": "default",
-      "sprite": "assets/sprites/dialog_box.tortusprite"
+      "sprite": "assets/sprites/DialogEndArrow.tortusprite"
     }
   ],
   "solid": false,
-  "script": "scripts/dialoguebox.py",
+  "origin": {
+    "x": 8,
+    "y": 15
+  },
   "colliders": [
     {
       "name": "main",
