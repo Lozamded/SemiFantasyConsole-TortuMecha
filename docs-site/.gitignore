@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
+tortoisemecha-docs.pdf
 
 # Editor directories and files
 .vscode/*

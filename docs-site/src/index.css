@@ -320,3 +320,18 @@ th {
   .layout { flex-direction: column; }
   .sidebar { flex: none; border-right: none; border-bottom: 1px solid var(--border); }
 }
+
+/* export_pdf.py prints each route through Chromium's print media type — the
+   sidebar and prev/next links are replaced there by a generated TOC page and
+   PDF bookmarks, so both are dropped and main reclaims the full page width. */
+@media print {
+  .sidebar,
+  .page-nav {
+    display: none;
+  }
+
+  main {
+    max-width: none;
+    padding: 0;
+  }
+}

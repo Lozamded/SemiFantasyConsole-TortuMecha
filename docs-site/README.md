@@ -16,6 +16,20 @@ npm run verify    # server-render every page in nav.js, check for dead
                    # links / missing screenshots / render errors
 ```
 
+## Exporting as PDF
+
+```bash
+pip install -r requirements-pdf.txt
+playwright install chromium
+python export_pdf.py             # -> tortoisemecha-docs.pdf
+```
+
+Builds the site, serves the production build, and prints every page in
+`nav.js` through headless Chromium into one PDF. The sidebar becomes a
+generated table-of-contents page plus a real PDF outline (bookmarks) that
+mirrors the sidebar's groups — both driven by `nav.js`, so the PDF's
+structure never drifts from the site's.
+
 ## The one file that matters: `src/nav.js`
 
 Sidebar groups, page order, and page titles all live in one array here.
