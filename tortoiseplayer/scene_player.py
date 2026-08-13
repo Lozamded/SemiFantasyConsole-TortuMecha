@@ -81,17 +81,17 @@ class CartScenePlayer:
                     self.running = False
 
             if self._game_module and self._engine:
+                # The game module owns its own Scene/SceneRenderer (see e.g.
+                # mechaturtle_player.py) and fully repaints the framebuffer in
+                # draw(). Ticking/rendering self.scene here too would be pure
+                # waste — worse, it rebinds instance_api's scene to a *different*
+                # Scene object every frame, which clears per-instance overrides
+                # like set_object_solid() (see instance_api.bind_scene) right
+                # after the game module's own tick just set them.
                 game = self._game_module
                 engine = self._engine
                 if hasattr(game, "update"):
                     game.update(dt)
-                self.renderer.tick(self.scene, dt, engine)
-                frame = self.renderer.render(
-                    self.scene,
-                    camera_x=self.camera_x,
-                    camera_y=self.camera_y,
-                )
-                engine.framebuffer.blit(frame, (0, 0))
                 if hasattr(game, "draw"):
                     game.draw(engine)
                 self.display.present(engine.framebuffer)
